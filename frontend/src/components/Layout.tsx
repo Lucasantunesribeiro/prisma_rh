@@ -18,6 +18,12 @@ export default function Layout() {
               <Link to="/empresas" className="hover:text-foreground">
                 Empresas
               </Link>
+              <Link to="/funcionarios" className="hover:text-foreground">
+                Funcionários
+              </Link>
+              <Link to="/cargos" className="hover:text-foreground">
+                Cargos
+              </Link>
               <Link to="/status" className="hover:text-foreground">
                 Status
               </Link>

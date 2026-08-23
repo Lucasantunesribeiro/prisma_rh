@@ -32,12 +32,23 @@ export const ROTULO_PERFIL: Record<Perfil, string> = {
 /** Perfis que podem criar, alterar e inativar empresas e estabelecimentos. */
 const PERFIS_ADMINISTRADORES: Perfil[] = ['AdministradorPlataforma', 'AdministradorEmpresa']
 
+/** Perfis que mantem cadastro de gente: funcionarios, contratos e cargos. */
+const PERFIS_PESSOAS: Perfil[] = [...PERFIS_ADMINISTRADORES, 'AnalistaRh']
+
 /**
  * Usado apenas para adaptar a interface. A autoridade e o backend: esconder o
  * botao nao impede ninguem de chamar a API direto.
  */
 export function podeAdministrar(perfil: Perfil | undefined): boolean {
   return perfil !== undefined && PERFIS_ADMINISTRADORES.includes(perfil)
+}
+
+/**
+ * O Analista de RH mantem cadastros mas NAO administra empresas - por isso a
+ * permissao de pessoas e separada da de empresas (CLAUDE.md secao 6).
+ */
+export function podeAdministrarPessoas(perfil: Perfil | undefined): boolean {
+  return perfil !== undefined && PERFIS_PESSOAS.includes(perfil)
 }
 
 export async function entrar(email: string, senha: string): Promise<UsuarioAutenticado> {
