@@ -1,0 +1,49 @@
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using PrismaRH.Dominio.Folha;
+
+namespace PrismaRH.Infraestrutura.Persistencia.Configuracoes;
+
+public sealed class RubricaConfiguracao : IEntityTypeConfiguration<Rubrica>
+{
+    public void Configure(EntityTypeBuilder<Rubrica> builder)
+    {
+        builder.ToTable("rubricas");
+
+        builder.HasKey(r => r.Id);
+        builder.Property(r => r.Id).HasColumnName("id").ValueGeneratedNever();
+
+        builder.Property(r => r.IdOrganizacao).HasColumnName("id_organizacao").IsRequired();
+
+        builder.Property(r => r.Codigo)
+            .HasColumnName("codigo")
+            .HasMaxLength(Rubrica.TamanhoMaximoCodigo)
+            .IsRequired();
+
+        builder.Property(r => r.Nome)
+            .HasColumnName("nome")
+            .HasMaxLength(Rubrica.TamanhoMaximoNome)
+            .IsRequired();
+
+        builder.Property(r => r.Tipo).HasColumnName("tipo").HasConversion<int>().IsRequired();
+        builder.Property(r => r.Estrategia).HasColumnName("estrategia").HasConversion<int>().IsRequired();
+        builder.Property(r => r.Ativa).HasColumnName("ativa").IsRequired();
+        builder.Property(r => r.CriadoEm).HasColumnName("criado_em").IsRequired();
+
+        builder.HasIndex(r => new { r.IdOrganizacao, r.Codigo })
+            .HasDatabaseName("ux_rubricas_organizacao_codigo")
+            .IsUnique();
+
+        // No maximo UMA rubrica de salario-base ativa por organizacao.
+        //
+        // Sem isso, o calculo teria que escolher entre duas rubricas de
+        // salario e escolheria em silencio - metade da empresa poderia sair
+        // com o codigo errado no holerite. O indice e parcial porque a
+        // restricao so vale para as ativas: inativar e criar outra continua
+        // sendo permitido.
+        builder.HasIndex(r => r.IdOrganizacao)
+            .HasDatabaseName("ux_rubricas_salario_base_ativa")
+            .IsUnique()
+            .HasFilter($"estrategia = {(int)EstrategiaRubrica.SalarioBaseProporcional} AND ativa");
+    }
+}

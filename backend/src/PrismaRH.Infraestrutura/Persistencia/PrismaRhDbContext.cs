@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using PrismaRH.Aplicacao.Identidade;
 using PrismaRH.Dominio.Contratos;
 using PrismaRH.Dominio.Empresas;
+using PrismaRH.Dominio.Folha;
 using PrismaRH.Dominio.Identidade;
 using PrismaRH.Dominio.Pessoas;
 
@@ -36,6 +37,11 @@ public sealed class PrismaRhDbContext(
     public DbSet<Cargo> Cargos => Set<Cargo>();
     public DbSet<ContratoTrabalho> ContratosTrabalho => Set<ContratoTrabalho>();
     public DbSet<VigenciaContrato> VigenciasContrato => Set<VigenciaContrato>();
+    public DbSet<Rubrica> Rubricas => Set<Rubrica>();
+    public DbSet<FolhaPagamento> Folhas => Set<FolhaPagamento>();
+    public DbSet<FolhaFuncionario> FolhasFuncionario => Set<FolhaFuncionario>();
+    public DbSet<LancamentoFolha> LancamentosFolha => Set<LancamentoFolha>();
+    public DbSet<LinhaMemoriaCalculo> MemoriasCalculo => Set<LinhaMemoriaCalculo>();
 
     /// <summary>Organizacao do token atual. Exposta para os filtros e para diagnostico.</summary>
     public Guid IdOrganizacaoAtual => contextoUsuario.IdOrganizacao;
@@ -65,6 +71,11 @@ public sealed class PrismaRhDbContext(
         construtor.Entity<Cargo>().HasQueryFilter(c => c.IdOrganizacao == IdOrganizacaoAtual);
         construtor.Entity<ContratoTrabalho>().HasQueryFilter(c => c.IdOrganizacao == IdOrganizacaoAtual);
         construtor.Entity<VigenciaContrato>().HasQueryFilter(v => v.IdOrganizacao == IdOrganizacaoAtual);
+        construtor.Entity<Rubrica>().HasQueryFilter(r => r.IdOrganizacao == IdOrganizacaoAtual);
+        construtor.Entity<FolhaPagamento>().HasQueryFilter(f => f.IdOrganizacao == IdOrganizacaoAtual);
+        construtor.Entity<FolhaFuncionario>().HasQueryFilter(f => f.IdOrganizacao == IdOrganizacaoAtual);
+        construtor.Entity<LancamentoFolha>().HasQueryFilter(l => l.IdOrganizacao == IdOrganizacaoAtual);
+        construtor.Entity<LinhaMemoriaCalculo>().HasQueryFilter(m => m.IdOrganizacao == IdOrganizacaoAtual);
 
         // RefreshToken NAO entra: e lido antes de existir usuario autenticado.
         // Ver o comentario em RefreshToken.cs.
