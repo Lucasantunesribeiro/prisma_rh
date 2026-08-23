@@ -42,11 +42,34 @@ frontend React + TypeScript + Vite + Tailwind + shadcn/ui.
   pergunta que o motor de cálculo da Fase 3 vai fazer.
 - Telas de funcionários com filtro, linha do tempo do contrato e catálogo de cargos.
 
+**Núcleo da folha mensal (Fase 3)**
+
+- **Competência** como tipo próprio (`08/2026`), persistida como o inteiro `202608`
+  para ordenar e indexar numa coluna só.
+- Catálogo de **rubricas** por organização: provento, desconto ou informativo; o valor
+  ou é calculado pelo sistema (salário-base) ou digitado no lançamento. Não há fórmula
+  em texto livre — parametrização não executa código do usuário (`CLAUDE.md §9`).
+- **Motor de cálculo** determinístico e sem acesso a banco: salário-base proporcional
+  em **30 avos** (CLT art. 64), repartido por vigência quando há alteração no meio do
+  mês. Fevereiro inteiro vale 30 avos; o dia 31 não vale um avo extra.
+- Entra na folha quem teve vínculo em **qualquer dia** da competência — admitido dia 20
+  entra com 11/30, desligado dia 10 entra com 10/30.
+- **Lançamentos manuais** de provento e desconto, que **sobrevivem ao recálculo**:
+  reprocessar refaz só o que o sistema calculou.
+- **Memória de cálculo** por lançamento, em passos: a conta que produziu o número, não
+  só o número. Cada lançamento congela código, nome e tipo da rubrica no momento do
+  cálculo.
+- Fechamento definitivo: folha fechada recusa cálculo, lançamento e novo fechamento.
+- Arredondamento centralizado: 2 casas, `AwayFromZero`, aplicado na parcela.
+- Telas de rubricas, lista de folhas e detalhe da folha com holerite e memória.
+
 ## O que ainda NÃO existe
 
-Dependentes, competências, rubricas, folha de pagamento, cálculos, memória de
-cálculo, importações, motor de análises, integrações, recursos AWS e CI/CD. Tudo
-isso pertence às fases seguintes do roadmap.
+Dependentes, INSS, FGTS, IRRF, férias, 13º, rescisão, importações, motor de análises,
+integrações, recursos AWS e CI/CD. Tudo isso pertence às fases seguintes do roadmap.
+
+A folha desta fase **não** calcula nenhum encargo legal: cada um exige fonte oficial
+registrada e parâmetro versionado (`CLAUDE.md §29`), e isso é a Fase 4.
 
 ---
 
@@ -213,10 +236,24 @@ Todos usam a senha de `PRISMARH_SEED_SENHA`.
 | `GET /api/contratos/{id}/vigencia?data=` | todos os 5 | O que valia numa data |
 | `POST /api/contratos/{id}/vigencias` | + Analista de RH | Registra alteração |
 | `POST /api/contratos/{id}/desligamento` | + Analista de RH | Encerra o vínculo |
+| `GET /api/rubricas` | todos os 5 | Catálogo de rubricas |
+| `POST`/`PUT`/`DELETE /api/rubricas` | Adm. Plataforma, Adm. Empresa | Parametrização |
+| `GET /api/folhas` | todos os 5 | Lista, com filtro por empresa e competência |
+| `GET /api/folhas/{id}` | todos os 5 | Folha com os holerites |
+| `GET /api/folhas/{id}/funcionarios/{idHolerite}` | todos os 5 | Holerite e memória de cálculo |
+| `POST /api/folhas` | + Analista de RH | Abre a folha de uma competência |
+| `POST /api/folhas/{id}/calcular` | + Analista de RH | Calcula ou recalcula |
+| `POST /api/folhas/{id}/fechar` | + Analista de RH | Fecha em definitivo |
+| `POST` de lançamento manual | + Analista de RH | Lança provento ou desconto |
+| `DELETE` de lançamento manual | + Analista de RH | Remove o que foi digitado |
 
 > **"+ Analista de RH"** significa Administrador da Plataforma, Administrador da
 > Empresa **e** Analista de RH. O Analista mantém cadastros mas **não** administra
 > empresas — por isso a política de pessoas é separada da de empresas.
+>
+> **Rubrica** é parametrização da empresa, não operação do dia a dia: quem cria e
+> inativa rubrica é quem administra empresas (`CLAUDE.md §6`). O Analista de RH
+> processa a folha, mas não muda o catálogo com que ela é calculada.
 
 ---
 

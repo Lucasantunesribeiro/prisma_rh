@@ -532,6 +532,56 @@ Começar com poucas rubricas.
 
 O conjunto exato deverá ser definido antes da implementação.
 
+> **Escopo aprovado pelo responsável em 23/08/2026 — primeira folha mensal.**
+>
+> **Rubricas.** Salário-base proporcional (calculado pelo sistema) mais lançamentos
+> manuais de provento e desconto, com totais e líquido. Nenhum encargo legal: INSS,
+> FGTS, IRRF, hora extra e DSR dependem de fonte oficial e de parâmetro versionado, e
+> pertencem à Fase 4.
+>
+> **Elegibilidade.** Entra na folha quem teve vínculo em **qualquer dia** da
+> competência. Admitido dia 20 entra proporcional; desligado dia 10 também, porque
+> trabalhou esses dias. O critério alternativo — "ativo no último dia" — deixaria
+> trabalho feito sem pagamento até a Fase 4G.
+>
+> **Divisor.** O mês vale **30 avos**, tenha 28, 30 ou 31 dias (CLT art. 64, que fixa o
+> divisor 30 para o salário mensal). Quem trabalha fevereiro inteiro recebe salário
+> cheio; o dia 31 não gera um trigésimo primeiro avo.
+>
+> **Vigência dentro da competência.** Um aumento no meio do mês é **repartido**: cada
+> vigência recebe os avos que lhe cabem. Pagar o mês inteiro pelo salário novo
+> reescreveria, na prática, a primeira metade do mês.
+>
+> **Arredondamento** (`CLAUDE.md §28`). Duas casas, `MidpointRounding.AwayFromZero`,
+> aplicado no valor final de **cada rubrica**; os totais somam parcelas já arredondadas.
+> O padrão `ToEven` do .NET faria o funcionário perder um centavo pela paridade do
+> dígito anterior, sem forma de entender o motivo.
+
+> **Decisão registrada em 23/08/2026 — estados da folha.**
+>
+> Dos cinco estados previstos, ficaram três: **Rascunho, Calculada, Fechada**.
+>
+> `EmCalculo` foi descartado porque o cálculo desta fase é síncrono — o estado só
+> existiria entre duas linhas de código e nunca seria observável. Volta a fazer sentido
+> na Fase 9, com processamento assíncrono.
+>
+> `ComInconsistencias` foi descartado porque não há motor de análises antes da Fase 6.
+> Criar o estado agora seria montar estrutura de fase futura.
+>
+> **Não existe reabertura de folha fechada nesta fase**, e isso é deliberado: o próprio
+> ROADMAP manda exigir "fluxo explícito futuro" depois do fechamento, e um método de
+> reabrir sem esse fluxo seria a sobrescrita silenciosa que o documento proíbe.
+
+> **Decisão registrada em 23/08/2026 — memória de cálculo como passos.**
+>
+> `MemoriaCalculo` virou uma **coleção** de `LinhaMemoriaCalculo` por lançamento, em vez
+> de um campo de texto único. Um valor de folha quase nunca sai de uma conta só —
+> salário da vigência, avos do mês, multiplicação — e guardar apenas o resultado
+> impediria o que o `CLAUDE.md §4.2` exige: descobrir quais bases levaram àquele número.
+>
+> Cada lançamento congela o **código, o nome e o tipo** da rubrica no momento do
+> cálculo. Renomear a rubrica no ano seguinte não pode reescrever um holerite fechado.
+
 Exemplo de primeira evolução possível:
 
 1. salário-base;

@@ -24,6 +24,12 @@ export default function Layout() {
               <Link to="/cargos" className="hover:text-foreground">
                 Cargos
               </Link>
+              <Link to="/rubricas" className="hover:text-foreground">
+                Rubricas
+              </Link>
+              <Link to="/folhas" className="hover:text-foreground">
+                Folhas
+              </Link>
               <Link to="/status" className="hover:text-foreground">
                 Status
               </Link>

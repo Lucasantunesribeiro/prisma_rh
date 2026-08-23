@@ -5,6 +5,7 @@ using PrismaRH.Aplicacao.Comum;
 using PrismaRH.Aplicacao.Identidade;
 using PrismaRH.Dominio.Contratos;
 using PrismaRH.Dominio.Empresas;
+using PrismaRH.Dominio.Folha;
 using PrismaRH.Dominio.Identidade;
 using PrismaRH.Dominio.Pessoas;
 
@@ -68,14 +69,20 @@ public static class SemeadorDesenvolvimento
             log.LogInformation("Semeadura: identidade e empresas criadas.");
         }
 
-        if (await contexto.Funcionarios.IgnoreQueryFilters().AnyAsync(ct))
+        if (!await contexto.Funcionarios.IgnoreQueryFilters().AnyAsync(ct))
         {
-            log.LogInformation("Semeadura: cadastro funcional ja existia, nada a fazer.");
+            var quantidade = await SemearCadastroFuncionalAsync(contexto, prisma, agora, ct);
+            log.LogInformation("Semeadura: {Quantidade} funcionarios com contrato criados.", quantidade);
+        }
+
+        if (await contexto.Rubricas.IgnoreQueryFilters().AnyAsync(ct))
+        {
+            log.LogInformation("Semeadura: folha ja existia, nada a fazer.");
             return;
         }
 
-        var quantidade = await SemearCadastroFuncionalAsync(contexto, prisma, agora, ct);
-        log.LogInformation("Semeadura: {Quantidade} funcionarios com contrato criados.", quantidade);
+        var competencias = await SemearFolhaAsync(contexto, prisma, agora, ct);
+        log.LogInformation("Semeadura: folhas de {Competencias} criadas.", competencias);
     }
 
     // -----------------------------------------------------------------------
@@ -204,6 +211,83 @@ public static class SemeadorDesenvolvimento
         await contexto.SaveChangesAsync(ct);
 
         return pessoas.Length;
+    }
+
+    // -----------------------------------------------------------------------
+    // Fase 3: rubricas e as duas primeiras folhas
+    // -----------------------------------------------------------------------
+    private static async Task<string> SemearFolhaAsync(
+        PrismaRhDbContext contexto,
+        Organizacao prisma,
+        DateTimeOffset agora,
+        CancellationToken ct)
+    {
+        var empresa = await contexto.Empresas.IgnoreQueryFilters()
+            .FirstAsync(e => e.IdOrganizacao == prisma.Id, ct);
+
+        var salario = new Rubrica(
+            prisma.Id, "SAL", "Salario base",
+            TipoRubrica.Provento, EstrategiaRubrica.SalarioBaseProporcional, agora);
+
+        var comissao = new Rubrica(
+            prisma.Id, "COM", "Comissao",
+            TipoRubrica.Provento, EstrategiaRubrica.ValorInformado, agora);
+
+        var valeTransporte = new Rubrica(
+            prisma.Id, "VT", "Vale-transporte",
+            TipoRubrica.Desconto, EstrategiaRubrica.ValorInformado, agora);
+
+        var adiantamento = new Rubrica(
+            prisma.Id, "ADT", "Adiantamento salarial",
+            TipoRubrica.Desconto, EstrategiaRubrica.ValorInformado, agora);
+
+        contexto.Rubricas.AddRange(salario, comissao, valeTransporte, adiantamento);
+        await contexto.SaveChangesAsync(ct);
+
+        var contratos = await contexto.ContratosTrabalho.IgnoreQueryFilters()
+            .Include(c => c.Vigencias)
+            .Where(c => c.IdEmpresa == empresa.Id)
+            .ToListAsync(ct);
+
+        // As competencias saem do relogio, e nao de datas fixas: a demo
+        // precisa continuar mostrando "o mes passado" e "este mes" daqui a um
+        // ano, sem ninguem reeditar o semeador.
+        var atual = Competencia.De(DateOnly.FromDateTime(agora.Date));
+        var anterior = atual.Anterior();
+
+        // A folha do mes passado nasce FECHADA, para a demo ter um fato
+        // historico: alterar contrato depois disso nao muda mais nada nela.
+        var fechada = new FolhaPagamento(prisma.Id, empresa.Id, anterior, agora);
+        fechada.Calcular(contratos, salario, agora);
+
+        foreach (var holerite in fechada.Funcionarios.Take(2))
+        {
+            fechada.AdicionarLancamentoManual(holerite.Id, valeTransporte, 180m, "22 dias");
+        }
+
+        if (fechada.Funcionarios.Count > 0)
+        {
+            fechada.AdicionarLancamentoManual(fechada.Funcionarios[0].Id, comissao, 450m, null);
+        }
+
+        // Recalcula ANTES de fechar, de proposito: e o cenario que prova que
+        // reprocessar preserva o que foi lancado a mao.
+        fechada.Calcular(contratos, salario, agora);
+        fechada.Fechar(agora);
+
+        // A do mes corrente fica calculada e aberta, para dar o que operar.
+        var aberta = new FolhaPagamento(prisma.Id, empresa.Id, atual, agora);
+        aberta.Calcular(contratos, salario, agora);
+
+        if (aberta.Funcionarios.Count > 0)
+        {
+            aberta.AdicionarLancamentoManual(aberta.Funcionarios[0].Id, adiantamento, 600m, null);
+        }
+
+        contexto.Folhas.AddRange(fechada, aberta);
+        await contexto.SaveChangesAsync(ct);
+
+        return $"{anterior} e {atual}";
     }
 
     /// <summary>
