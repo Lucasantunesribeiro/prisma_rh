@@ -1,0 +1,196 @@
+using PrismaRH.Dominio.Contratos;
+
+namespace PrismaRH.Dominio.Folha;
+
+/// <summary>
+/// Um processamento de folha: uma empresa, uma competencia.
+///
+/// E o agregado. Ninguem cria FolhaFuncionario nem LancamentoFolha por fora -
+/// os construtores deles sao internal pelo mesmo motivo que os de
+/// VigenciaContrato: um holerite solto, criado sem passar pelas regras daqui,
+/// entraria nos totais sem nunca ter sido calculado.
+/// </summary>
+public sealed class FolhaPagamento
+{
+    private readonly List<FolhaFuncionario> _funcionarios = [];
+
+    private FolhaPagamento()
+    {
+    }
+
+    public FolhaPagamento(Guid idOrganizacao, Guid idEmpresa, Competencia competencia, DateTimeOffset criadoEm)
+    {
+        if (idOrganizacao == Guid.Empty)
+        {
+            throw new ArgumentException("Folha precisa pertencer a uma organizacao.", nameof(idOrganizacao));
+        }
+
+        if (idEmpresa == Guid.Empty)
+        {
+            throw new ArgumentException("Folha precisa de uma empresa.", nameof(idEmpresa));
+        }
+
+        Id = Guid.CreateVersion7();
+        IdOrganizacao = idOrganizacao;
+        IdEmpresa = idEmpresa;
+        Competencia = competencia;
+        Situacao = SituacaoFolha.Rascunho;
+        CriadoEm = criadoEm;
+    }
+
+    public Guid Id { get; private set; }
+    public Guid IdOrganizacao { get; private set; }
+    public Guid IdEmpresa { get; private set; }
+    public Competencia Competencia { get; private set; }
+    public SituacaoFolha Situacao { get; private set; }
+
+    /// <summary>Quantas vezes esta folha foi calculada. Reprocessar e visivel, nao silencioso.</summary>
+    public int VersaoCalculo { get; private set; }
+
+    public DateTimeOffset CriadoEm { get; private set; }
+    public DateTimeOffset? CalculadaEm { get; private set; }
+    public DateTimeOffset? FechadaEm { get; private set; }
+
+    public decimal TotalProventos { get; private set; }
+    public decimal TotalDescontos { get; private set; }
+    public decimal TotalLiquido { get; private set; }
+
+    public IReadOnlyList<FolhaFuncionario> Funcionarios => _funcionarios;
+
+    public bool EstaFechada => Situacao == SituacaoFolha.Fechada;
+
+    /// <summary>
+    /// Inclui os contratos elegiveis, calcula cada um e atualiza os totais.
+    ///
+    /// Recebe os contratos ja carregados de proposito: o CLAUDE.md secao 10
+    /// proibe o motor de acessar banco durante o calculo. Quem chama e
+    /// responsavel por trazer os contratos COM as vigencias.
+    ///
+    /// Chamar de novo reprocessa. Os lancamentos manuais permanecem; os
+    /// calculados sao refeitos do zero.
+    /// </summary>
+    public void Calcular(IEnumerable<ContratoTrabalho> contratosDaEmpresa, Rubrica rubricaSalario, DateTimeOffset agora)
+    {
+        ArgumentNullException.ThrowIfNull(contratosDaEmpresa);
+        ArgumentNullException.ThrowIfNull(rubricaSalario);
+
+        GarantirAberta("calcular");
+
+        if (rubricaSalario.Estrategia != EstrategiaRubrica.SalarioBaseProporcional)
+        {
+            throw new ArgumentException(
+                $"A rubrica {rubricaSalario.Codigo} nao e a rubrica de salario-base.", nameof(rubricaSalario));
+        }
+
+        var elegiveis = contratosDaEmpresa
+            .Where(c => c.IdEmpresa == IdEmpresa && MotorCalculoFolha.Elegivel(c, Competencia))
+            .ToDictionary(c => c.Id);
+
+        // Quem deixou de ser elegivel sai da folha. Acontece quando um
+        // desligamento anterior a competencia e registrado depois da abertura:
+        // manter a pessoa produziria pagamento para quem nao trabalhou.
+        _funcionarios.RemoveAll(f => !elegiveis.ContainsKey(f.IdContrato));
+
+        foreach (var contrato in elegiveis.Values)
+        {
+            var holerite = _funcionarios.SingleOrDefault(f => f.IdContrato == contrato.Id);
+
+            if (holerite is null)
+            {
+                holerite = new FolhaFuncionario(IdOrganizacao, Id, contrato.Id, contrato.IdFuncionario);
+                _funcionarios.Add(holerite);
+            }
+
+            var apuracao = MotorCalculoFolha.Apurar(contrato, Competencia)
+                ?? throw new InvalidOperationException(
+                    $"Contrato {contrato.Matricula} passou na elegibilidade mas nao apurou: estado inconsistente.");
+
+            holerite.AplicarCalculo(apuracao, rubricaSalario);
+        }
+
+        VersaoCalculo++;
+        CalculadaEm = agora;
+        Situacao = SituacaoFolha.Calculada;
+
+        RecalcularTotais();
+    }
+
+    public LancamentoFolha AdicionarLancamentoManual(
+        Guid idFolhaFuncionario, Rubrica rubrica, decimal valor, string? referencia)
+    {
+        GarantirAberta("lancar");
+
+        var holerite = ObterHolerite(idFolhaFuncionario);
+        var lancamento = holerite.AdicionarManual(rubrica, valor, referencia);
+
+        RecalcularTotais();
+
+        return lancamento;
+    }
+
+    public bool RemoverLancamento(Guid idFolhaFuncionario, Guid idLancamento)
+    {
+        GarantirAberta("remover lancamento de");
+
+        var removeu = ObterHolerite(idFolhaFuncionario).RemoverLancamento(idLancamento);
+
+        if (removeu)
+        {
+            RecalcularTotais();
+        }
+
+        return removeu;
+    }
+
+    /// <summary>
+    /// Fecha a folha. A partir daqui ela e um fato historico.
+    ///
+    /// Nao existe reabertura nesta fase, e isso e deliberado: o ROADMAP manda
+    /// exigir "fluxo explicito futuro" depois do fechamento. Um metodo
+    /// Reabrir() sem esse fluxo seria exatamente a sobrescrita silenciosa que
+    /// o documento proibe.
+    /// </summary>
+    public void Fechar(DateTimeOffset agora)
+    {
+        if (EstaFechada)
+        {
+            throw new InvalidOperationException($"A folha de {Competencia} ja esta fechada.");
+        }
+
+        if (Situacao != SituacaoFolha.Calculada)
+        {
+            throw new InvalidOperationException(
+                $"A folha de {Competencia} precisa ser calculada antes de fechar.");
+        }
+
+        if (_funcionarios.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"A folha de {Competencia} nao tem nenhum funcionario e nao faz sentido fechar.");
+        }
+
+        Situacao = SituacaoFolha.Fechada;
+        FechadaEm = agora;
+    }
+
+    private FolhaFuncionario ObterHolerite(Guid idFolhaFuncionario) =>
+        _funcionarios.SingleOrDefault(f => f.Id == idFolhaFuncionario)
+        ?? throw new InvalidOperationException("Funcionario nao pertence a esta folha.");
+
+    private void GarantirAberta(string acao)
+    {
+        if (EstaFechada)
+        {
+            throw new InvalidOperationException(
+                $"Nao da para {acao} uma folha fechada. A de {Competencia} foi fechada em "
+                + $"{FechadaEm:dd/MM/yyyy}.");
+        }
+    }
+
+    private void RecalcularTotais()
+    {
+        TotalProventos = _funcionarios.Sum(f => f.TotalProventos);
+        TotalDescontos = _funcionarios.Sum(f => f.TotalDescontos);
+        TotalLiquido = _funcionarios.Sum(f => f.Liquido);
+    }
+}
