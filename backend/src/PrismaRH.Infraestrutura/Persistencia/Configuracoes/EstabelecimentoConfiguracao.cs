@@ -11,7 +11,7 @@ public sealed class EstabelecimentoConfiguracao : IEntityTypeConfiguration<Estab
         builder.ToTable("estabelecimentos");
 
         builder.HasKey(e => e.Id);
-        builder.Property(e => e.Id).HasColumnName("id");
+        builder.Property(e => e.Id).HasColumnName("id").ValueGeneratedNever();
 
         builder.Property(e => e.IdOrganizacao).HasColumnName("id_organizacao").IsRequired();
         builder.Property(e => e.IdEmpresa).HasColumnName("id_empresa").IsRequired();

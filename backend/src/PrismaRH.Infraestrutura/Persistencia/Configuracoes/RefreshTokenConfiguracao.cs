@@ -11,7 +11,7 @@ public sealed class RefreshTokenConfiguracao : IEntityTypeConfiguration<RefreshT
         builder.ToTable("refresh_tokens");
 
         builder.HasKey(t => t.Id);
-        builder.Property(t => t.Id).HasColumnName("id");
+        builder.Property(t => t.Id).HasColumnName("id").ValueGeneratedNever();
 
         builder.Property(t => t.IdUsuario).HasColumnName("id_usuario").IsRequired();
         builder.Property(t => t.TokenHash).HasColumnName("token_hash").HasMaxLength(128).IsRequired();

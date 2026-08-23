@@ -42,6 +42,15 @@ public sealed class PrismaRhDbContext(
 
     protected override void OnModelCreating(ModelBuilder construtor)
     {
+        // Toda entidade recebe ValueGeneratedNever() no Id: as chaves sao
+        // atribuidas pelo DOMINIO com Guid.CreateVersion7(), nunca pelo banco.
+        //
+        // Sem isso o EF assume, por convencao, que chave Guid e gerada pelo
+        // banco - e ao encontrar uma entidade nova dentro de um grafo ja
+        // rastreado COM a chave preenchida, conclui que ela ja existe e emite
+        // UPDATE em vez de INSERT. O sintoma e um
+        // DbUpdateConcurrencyException dizendo "esperava 1 linha, afetou 0",
+        // que nao aponta em nada para a causa.
         construtor.ApplyConfigurationsFromAssembly(typeof(PrismaRhDbContext).Assembly);
 
         // O filtro referencia a PROPRIEDADE do contexto, nao o valor. O EF

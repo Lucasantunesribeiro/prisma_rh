@@ -12,7 +12,7 @@ public sealed class VigenciaContratoConfiguracao : IEntityTypeConfiguration<Vige
         builder.ToTable("vigencias_contrato");
 
         builder.HasKey(v => v.Id);
-        builder.Property(v => v.Id).HasColumnName("id");
+        builder.Property(v => v.Id).HasColumnName("id").ValueGeneratedNever();
 
         builder.Property(v => v.IdOrganizacao).HasColumnName("id_organizacao").IsRequired();
         builder.Property(v => v.IdContrato).HasColumnName("id_contrato").IsRequired();
@@ -48,13 +48,15 @@ public sealed class VigenciaContratoConfiguracao : IEntityTypeConfiguration<Vige
         builder.HasIndex(v => new { v.IdContrato, v.ValidoDe })
             .HasDatabaseName("ix_vigencias_contrato_inicio");
 
-        // No maximo UMA vigencia aberta por contrato - garantido pelo BANCO.
-        // O agregado ja impoe a regra, mas duas requisicoes simultaneas passam
-        // pela validacao em C# ao mesmo tempo e gravam as duas. O indice unico
-        // parcial e o que transforma a corrida em erro em vez de dado corrompido.
-        builder.HasIndex(v => v.IdContrato)
-            .IsUnique()
-            .HasFilter("valido_ate IS NULL")
-            .HasDatabaseName("ix_vigencias_uma_aberta_por_contrato");
+        // A garantia de que periodos NAO se sobrepoem vive no banco, mas nao
+        // cabe no modelo do EF: e uma constraint de exclusao, criada por SQL na
+        // migration RestricaoDeSobreposicaoDeVigencias.
+        //
+        // A primeira tentativa foi um indice unico parcial em "valido_ate IS
+        // NULL". Ele recusava operacao legitima: o EF INSERE a vigencia nova
+        // antes de fechar a anterior, e nesse instante existem duas abertas.
+        // A constraint de exclusao e DEFERRABLE - verifica no commit, quando o
+        // estado ja esta correto - e ainda impede qualquer sobreposicao, nao
+        // apenas duas vigencias abertas.
     }
 }

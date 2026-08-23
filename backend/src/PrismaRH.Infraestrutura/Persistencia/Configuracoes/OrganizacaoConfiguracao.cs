@@ -11,7 +11,7 @@ public sealed class OrganizacaoConfiguracao : IEntityTypeConfiguration<Organizac
         builder.ToTable("organizacoes");
 
         builder.HasKey(o => o.Id);
-        builder.Property(o => o.Id).HasColumnName("id");
+        builder.Property(o => o.Id).HasColumnName("id").ValueGeneratedNever();
 
         builder.Property(o => o.Nome)
             .HasColumnName("nome")

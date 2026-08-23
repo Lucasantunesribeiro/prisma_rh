@@ -12,7 +12,7 @@ public sealed class CargoConfiguracao : IEntityTypeConfiguration<Cargo>
         builder.ToTable("cargos");
 
         builder.HasKey(c => c.Id);
-        builder.Property(c => c.Id).HasColumnName("id");
+        builder.Property(c => c.Id).HasColumnName("id").ValueGeneratedNever();
 
         builder.Property(c => c.IdOrganizacao).HasColumnName("id_organizacao").IsRequired();
 

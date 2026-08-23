@@ -11,7 +11,7 @@ public sealed class UsuarioConfiguracao : IEntityTypeConfiguration<Usuario>
         builder.ToTable("usuarios");
 
         builder.HasKey(u => u.Id);
-        builder.Property(u => u.Id).HasColumnName("id");
+        builder.Property(u => u.Id).HasColumnName("id").ValueGeneratedNever();
 
         builder.Property(u => u.IdOrganizacao).HasColumnName("id_organizacao").IsRequired();
 

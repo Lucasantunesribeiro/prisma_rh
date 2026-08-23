@@ -12,7 +12,7 @@ public sealed class EmpresaConfiguracao : IEntityTypeConfiguration<Empresa>
         builder.ToTable("empresas");
 
         builder.HasKey(e => e.Id);
-        builder.Property(e => e.Id).HasColumnName("id");
+        builder.Property(e => e.Id).HasColumnName("id").ValueGeneratedNever();
 
         builder.Property(e => e.IdOrganizacao).HasColumnName("id_organizacao").IsRequired();
 

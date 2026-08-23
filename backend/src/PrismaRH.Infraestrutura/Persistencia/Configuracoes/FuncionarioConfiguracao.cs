@@ -12,7 +12,7 @@ public sealed class FuncionarioConfiguracao : IEntityTypeConfiguration<Funcionar
         builder.ToTable("funcionarios");
 
         builder.HasKey(f => f.Id);
-        builder.Property(f => f.Id).HasColumnName("id");
+        builder.Property(f => f.Id).HasColumnName("id").ValueGeneratedNever();
 
         builder.Property(f => f.IdOrganizacao).HasColumnName("id_organizacao").IsRequired();
 

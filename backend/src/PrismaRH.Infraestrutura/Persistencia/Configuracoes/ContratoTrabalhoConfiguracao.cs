@@ -14,7 +14,7 @@ public sealed class ContratoTrabalhoConfiguracao : IEntityTypeConfiguration<Cont
         builder.ToTable("contratos_trabalho");
 
         builder.HasKey(c => c.Id);
-        builder.Property(c => c.Id).HasColumnName("id");
+        builder.Property(c => c.Id).HasColumnName("id").ValueGeneratedNever();
 
         builder.Property(c => c.IdOrganizacao).HasColumnName("id_organizacao").IsRequired();
         builder.Property(c => c.IdFuncionario).HasColumnName("id_funcionario").IsRequired();

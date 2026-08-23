@@ -91,6 +91,9 @@ app.MapHealthChecks("/health", new HealthCheckOptions
 app.MapearAutenticacao();
 app.MapearEmpresas();
 app.MapearEstabelecimentos();
+app.MapearCargos();
+app.MapearFuncionarios();
+app.MapearContratos();
 
 app.Run();
 

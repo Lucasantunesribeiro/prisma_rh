@@ -80,6 +80,32 @@ public sealed class BancoPostgresFixture : IAsyncLifetime
     public const string EmailPlataformaA = "plataforma@a.teste";
     public const string EmailAdminB = "admin@b.teste";
 
+    /// <summary>
+    /// CPF valido e unico por semente. Os testes desta colecao compartilham o
+    /// MESMO banco: reaproveitar um CPF entre dois testes esbarra no indice
+    /// unico e faz o segundo falhar por colisao, nao por defeito real.
+    /// </summary>
+    public static string CpfDeTeste(int semente)
+    {
+        var noveDigitos = (100_000_000 + semente * 7_919 % 800_000_000).ToString("D9");
+        var comPrimeiro = noveDigitos + Digito(noveDigitos, 9);
+        return comPrimeiro + Digito(comPrimeiro, 10);
+
+        static char Digito(string digitos, int quantidade)
+        {
+            var soma = 0;
+            var peso = quantidade + 1;
+
+            for (var i = 0; i < quantidade; i++)
+            {
+                soma += (digitos[i] - '0') * peso--;
+            }
+
+            var resto = soma * 10 % 11;
+            return (char)('0' + (resto == 10 ? 0 : resto));
+        }
+    }
+
     public async Task InitializeAsync()
     {
         await _container.StartAsync();

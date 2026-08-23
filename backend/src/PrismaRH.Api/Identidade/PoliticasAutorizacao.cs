@@ -12,6 +12,7 @@ public static class PoliticasAutorizacao
 {
     public const string AdministradorPlataforma = "administrador-plataforma";
     public const string AdministrarEmpresas = "administrar-empresas";
+    public const string AdministrarPessoas = "administrar-pessoas";
     public const string LerDadosEmpresariais = "ler-dados-empresariais";
 
     public static AuthorizationBuilder Adicionar(this AuthorizationBuilder builder) =>
@@ -23,6 +24,15 @@ public static class PoliticasAutorizacao
                 p,
                 Perfil.AdministradorPlataforma,
                 Perfil.AdministradorEmpresa))
+
+            // Quem mantem cadastro de gente: funcionarios, contratos, cargos.
+            // NAO reusa AdministrarEmpresas de proposito - o Analista de RH
+            // mantem cadastros (CLAUDE.md secao 6) mas nao administra empresas.
+            .AddPolicy(AdministrarPessoas, p => ExigirPerfis(
+                p,
+                Perfil.AdministradorPlataforma,
+                Perfil.AdministradorEmpresa,
+                Perfil.AnalistaRh))
 
             // Leitura: todos os perfis, inclusive Auditor e Visualizador.
             .AddPolicy(LerDadosEmpresariais, p => ExigirPerfis(

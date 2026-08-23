@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using PrismaRH.Infraestrutura.Persistencia;
@@ -11,9 +12,11 @@ using PrismaRH.Infraestrutura.Persistencia;
 namespace PrismaRH.Infraestrutura.Persistencia.Migrations
 {
     [DbContext(typeof(PrismaRhDbContext))]
-    partial class PrismaRhDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260823032104_RestricaoDeSobreposicaoDeVigencias")]
+    partial class RestricaoDeSobreposicaoDeVigencias
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
