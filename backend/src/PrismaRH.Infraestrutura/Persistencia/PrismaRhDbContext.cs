@@ -1,7 +1,9 @@
 using Microsoft.EntityFrameworkCore;
 using PrismaRH.Aplicacao.Identidade;
+using PrismaRH.Dominio.Contratos;
 using PrismaRH.Dominio.Empresas;
 using PrismaRH.Dominio.Identidade;
+using PrismaRH.Dominio.Pessoas;
 
 namespace PrismaRH.Infraestrutura.Persistencia;
 
@@ -30,6 +32,10 @@ public sealed class PrismaRhDbContext(
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<Empresa> Empresas => Set<Empresa>();
     public DbSet<Estabelecimento> Estabelecimentos => Set<Estabelecimento>();
+    public DbSet<Funcionario> Funcionarios => Set<Funcionario>();
+    public DbSet<Cargo> Cargos => Set<Cargo>();
+    public DbSet<ContratoTrabalho> ContratosTrabalho => Set<ContratoTrabalho>();
+    public DbSet<VigenciaContrato> VigenciasContrato => Set<VigenciaContrato>();
 
     /// <summary>Organizacao do token atual. Exposta para os filtros e para diagnostico.</summary>
     public Guid IdOrganizacaoAtual => contextoUsuario.IdOrganizacao;
@@ -46,6 +52,10 @@ public sealed class PrismaRhDbContext(
         construtor.Entity<Usuario>().HasQueryFilter(u => u.IdOrganizacao == IdOrganizacaoAtual);
         construtor.Entity<Empresa>().HasQueryFilter(e => e.IdOrganizacao == IdOrganizacaoAtual);
         construtor.Entity<Estabelecimento>().HasQueryFilter(e => e.IdOrganizacao == IdOrganizacaoAtual);
+        construtor.Entity<Funcionario>().HasQueryFilter(f => f.IdOrganizacao == IdOrganizacaoAtual);
+        construtor.Entity<Cargo>().HasQueryFilter(c => c.IdOrganizacao == IdOrganizacaoAtual);
+        construtor.Entity<ContratoTrabalho>().HasQueryFilter(c => c.IdOrganizacao == IdOrganizacaoAtual);
+        construtor.Entity<VigenciaContrato>().HasQueryFilter(v => v.IdOrganizacao == IdOrganizacaoAtual);
 
         // RefreshToken NAO entra: e lido antes de existir usuario autenticado.
         // Ver o comentario em RefreshToken.cs.
