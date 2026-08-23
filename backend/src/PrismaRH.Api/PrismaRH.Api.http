@@ -1,0 +1,9 @@
+@PrismaRH.Api_HostAddress = http://localhost:5080
+
+### Health check da API e do banco de dados
+GET {{PrismaRH.Api_HostAddress}}/health
+Accept: application/json
+
+### Documento OpenAPI (apenas em Development)
+GET {{PrismaRH.Api_HostAddress}}/openapi/v1.json
+Accept: application/json

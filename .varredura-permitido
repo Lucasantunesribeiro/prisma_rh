@@ -1,0 +1,26 @@
+# Falsos positivos conferidos um a um da varredura de segredos.
+# Formato: caminho:tipo (minusculas). Somente severidade MEDIA.
+#
+# Regra: so entra aqui o que foi OLHADO e comprovadamente nao e credencial
+# real. Carimbar esta lista sem conferir anula a ferramenta.
+
+# Senha do PostgreSQL local do docker-compose. Banco efemero, so nesta maquina,
+# nunca sai do localhost.
+backend/src/prismarh.api/appsettings.development.json:senha
+
+# Conexao INACESSIVEL de proposito (porta 1): existe para o teste provar que a
+# API sobe com o banco fora. Nao aponta para nada.
+backend/testes/prismarh.testes/fabricaapitestes.cs:senha
+
+# Credenciais do container descartavel do Testcontainers, criado e destruido
+# dentro do proprio teste.
+backend/testes/prismarh.testes/isolamento/bancopostgresfixture.cs:senha
+backend/testes/prismarh.testes/isolamento/fabricaapiisolada.cs:senha
+
+# Tokens falsos usados como resposta simulada nos testes de frontend.
+frontend/src/api/cliente.teste.ts:token de acesso
+frontend/src/paginas/entrar.teste.tsx:token de acesso
+
+# Senha do PostgreSQL local. O arquivo e um EXEMPLO e o banco e efemero;
+# a mesma credencial esta em appsettings.Development.json de proposito.
+.env.example:senha
