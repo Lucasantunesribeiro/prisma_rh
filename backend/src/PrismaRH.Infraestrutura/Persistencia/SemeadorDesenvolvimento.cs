@@ -3,8 +3,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using PrismaRH.Aplicacao.Comum;
 using PrismaRH.Aplicacao.Identidade;
+using PrismaRH.Dominio.Contratos;
 using PrismaRH.Dominio.Empresas;
 using PrismaRH.Dominio.Identidade;
+using PrismaRH.Dominio.Pessoas;
 
 namespace PrismaRH.Infraestrutura.Persistencia;
 
@@ -33,19 +35,10 @@ public static class SemeadorDesenvolvimento
 
         // O banco pode estar fora. A aplicacao PRECISA subir mesmo assim: e o
         // /health que reporta o estado do banco, e ele so consegue reportar se
-        // a API estiver de pe. Derrubar o startup aqui trocaria "banco
-        // indisponivel" por "aplicacao nao inicia".
+        // a API estiver de pe.
         if (!await contexto.Database.CanConnectAsync(ct))
         {
             log.LogWarning("Semeadura ignorada: banco indisponivel. Verifique em /health.");
-            return;
-        }
-
-        // Idempotente: se ja existe organizacao, nao faz nada. Rodar duas vezes
-        // nao pode duplicar nem sobrescrever o que voce alterou testando.
-        if (await contexto.Organizacoes.IgnoreQueryFilters().AnyAsync(ct))
-        {
-            log.LogInformation("Semeadura ignorada: ja existem organizacoes.");
             return;
         }
 
@@ -60,6 +53,41 @@ public static class SemeadorDesenvolvimento
         }
 
         var agora = relogio.Agora;
+
+        // Idempotente POR SECAO, e nao tudo-ou-nada.
+        //
+        // Um "se ja existe organizacao, pule tudo" faria um banco criado numa
+        // fase anterior nunca receber os dados das fases seguintes: a demo
+        // ficaria incompleta e ninguem entenderia por que.
+        var prisma = await contexto.Organizacoes.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(o => o.Nome.StartsWith("Prisma"), ct);
+
+        if (prisma is null)
+        {
+            prisma = await SemearIdentidadeAsync(contexto, hasheador, senha, agora, ct);
+            log.LogInformation("Semeadura: identidade e empresas criadas.");
+        }
+
+        if (await contexto.Funcionarios.IgnoreQueryFilters().AnyAsync(ct))
+        {
+            log.LogInformation("Semeadura: cadastro funcional ja existia, nada a fazer.");
+            return;
+        }
+
+        var quantidade = await SemearCadastroFuncionalAsync(contexto, prisma, agora, ct);
+        log.LogInformation("Semeadura: {Quantidade} funcionarios com contrato criados.", quantidade);
+    }
+
+    // -----------------------------------------------------------------------
+    // Fase 1: organizacoes, usuarios, empresas e estabelecimentos
+    // -----------------------------------------------------------------------
+    private static async Task<Organizacao> SemearIdentidadeAsync(
+        PrismaRhDbContext contexto,
+        IHasheadorSenha hasheador,
+        string senha,
+        DateTimeOffset agora,
+        CancellationToken ct)
+    {
         var hash = hasheador.Gerar(senha);
 
         var prisma = new Organizacao("Prisma Servicos de RH Ltda.", agora);
@@ -89,7 +117,120 @@ public static class SemeadorDesenvolvimento
 
         await contexto.SaveChangesAsync(ct);
 
-        log.LogInformation(
-            "Semeadura concluida: 2 organizacoes, 6 usuarios, 2 empresas, 3 estabelecimentos.");
+        return prisma;
+    }
+
+    // -----------------------------------------------------------------------
+    // Fase 2: cargos, funcionarios, contratos e historico
+    // -----------------------------------------------------------------------
+    private static async Task<int> SemearCadastroFuncionalAsync(
+        PrismaRhDbContext contexto,
+        Organizacao prisma,
+        DateTimeOffset agora,
+        CancellationToken ct)
+    {
+        var empresa = await contexto.Empresas.IgnoreQueryFilters()
+            .FirstAsync(e => e.IdOrganizacao == prisma.Id, ct);
+
+        var estabelecimentos = await contexto.Estabelecimentos.IgnoreQueryFilters()
+            .Where(e => e.IdEmpresa == empresa.Id)
+            .OrderBy(e => e.Codigo)
+            .ToListAsync(ct);
+
+        var matriz = estabelecimentos[0];
+        var filial = estabelecimentos.Count > 1 ? estabelecimentos[1] : matriz;
+
+        var cargos = new[]
+        {
+            new Cargo(prisma.Id, "AUX", "Auxiliar Administrativo", agora),
+            new Cargo(prisma.Id, "ANA", "Analista", agora),
+            new Cargo(prisma.Id, "COO", "Coordenador", agora),
+        };
+        contexto.Cargos.AddRange(cargos);
+
+        var pessoas = new (string Nome, DateOnly Nascimento, int Cargo, decimal Salario, int Jornada)[]
+        {
+            ("Ana Beatriz Moraes", new DateOnly(1988, 3, 12), 0, 2600m, 220),
+            ("Bruno Carvalho Lima", new DateOnly(1992, 7, 4), 1, 3400m, 220),
+            ("Camila Ferreira Souza", new DateOnly(1995, 11, 23), 1, 3600m, 220),
+            ("Diego Nogueira Alves", new DateOnly(1985, 1, 30), 2, 7200m, 220),
+            ("Eduarda Pires Ramos", new DateOnly(1998, 5, 17), 0, 2450m, 180),
+            ("Felipe Andrade Costa", new DateOnly(1990, 9, 8), 1, 3900m, 220),
+            ("Gabriela Tavares Rocha", new DateOnly(1993, 2, 26), 1, 3750m, 220),
+            ("Henrique Barros Melo", new DateOnly(1987, 12, 5), 2, 8100m, 220),
+        };
+
+        var contratos = new List<ContratoTrabalho>();
+
+        for (var i = 0; i < pessoas.Length; i++)
+        {
+            var pessoa = pessoas[i];
+
+            var funcionario = new Funcionario(
+                prisma.Id, pessoa.Nome, Cpf.Criar(CpfFicticio(i + 1)), pessoa.Nascimento, agora);
+            contexto.Funcionarios.Add(funcionario);
+
+            contratos.Add(new ContratoTrabalho(
+                prisma.Id,
+                funcionario.Id,
+                empresa.Id,
+                matricula: (1000 + i).ToString(),
+                dataAdmissao: new DateOnly(2025, 2 + i % 6, 1 + i % 20),
+                salarioInicial: pessoa.Salario,
+                cargos[pessoa.Cargo].Id,
+                (i % 3 == 0 ? filial : matriz).Id,
+                pessoa.Jornada,
+                agora));
+        }
+
+        // Duas pessoas com historico, para a linha do tempo ter o que mostrar e
+        // para a Fase 3 encontrar competencia com salario diferente do atual.
+        contratos[1].RegistrarAlteracao(
+            new DateOnly(2026, 3, 1), 3900m, cargos[1].Id, matriz.Id, 220,
+            MotivoVigencia.AlteracaoSalarial, agora);
+
+        contratos[3].RegistrarAlteracao(
+            new DateOnly(2025, 9, 1), 7600m, cargos[2].Id, filial.Id, 220,
+            MotivoVigencia.Transferencia, agora);
+        contratos[3].RegistrarAlteracao(
+            new DateOnly(2026, 4, 1), 8400m, cargos[2].Id, filial.Id, 220,
+            MotivoVigencia.AlteracaoSalarial, agora);
+
+        // Um desligado, para o cadastro nao parecer que so existe gente ativa.
+        contratos[4].Desligar(new DateOnly(2026, 6, 30));
+
+        contexto.ContratosTrabalho.AddRange(contratos);
+
+        await contexto.SaveChangesAsync(ct);
+
+        return pessoas.Length;
+    }
+
+    /// <summary>
+    /// CPF ficticio com digitos verificadores validos.
+    ///
+    /// Gerado, e nao copiado: a demo e publica e o CLAUDE.md secao 24 proibe
+    /// CPF real. Um numero valido permite exercitar a validacao sem usar o
+    /// documento de ninguem.
+    /// </summary>
+    private static string CpfFicticio(int semente)
+    {
+        var noveDigitos = (100_000_000 + semente * 7_919 % 800_000_000).ToString("D9");
+        var comPrimeiro = noveDigitos + Digito(noveDigitos, 9);
+        return comPrimeiro + Digito(comPrimeiro, 10);
+
+        static char Digito(string digitos, int quantidade)
+        {
+            var soma = 0;
+            var peso = quantidade + 1;
+
+            for (var i = 0; i < quantidade; i++)
+            {
+                soma += (digitos[i] - '0') * peso--;
+            }
+
+            var resto = soma * 10 % 11;
+            return (char)('0' + (resto == 10 ? 0 : resto));
+        }
     }
 }

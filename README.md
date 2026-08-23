@@ -2,10 +2,11 @@
 
 Plataforma B2B de gestão, cálculo, conferência e auditoria de folha de pagamento brasileira.
 
-> **Estado atual: Fase 1 — Identidade, autenticação e multiempresa.**
+> **Estado atual: Fase 2 — Cadastro funcional de RH.**
 >
-> Existe login com JWT e refresh token, cinco perfis de acesso, e organizações
-> isoladas entre si. **Nenhum cálculo de folha foi implementado ainda.** Consulte o
+> Existe login com JWT, cinco perfis, organizações isoladas entre si, e o cadastro
+> de funcionários, contratos e histórico contratual por vigência.
+> **Nenhum cálculo de folha foi implementado ainda.** Consulte o
 > [ROADMAP.md](ROADMAP.md) para as fases seguintes e o [CLAUDE.md](CLAUDE.md) para
 > as regras do projeto.
 
@@ -28,11 +29,24 @@ frontend React + TypeScript + Vite + Tailwind + shadcn/ui.
 - Isolamento entre organizações por *global query filter* do EF Core.
 - Telas de login, empresas e estabelecimentos.
 
+**Cadastro funcional (Fase 2)**
+
+- Funcionário (a pessoa) e ContratoTrabalho (o vínculo), um para muitos: readmissão
+  cria contrato novo sem apagar o anterior.
+- CPF validado por dígito verificador, **mascarado na listagem** e completo só no detalhe.
+- Catálogo de cargos por organização.
+- **Histórico por vigência**: salário, cargo, estabelecimento e jornada juntos num
+  período com `valido_de` e `valido_ate`. Toda alteração fecha a vigência anterior na
+  véspera e abre outra — nada é sobrescrito.
+- `GET /api/contratos/{id}/vigencia?data=` responde *"o que valia nesta data"*, que é a
+  pergunta que o motor de cálculo da Fase 3 vai fazer.
+- Telas de funcionários com filtro, linha do tempo do contrato e catálogo de cargos.
+
 ## O que ainda NÃO existe
 
-Funcionários, contratos, históricos, competências, rubricas, folha de pagamento,
-cálculos, memória de cálculo, importações, motor de análises, integrações,
-recursos AWS e CI/CD. Tudo isso pertence às fases seguintes do roadmap.
+Dependentes, competências, rubricas, folha de pagamento, cálculos, memória de
+cálculo, importações, motor de análises, integrações, recursos AWS e CI/CD. Tudo
+isso pertence às fases seguintes do roadmap.
 
 ---
 
@@ -189,6 +203,20 @@ Todos usam a senha de `PRISMARH_SEED_SENHA`.
 | `POST`/`PUT`/`DELETE /api/empresas` | Adm. Plataforma, Adm. Empresa | Administra |
 | `GET /api/empresas/{id}/estabelecimentos` | todos os 5 | Lista |
 | `POST`/`PUT`/`DELETE` de estabelecimentos | Adm. Plataforma, Adm. Empresa | Administra |
+| `GET /api/cargos` | todos os 5 | Catálogo de cargos |
+| `POST`/`PUT`/`DELETE /api/cargos` | + Analista de RH | Administra |
+| `GET /api/funcionarios` | todos os 5 | Lista, com filtro por nome, CPF e situação |
+| `GET /api/funcionarios/{id}` | todos os 5 | Detalhe, com CPF completo |
+| `POST`/`PUT /api/funcionarios` | + Analista de RH | Administra |
+| `GET`/`POST /api/funcionarios/{id}/contratos` | ler / + Analista | Contratos da pessoa |
+| `GET /api/contratos/{id}/vigencias` | todos os 5 | Histórico completo |
+| `GET /api/contratos/{id}/vigencia?data=` | todos os 5 | O que valia numa data |
+| `POST /api/contratos/{id}/vigencias` | + Analista de RH | Registra alteração |
+| `POST /api/contratos/{id}/desligamento` | + Analista de RH | Encerra o vínculo |
+
+> **"+ Analista de RH"** significa Administrador da Plataforma, Administrador da
+> Empresa **e** Analista de RH. O Analista mantém cadastros mas **não** administra
+> empresas — por isso a política de pessoas é separada da de empresas.
 
 ---
 
@@ -250,9 +278,34 @@ Atravessar a fronteira exige `IgnoreQueryFilters()` explícito.
 **Recurso de outra organização devolve 404, não 403.** Um 403 confirmaria que
 aquele id existe e permitiria mapear os dados do vizinho um id por vez.
 
+**CPF só aparece inteiro no detalhe.** Na listagem vem mascarado (`111.***.**7-35`).
+A busca por CPF exige o documento completo e válido — busca parcial viraria uma forma
+de descobrir documentos por tentativa.
+
+**O passado não é reescrito.** Registrar um aumento fecha a vigência anterior e abre
+uma nova; o salário antigo continua consultável. Duas garantias sustentam isso: a
+invariante no agregado `ContratoTrabalho` e uma **constraint de exclusão no
+PostgreSQL** que impede qualquer sobreposição de períodos, mesmo sob requisições
+simultâneas.
+
 **O access token nunca toca o `localStorage`.** Vive só em memória no React; o
 refresh mora num cookie `httpOnly` que o JavaScript não lê. Um XSS não rouba a
 sessão. Ao recarregar a página, a sessão é restaurada pelo cookie.
+
+### Sobre as credenciais de desenvolvimento neste repositório
+
+A senha do PostgreSQL local (`prisma_rh_dev`) e a chave JWT de desenvolvimento estão
+versionadas de propósito, e isso é uma escolha, não um descuido:
+
+- o banco é um container efêmero que só existe em `localhost`;
+- a chave diz literalmente `nao-usar-em-producao` e serve para o `dotnet run` funcionar
+  sem configuração manual;
+- **fora de Development a aplicação recusa iniciar** sem `Jwt__ChaveAssinatura` e
+  `ConnectionStrings__PrismaRh` vindos do ambiente — o `appsettings.json` base não tem
+  nenhuma credencial.
+
+A senha dos usuários de demonstração **não** está no repositório: vem de
+`PRISMARH_SEED_SENHA`, e sem ela a semeadura não roda.
 
 ### Limite conhecido
 

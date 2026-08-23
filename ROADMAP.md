@@ -390,12 +390,26 @@ Criar os dados necessários para representar a relação de trabalho.
 
 - Funcionário;
 - ContratoTrabalho;
-- HistóricoSalarial;
-- Lotação;
+- VigenciaContrato;
 - Cargo;
-- Jornada, se necessária;
-- Dependente, quando necessário;
 - SituaçãoContratual.
+
+> **Decisão registrada em 23/08/2026 — histórico por vigência única.**
+>
+> `HistóricoSalarial` constava aqui como entidade separada, ao lado de Lotação e
+> Jornada. Foi substituída por **`VigenciaContrato`**: uma única linha por período,
+> guardando salário, cargo, estabelecimento e jornada juntos, com `valido_de` e
+> `valido_ate`.
+>
+> Motivo: a pergunta que o motor de cálculo da Fase 3 fará para cada contrato, em
+> cada competência, é sempre *"como este contrato estava nesta data?"*. Com tudo
+> num registro só, isso é uma consulta. Com históricos separados por tipo, seriam
+> três ou mais junções por faixa de data — e cada nova dimensão futura viraria mais
+> uma tabela e mais uma junção.
+>
+> Lotação e Jornada deixam de ser entidades e passam a ser campos da vigência.
+> Dependente sai da Fase 2 e entra na **Fase 4D**, junto com o IRRF, que é a regra
+> que realmente usa dependentes.
 
 ## Dados mínimos
 
