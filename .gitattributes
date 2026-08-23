@@ -1,0 +1,24 @@
+# Normaliza fim de linha no repositorio.
+#
+# Sem isto, quem trabalha no Windows commita CRLF e quem esta no Linux ou no CI
+# ve o arquivo inteiro como alterado. O repositorio guarda sempre LF; cada
+# maquina recebe o que o seu sistema usa.
+* text=auto eol=lf
+
+# Scripts que PRECISAM de CRLF para rodar no Windows.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Binarios: nunca converter.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.dll binary
+*.exe binary
