@@ -58,5 +58,14 @@ public sealed class RubricaConfiguracao : IEntityTypeConfiguration<Rubrica>
             .HasDatabaseName("ux_rubricas_inss_ativa")
             .IsUnique()
             .HasFilter($"estrategia = {(int)EstrategiaRubrica.InssProgressivo} AND ativa");
+
+        // E para o FGTS: duas rubricas ativas dobrariam o deposito informado.
+        // O erro seria pior que o do INSS por ser silencioso - como o FGTS nao
+        // entra no liquido, o holerite continuaria fechando certo enquanto a
+        // guia de recolhimento sairia com o dobro.
+        builder.HasIndex(r => r.IdOrganizacao)
+            .HasDatabaseName("ux_rubricas_fgts_ativa")
+            .IsUnique()
+            .HasFilter($"estrategia = {(int)EstrategiaRubrica.FgtsMensal} AND ativa");
     }
 }

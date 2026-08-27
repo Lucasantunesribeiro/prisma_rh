@@ -32,4 +32,13 @@ public enum EstrategiaRubrica
     /// vem de TabelaInss, que exige fonte oficial registrada.
     /// </summary>
     InssProgressivo = 3,
+
+    /// <summary>
+    /// O sistema calcula: deposito de FGTS do empregador sobre a base de FGTS,
+    /// pela aliquota vigente na competencia (Fase 4C).
+    ///
+    /// E INFORMATIVA: nao sai do salario de ninguem. FGTS e obrigacao da
+    /// empresa, nao desconto do funcionario.
+    /// </summary>
+    FgtsMensal = 4,
 }

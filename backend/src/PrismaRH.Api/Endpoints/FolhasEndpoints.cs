@@ -321,6 +321,7 @@ public static class FolhasEndpoints
             folha.Calcular(
                 contratos, rubricaSalario, catalogo,
                 await ParametrosInssAsync(db, folha.Competencia, ct),
+                await ParametrosFgtsAsync(db, folha.Competencia, ct),
                 relogio.Agora);
         }
         catch (InvalidOperationException erro)
@@ -387,7 +388,8 @@ public static class FolhasEndpoints
         {
             folha.AdicionarLancamentoManual(
                 idHolerite, rubrica, requisicao.Valor, requisicao.Referencia,
-                await ParametrosInssAsync(db, folha.Competencia, ct));
+                await ParametrosInssAsync(db, folha.Competencia, ct),
+                await ParametrosFgtsAsync(db, folha.Competencia, ct));
         }
         catch (InvalidOperationException erro)
         {
@@ -419,7 +421,8 @@ public static class FolhasEndpoints
         {
             removeu = folha.RemoverLancamento(
                 idHolerite, idLancamento,
-                await ParametrosInssAsync(db, folha.Competencia, ct));
+                await ParametrosInssAsync(db, folha.Competencia, ct),
+                await ParametrosFgtsAsync(db, folha.Competencia, ct));
         }
         catch (InvalidOperationException erro)
         {
@@ -471,6 +474,29 @@ public static class FolhasEndpoints
         var tabelas = await db.TabelasInss.AsNoTracking().Include(t => t.Faixas).ToListAsync(ct);
 
         return ParametrosInss.Montar(rubrica, tabelas, competencia);
+    }
+
+    /// <summary>
+    /// Monta os parametros de FGTS para a competencia da folha.
+    ///
+    /// Null quando a organizacao nao tem rubrica de FGTS ativa ou quando
+    /// nenhuma aliquota comecou ate ali. Nos dois casos a folha calcula sem a
+    /// linha informativa, e o liquido nao muda - FGTS nunca entrou nele.
+    /// </summary>
+    private static async Task<ParametrosFgts?> ParametrosFgtsAsync(
+        PrismaRhDbContext db, Competencia competencia, CancellationToken ct)
+    {
+        var rubrica = await db.Rubricas.FirstOrDefaultAsync(
+            r => r.Ativa && r.Estrategia == EstrategiaRubrica.FgtsMensal, ct);
+
+        if (rubrica is null)
+        {
+            return null;
+        }
+
+        var tabelas = await db.TabelasFgts.AsNoTracking().ToListAsync(ct);
+
+        return ParametrosFgts.Montar(rubrica, tabelas, competencia);
     }
 
     private static Task<FolhaPagamento?> CarregarParaEscritaAsync(

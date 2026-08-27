@@ -85,17 +85,40 @@ const HOLERITE = {
   ],
 }
 
+/** Mesmo holerite, com a linha informativa do FGTS (Fase 4C). */
+const HOLERITE_COM_FGTS = {
+  ...HOLERITE,
+  lancamentos: [
+    ...HOLERITE.lancamentos,
+    {
+      id: 'l3',
+      codigoRubrica: 'FGTS',
+      nomeRubrica: 'FGTS sobre a folha',
+      tipo: 'Informativo',
+      origem: 'Calculado',
+      referencia: null,
+      valor: 265.6,
+      ordem: 3,
+      basesIncidentes: 'Nenhuma',
+      memoria: [
+        { ordem: 1, descricao: 'Base de calculo do FGTS', expressao: '3.320,00', valor: 3320 },
+        { ordem: 2, descricao: 'Deposito do empregador, aliquota 8%', expressao: '3.320,00 x 8%', valor: 265.6 },
+      ],
+    },
+  ],
+}
+
 const RUBRICAS = [
   { id: 'r1', codigo: 'SAL', nome: 'Salário base', tipo: 'Provento', estrategia: 'SalarioBaseProporcional', basesIncidentes: 'Inss, Fgts, Irrf', ativa: true },
   { id: 'r2', codigo: 'VT', nome: 'Vale-transporte', tipo: 'Desconto', estrategia: 'ValorInformado', basesIncidentes: 'Nenhuma', ativa: true },
 ]
 
-function renderizar(perfil: UsuarioAutenticado['perfil'], folha = FOLHA) {
+function renderizar(perfil: UsuarioAutenticado['perfil'], folha = FOLHA, holerite = HOLERITE) {
   vi.stubGlobal(
     'fetch',
     vi.fn().mockImplementation((url: string) => {
       const texto = String(url)
-      if (texto.includes('/funcionarios/')) return Promise.resolve(responder(HOLERITE))
+      if (texto.includes('/funcionarios/')) return Promise.resolve(responder(holerite))
       if (texto.includes('/api/rubricas')) return Promise.resolve(responder(RUBRICAS))
       if (texto.includes('/api/folhas/')) return Promise.resolve(responder(folha))
       return Promise.resolve(responder({}))
@@ -207,5 +230,42 @@ describe('FolhaDetalhe', () => {
     // O vale-transporte é desconto: não compõe base nenhuma.
     expect(within(secao).queryByText(/VT/)).not.toBeInTheDocument()
     expect(within(secao).getAllByText(/R\$\s*3\.320,00/)).toHaveLength(3)
+  })
+
+  it('sem informativo, o holerite não mostra a coluna', async () => {
+    renderizar('AdministradorEmpresa')
+
+    const usuario = userEvent.setup()
+    const linha = (await screen.findAllByText('Bruno Carvalho Lima'))[0].closest('tr')!
+    await usuario.click(linha)
+
+    await screen.findByText('Bases de cálculo')
+
+    // A coluna só aparece quando há o que pôr nela: o holerite comum
+    // continua com duas colunas de dinheiro.
+    expect(screen.queryByRole('columnheader', { name: 'Informativo' })).not.toBeInTheDocument()
+  })
+
+  it('mostra o FGTS em coluna própria, fora do líquido', async () => {
+    renderizar('AdministradorEmpresa', FOLHA, HOLERITE_COM_FGTS)
+
+    const usuario = userEvent.setup()
+    const linha = (await screen.findAllByText('Bruno Carvalho Lima'))[0].closest('tr')!
+    await usuario.click(linha)
+
+    expect(await screen.findByRole('columnheader', { name: 'Informativo' })).toBeInTheDocument()
+
+    const linhaFgts = (await screen.findByText('FGTS sobre a folha')).closest('tr')!
+    const celulas = within(linhaFgts).getAllByRole('cell')
+
+    // Proventos e Descontos vazios, valor na coluna informativa: é o que
+    // prova que o depósito do empregador não foi somado ao holerite.
+    expect(celulas[3]).toHaveTextContent('')
+    expect(celulas[4]).toHaveTextContent('')
+    expect(celulas[5]).toHaveTextContent(/R\$\s*265,60/)
+
+    // O líquido continua sendo proventos menos descontos.
+    expect(screen.getAllByText(/R\$\s*3\.590,00/).length).toBeGreaterThan(0)
+    expect(screen.getByText(/não entram\s+no líquido/)).toBeInTheDocument()
   })
 })

@@ -90,7 +90,10 @@ public sealed class FolhaFuncionario
     /// a cada clique em "calcular", e a folha viraria um trabalho de Sisifo.
     /// </summary>
     internal void AplicarCalculo(
-        ApuracaoSalarioBase apuracao, Rubrica rubricaSalario, ParametrosInss? inss)
+        ApuracaoSalarioBase apuracao,
+        Rubrica rubricaSalario,
+        ParametrosInss? inss,
+        ParametrosFgts? fgts)
     {
         ArgumentNullException.ThrowIfNull(apuracao);
         ArgumentNullException.ThrowIfNull(rubricaSalario);
@@ -118,6 +121,7 @@ public sealed class FolhaFuncionario
         Reordenar();
         RecalcularTotais();
         ApurarInss(inss);
+        ApurarFgts(fgts);
     }
 
     /// <summary>
@@ -193,7 +197,11 @@ public sealed class FolhaFuncionario
     }
 
     internal LancamentoFolha AdicionarManual(
-        Rubrica rubrica, decimal valor, string? referencia, ParametrosInss? inss)
+        Rubrica rubrica,
+        decimal valor,
+        string? referencia,
+        ParametrosInss? inss,
+        ParametrosFgts? fgts)
     {
         ArgumentNullException.ThrowIfNull(rubrica);
 
@@ -223,11 +231,12 @@ public sealed class FolhaFuncionario
         Reordenar();
         RecalcularTotais();
         ApurarInss(inss);
+        ApurarFgts(fgts);
 
         return lancamento;
     }
 
-    internal bool RemoverLancamento(Guid idLancamento, ParametrosInss? inss)
+    internal bool RemoverLancamento(Guid idLancamento, ParametrosInss? inss, ParametrosFgts? fgts)
     {
         var alvo = _lancamentos.SingleOrDefault(l => l.Id == idLancamento);
 
@@ -247,8 +256,51 @@ public sealed class FolhaFuncionario
         Reordenar();
         RecalcularTotais();
         ApurarInss(inss);
+        ApurarFgts(fgts);
 
         return true;
+    }
+
+    /// <summary>
+    /// Recalcula o deposito de FGTS sobre a base ja apurada.
+    ///
+    /// Roda DEPOIS do INSS por clareza de leitura do holerite, nao por
+    /// dependencia: o FGTS incide sobre a base de FGTS, e o INSS e desconto,
+    /// que nao compoe base alguma. A ordem das duas apuracoes nao muda
+    /// resultado nenhum.
+    ///
+    /// Nao mexe nos totais: a rubrica e informativa e EfeitoNoLiquido devolve
+    /// zero para ela. Chamar RecalcularTotais aqui seria inofensivo, e nao
+    /// chamar deixa explicito que FGTS nao entra no liquido.
+    /// </summary>
+    private void ApurarFgts(ParametrosFgts? fgts)
+    {
+        // Identifica pela estrategia congelada, como o INSS: o holerite vem do
+        // banco sem memoria nenhuma.
+        _lancamentos.RemoveAll(l => l.Estrategia == EstrategiaRubrica.FgtsMensal);
+
+        if (fgts is null)
+        {
+            Reordenar();
+            return;
+        }
+
+        var apuracao = CalculadoraFgts.Apurar(BaseDe(BaseCalculo.Fgts), fgts.Tabela);
+
+        var lancamento = new LancamentoFolha(
+            IdOrganizacao,
+            Id,
+            fgts.Rubrica,
+            OrigemLancamento.Calculado,
+            apuracao.Valor,
+            referencia: null,
+            ordem: _lancamentos.Count + 1);
+
+        lancamento.RegistrarMemoria(apuracao.Passos);
+
+        _lancamentos.Add(lancamento);
+
+        Reordenar();
     }
 
     /// <summary>

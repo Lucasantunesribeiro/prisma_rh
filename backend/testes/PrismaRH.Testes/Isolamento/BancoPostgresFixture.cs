@@ -76,6 +76,10 @@ public sealed class BancoPostgresFixture : IAsyncLifetime
     public Guid IdEmpresaC { get; private set; }
     public Guid IdEstabelecimentoC { get; private set; }
 
+    public Guid IdOrganizacaoD { get; private set; }
+    public Guid IdEmpresaD { get; private set; }
+    public Guid IdEstabelecimentoD { get; private set; }
+
     public const string Senha = "SenhaDeTeste#2026";
 
     public const string EmailAdminA = "admin@a.teste";
@@ -96,6 +100,17 @@ public sealed class BancoPostgresFixture : IAsyncLifetime
     /// conjuntos deterministicos.
     /// </summary>
     public const string EmailAdminC = "admin@c.teste";
+
+    /// <summary>
+    /// Organizacao D existe so para os testes de FGTS, pela mesma razao da C.
+    ///
+    /// A rubrica de FGTS ativa acrescenta UMA LINHA a todo holerite da
+    /// organizacao. Ela nao mexe no liquido - FGTS e do empregador -, mas
+    /// FolhaMensalTestes conta lancamentos (Assert.Single, Assert.Equal(2)).
+    /// Ligar FGTS na organizacao A faria aqueles testes falharem conforme a
+    /// ORDEM de execucao, e o defeito pareceria estar na Fase 3.
+    /// </summary>
+    public const string EmailAdminD = "admin@d.teste";
 
     /// <summary>
     /// CPF valido e unico por semente. Os testes desta colecao compartilham o
@@ -153,7 +168,8 @@ public sealed class BancoPostgresFixture : IAsyncLifetime
         var orgA = new Organizacao("Organizacao A", agora);
         var orgB = new Organizacao("Organizacao B", agora);
         var orgC = new Organizacao("Organizacao C", agora);
-        db.Organizacoes.AddRange(orgA, orgB, orgC);
+        var orgD = new Organizacao("Organizacao D", agora);
+        db.Organizacoes.AddRange(orgA, orgB, orgC, orgD);
 
         db.Usuarios.AddRange(
             new Usuario(orgA.Id, "Admin A", EmailAdminA, hash, Perfil.AdministradorEmpresa, agora),
@@ -162,16 +178,19 @@ public sealed class BancoPostgresFixture : IAsyncLifetime
             new Usuario(orgA.Id, "Auditor A", EmailAuditorA, hash, Perfil.Auditor, agora),
             new Usuario(orgA.Id, "Plataforma A", EmailPlataformaA, hash, Perfil.AdministradorPlataforma, agora),
             new Usuario(orgB.Id, "Admin B", EmailAdminB, hash, Perfil.AdministradorEmpresa, agora),
-            new Usuario(orgC.Id, "Admin C", EmailAdminC, hash, Perfil.AdministradorEmpresa, agora));
+            new Usuario(orgC.Id, "Admin C", EmailAdminC, hash, Perfil.AdministradorEmpresa, agora),
+            new Usuario(orgD.Id, "Admin D", EmailAdminD, hash, Perfil.AdministradorEmpresa, agora));
 
         var empresaA = new Empresa(orgA.Id, "Empresa da A", Cnpj.Criar("11222333000181"), agora);
         var empresaB = new Empresa(orgB.Id, "Empresa da B", Cnpj.Criar("11444777000161"), agora);
         var empresaC = new Empresa(orgC.Id, "Empresa da C", Cnpj.Criar("34028316000103"), agora);
-        db.Empresas.AddRange(empresaA, empresaB, empresaC);
+        var empresaD = new Empresa(orgD.Id, "Empresa da D", Cnpj.Criar("60746948000112"), agora);
+        db.Empresas.AddRange(empresaA, empresaB, empresaC, empresaD);
 
         var estabA = new Estabelecimento(orgA.Id, empresaA.Id, "001", "Matriz A", agora);
         var estabC = new Estabelecimento(orgC.Id, empresaC.Id, "001", "Matriz C", agora);
-        db.Estabelecimentos.AddRange(estabA, estabC);
+        var estabD = new Estabelecimento(orgD.Id, empresaD.Id, "001", "Matriz D", agora);
+        db.Estabelecimentos.AddRange(estabA, estabC, estabD);
 
         // Parametro legal FEDERAL: nao pertence a organizacao alguma, entao
         // entra uma vez so e vale para as duas. Mesma tabela da semeadura de
@@ -187,6 +206,14 @@ public sealed class BancoPostgresFixture : IAsyncLifetime
             ],
             agora));
 
+        // Tambem federal: uma aliquota de FGTS desde 1990 (Lei 8.036/90,
+        // art. 15). Os testes de FGTS conferem o valor real.
+        db.TabelasFgts.Add(new TabelaFgts(
+            new DateOnly(1990, 5, 11),
+            0.08m,
+            "Lei n. 8.036, de 11/05/1990, art. 15 - deposito mensal de 8% da remuneracao",
+            agora));
+
         await db.SaveChangesAsync();
 
         IdOrganizacaoA = orgA.Id;
@@ -197,6 +224,9 @@ public sealed class BancoPostgresFixture : IAsyncLifetime
         IdOrganizacaoC = orgC.Id;
         IdEmpresaC = empresaC.Id;
         IdEstabelecimentoC = estabC.Id;
+        IdOrganizacaoD = orgD.Id;
+        IdEmpresaD = empresaD.Id;
+        IdEstabelecimentoD = estabD.Id;
     }
 
     /// <summary>

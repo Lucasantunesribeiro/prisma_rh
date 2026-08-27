@@ -84,9 +84,35 @@ public static class SemeadorDesenvolvimento
             log.LogInformation("Semeadura: tabela de INSS vigente desde 01/01/2026 cadastrada.");
         }
 
+        if (!await contexto.TabelasFgts.AnyAsync(ct))
+        {
+            // Aliquota de 8% sobre a remuneracao, vigente desde a lei que
+            // criou o regime atual (CLAUDE.md secao 29).
+            contexto.TabelasFgts.Add(new TabelaFgts(
+                new DateOnly(1990, 5, 11),
+                0.08m,
+                "Lei n. 8.036, de 11/05/1990, art. 15 - deposito mensal de 8% da remuneracao",
+                agora));
+
+            await contexto.SaveChangesAsync(ct);
+            log.LogInformation("Semeadura: aliquota de FGTS cadastrada.");
+        }
+
         if (await contexto.Rubricas.IgnoreQueryFilters().AnyAsync(ct))
         {
-            log.LogInformation("Semeadura: folha ja existia, nada a fazer.");
+            // O catalogo ja existe, mas pode ter nascido numa fase anterior.
+            // As rubricas que as fases 4B e 4C introduziram sao acrescentadas
+            // aqui, uma a uma - sem isso, um banco criado na Fase 3 nunca
+            // passaria a calcular INSS nem FGTS, e ninguem entenderia por que
+            // a demo esta incompleta.
+            var acrescentadas = await CompletarCatalogoAsync(contexto, prisma, agora, ct);
+
+            log.LogInformation(
+                acrescentadas.Length == 0
+                    ? "Semeadura: folha ja existia, nada a fazer."
+                    : "Semeadura: rubricas acrescentadas ao catalogo existente: {Rubricas}.",
+                string.Join(", ", acrescentadas));
+
             return;
         }
 
@@ -256,6 +282,57 @@ public static class SemeadorDesenvolvimento
         return pessoas.Length;
     }
 
+    /// <summary>
+    /// Acrescenta ao catalogo existente as rubricas calculadas que uma fase
+    /// posterior introduziu.
+    ///
+    /// So cria o que falta, e so quando NAO ha uma ativa com a mesma
+    /// estrategia - o indice unico parcial permite uma por organizacao, e
+    /// tentar inserir a segunda quebraria a subida da API.
+    ///
+    /// Nao mexe nas folhas ja calculadas: elas continuam como foram fechadas
+    /// (CLAUDE.md secao 4.3). A rubrica nova entra no proximo calculo.
+    /// </summary>
+    private static async Task<string[]> CompletarCatalogoAsync(
+        PrismaRhDbContext contexto,
+        Organizacao prisma,
+        DateTimeOffset agora,
+        CancellationToken ct)
+    {
+        var acrescentadas = new List<string>();
+
+        // Fase 4B: desconto calculado, sem incidencia - desconto nao compoe base.
+        if (!await contexto.Rubricas.IgnoreQueryFilters().AnyAsync(
+                r => r.IdOrganizacao == prisma.Id && r.Ativa
+                     && r.Estrategia == EstrategiaRubrica.InssProgressivo, ct))
+        {
+            contexto.Rubricas.Add(new Rubrica(
+                prisma.Id, "INSS", "INSS sobre a folha",
+                TipoRubrica.Desconto, EstrategiaRubrica.InssProgressivo, BaseCalculo.Nenhuma, agora));
+
+            acrescentadas.Add("INSS");
+        }
+
+        // Fase 4C: informativa, porque FGTS e deposito do empregador.
+        if (!await contexto.Rubricas.IgnoreQueryFilters().AnyAsync(
+                r => r.IdOrganizacao == prisma.Id && r.Ativa
+                     && r.Estrategia == EstrategiaRubrica.FgtsMensal, ct))
+        {
+            contexto.Rubricas.Add(new Rubrica(
+                prisma.Id, "FGTS", "FGTS sobre a folha",
+                TipoRubrica.Informativo, EstrategiaRubrica.FgtsMensal, BaseCalculo.Nenhuma, agora));
+
+            acrescentadas.Add("FGTS");
+        }
+
+        if (acrescentadas.Count > 0)
+        {
+            await contexto.SaveChangesAsync(ct);
+        }
+
+        return [.. acrescentadas];
+    }
+
     // -----------------------------------------------------------------------
     // Fase 3: rubricas e as duas primeiras folhas
     // -----------------------------------------------------------------------
@@ -302,12 +379,20 @@ public static class SemeadorDesenvolvimento
             prisma.Id, "INSS", "INSS sobre a folha",
             TipoRubrica.Desconto, EstrategiaRubrica.InssProgressivo, BaseCalculo.Nenhuma, agora);
 
-        Rubrica[] catalogo = [salario, comissao, valeTransporte, adiantamento, inss];
+        // Fase 4C: informativa, porque FGTS e deposito do empregador e nao sai
+        // do salario de ninguem. Nao compoe base alguma - ela incide sobre a
+        // base, nao a forma.
+        var fgts = new Rubrica(
+            prisma.Id, "FGTS", "FGTS sobre a folha",
+            TipoRubrica.Informativo, EstrategiaRubrica.FgtsMensal, BaseCalculo.Nenhuma, agora);
+
+        Rubrica[] catalogo = [salario, comissao, valeTransporte, adiantamento, inss, fgts];
 
         contexto.Rubricas.AddRange(catalogo);
         await contexto.SaveChangesAsync(ct);
 
         var tabelasInss = await contexto.TabelasInss.Include(x => x.Faixas).ToListAsync(ct);
+        var tabelasFgts = await contexto.TabelasFgts.ToListAsync(ct);
 
         var contratos = await contexto.ContratosTrabalho.IgnoreQueryFilters()
             .Include(c => c.Vigencias)
@@ -324,34 +409,36 @@ public static class SemeadorDesenvolvimento
         // e nao a mais recente cadastrada.
         var inssAnterior = ParametrosInss.Montar(inss, tabelasInss, anterior);
         var inssAtual = ParametrosInss.Montar(inss, tabelasInss, atual);
+        var fgtsAnterior = ParametrosFgts.Montar(fgts, tabelasFgts, anterior);
+        var fgtsAtual = ParametrosFgts.Montar(fgts, tabelasFgts, atual);
 
         // A folha do mes passado nasce FECHADA, para a demo ter um fato
         // historico: alterar contrato depois disso nao muda mais nada nela.
         var fechada = new FolhaPagamento(prisma.Id, empresa.Id, anterior, agora);
-        fechada.Calcular(contratos, salario, catalogo, inssAnterior, agora);
+        fechada.Calcular(contratos, salario, catalogo, inssAnterior, fgtsAnterior, agora);
 
         foreach (var holerite in fechada.Funcionarios.Take(2))
         {
-            fechada.AdicionarLancamentoManual(holerite.Id, valeTransporte, 180m, "22 dias", inssAnterior);
+            fechada.AdicionarLancamentoManual(holerite.Id, valeTransporte, 180m, "22 dias", inssAnterior, fgtsAnterior);
         }
 
         if (fechada.Funcionarios.Count > 0)
         {
-            fechada.AdicionarLancamentoManual(fechada.Funcionarios[0].Id, comissao, 450m, null, inssAnterior);
+            fechada.AdicionarLancamentoManual(fechada.Funcionarios[0].Id, comissao, 450m, null, inssAnterior, fgtsAnterior);
         }
 
         // Recalcula ANTES de fechar, de proposito: e o cenario que prova que
         // reprocessar preserva o que foi lancado a mao.
-        fechada.Calcular(contratos, salario, catalogo, inssAnterior, agora);
+        fechada.Calcular(contratos, salario, catalogo, inssAnterior, fgtsAnterior, agora);
         fechada.Fechar(agora);
 
         // A do mes corrente fica calculada e aberta, para dar o que operar.
         var aberta = new FolhaPagamento(prisma.Id, empresa.Id, atual, agora);
-        aberta.Calcular(contratos, salario, catalogo, inssAtual, agora);
+        aberta.Calcular(contratos, salario, catalogo, inssAtual, fgtsAtual, agora);
 
         if (aberta.Funcionarios.Count > 0)
         {
-            aberta.AdicionarLancamentoManual(aberta.Funcionarios[0].Id, adiantamento, 600m, null, inssAtual);
+            aberta.AdicionarLancamentoManual(aberta.Funcionarios[0].Id, adiantamento, 600m, null, inssAtual, fgtsAtual);
         }
 
         contexto.Folhas.AddRange(fechada, aberta);

@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
-import { listarTabelasInss, type FaixaInss, type TabelaInss } from '@/api/folha'
+import {
+  listarTabelasFgts,
+  listarTabelasInss,
+  type FaixaInss,
+  type TabelaFgts,
+  type TabelaInss,
+} from '@/api/folha'
 import { DataTable, type Coluna } from '@/components/sistema/DataTable'
 import {
   CabecalhoPagina,
@@ -17,10 +23,10 @@ const formatarData = (iso: string) => DATA.format(new Date(`${iso.slice(0, 10)}T
 /**
  * Os parâmetros legais que o cálculo usa.
  *
- * Existe porque a Fase 4B guarda faixas, alíquotas, teto, vigência e fonte no
- * banco, e nenhum deles aparecia na interface: o analista via o desconto e não
- * tinha como conferir de onde ele saiu. Aqui a tabela é mostrada como ela é —
- * com a portaria que a originou.
+ * Existe porque as Fases 4B e 4C guardam faixas, alíquotas, teto, vigência e
+ * fonte no banco, e nenhum deles aparecia na interface: o analista via o
+ * desconto e não tinha como conferir de onde ele saiu. Aqui cada tabela é
+ * mostrada como ela é — com a lei ou portaria que a originou.
  *
  * Somente leitura. Cadastrar vigência é operação de Administrador da
  * Plataforma e hoje acontece pela API; oferecer o formulário a quem receberia
@@ -30,6 +36,7 @@ export default function Parametros() {
   usePagina([{ texto: 'Folha' }, { texto: 'Parâmetros legais' }])
 
   const [tabelas, definirTabelas] = useState<TabelaInss[]>([])
+  const [fgts, definirFgts] = useState<TabelaFgts[]>([])
   const [carregando, definirCarregando] = useState(true)
   const [erro, definirErro] = useState<string | null>(null)
 
@@ -38,7 +45,12 @@ export default function Parametros() {
     definirErro(null)
 
     try {
-      definirTabelas(await listarTabelasInss())
+      // Em paralelo: são duas rotas independentes, e encadear faria a tela
+      // esperar a soma dos dois tempos sem motivo.
+      const [inss, deposito] = await Promise.all([listarTabelasInss(), listarTabelasFgts()])
+
+      definirTabelas(inss)
+      definirFgts(deposito)
     } catch (falha) {
       definirErro(
         falha instanceof Error ? falha.message : 'Não foi possível carregar os parâmetros legais.',
@@ -65,32 +77,82 @@ export default function Parametros() {
 
       {!carregando && erro && <EstadoErro mensagem={erro} aoTentarNovamente={() => void carregar()} />}
 
-      {!carregando && !erro && tabelas.length === 0 && (
+      {!carregando && !erro && tabelas.length === 0 && fgts.length === 0 && (
         <EstadoVazio
           titulo="Nenhuma tabela cadastrada"
-          descricao="Sem tabela vigente, a folha calcula sem o desconto de INSS."
+          descricao="Sem parâmetro vigente, a folha calcula sem os encargos correspondentes."
         />
       )}
 
-      {!carregando && !erro && tabelas.length > 0 && (
+      {!carregando && !erro && (tabelas.length > 0 || fgts.length > 0) && (
         <section className="space-y-8">
-          <div>
-            <CabecalhoSecao
-              titulo="INSS — contribuição do segurado"
-              descricao="Alíquotas progressivas: cada faixa incide apenas sobre a parcela da base que lhe cabe."
-            />
+          {tabelas.length > 0 && (
+            <div>
+              <CabecalhoSecao
+                titulo="INSS — contribuição do segurado"
+                descricao="Alíquotas progressivas: cada faixa incide apenas sobre a parcela da base que lhe cabe."
+              />
 
-            <div className="space-y-6">
-              {tabelas.map((tabela) => (
-                <TabelaVigencia key={tabela.id} tabela={tabela} />
-              ))}
+              <div className="space-y-6">
+                {tabelas.map((tabela) => (
+                  <TabelaVigencia key={tabela.id} tabela={tabela} />
+                ))}
+              </div>
             </div>
-          </div>
+          )}
+
+          {fgts.length > 0 && (
+            <div>
+              <CabecalhoSecao
+                titulo="FGTS — depósito do empregador"
+                descricao="Alíquota única, sem teto e sem faixas. Não sai do salário do funcionário: aparece no holerite como informativo e não entra no líquido."
+              />
+
+              <DataTable
+                rotulo="Alíquotas de FGTS por vigência"
+                colunas={COLUNAS_FGTS}
+                itens={fgts}
+                chave={(t) => t.id}
+                rodape={
+                  <span className="text-xs text-muted-foreground">
+                    A alíquota incide sobre a remuneração inteira — quem recebe acima do teto do
+                    INSS recolhe FGTS sobre tudo.
+                  </span>
+                }
+              />
+            </div>
+          )}
         </section>
       )}
     </>
   )
 }
+
+const COLUNAS_FGTS: Coluna<TabelaFgts>[] = [
+  {
+    cabecalho: 'Vigente a partir de',
+    celula: (t) => (
+      <div className="flex items-center gap-2">
+        <span className="tabular font-medium">{formatarData(t.vigenciaInicio)}</span>
+        {t.vigente && <StatusBadge tom="sucesso">Em vigor</StatusBadge>}
+      </div>
+    ),
+  },
+  {
+    cabecalho: 'Alíquota',
+    numerica: true,
+    largura: '120px',
+    celula: (t) => (
+      <span className="tabular font-medium">
+        {t.aliquotaPercentual.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%
+      </span>
+    ),
+  },
+  {
+    cabecalho: 'Fonte',
+    celula: (t) => <span className="text-[13px] text-muted-foreground">{t.fonte}</span>,
+  },
+]
 
 function TabelaVigencia({ tabela }: { tabela: TabelaInss }) {
   const colunas: Coluna<FaixaInss>[] = [

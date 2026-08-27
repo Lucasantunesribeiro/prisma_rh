@@ -265,3 +265,17 @@ export interface TabelaInss {
 
 /** Parâmetro legal federal: a mesma tabela vale para todas as organizações. */
 export const listarTabelasInss = (): Promise<TabelaInss[]> => obter('/api/tabelas-inss')
+
+export interface TabelaFgts {
+  id: string
+  vigenciaInicio: string
+  /** Fração: 8% chega como 0.08. */
+  aliquota: number
+  /** A mesma alíquota como percentual, para não refazer a conta na tela. */
+  aliquotaPercentual: number
+  fonte: string
+  vigente: boolean
+}
+
+/** Também federal, e sem faixas: o FGTS é uma alíquota única sobre a base. */
+export const listarTabelasFgts = (): Promise<TabelaFgts[]> => obter('/api/tabelas-fgts')

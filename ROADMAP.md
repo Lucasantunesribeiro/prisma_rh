@@ -1011,7 +1011,7 @@ Implementar INSS de acordo com regras oficiais vigentes.
 | 1 | Ameaças introduzidas | Tabela legal errada ou adulterada muda o desconto de **todas as organizações** de uma vez, e o holerite continua fechando. Duas rubricas de INSS ativas descontariam duas vezes. Base desatualizada produzindo contribuição stale após lançamento manual. |
 | 2 | Controles | Fonte oficial **obrigatória** no construtor. Alíquota em fração, com recusa de percentual. Limites estritamente crescentes. Índice único por vigência e índice único parcial de uma rubrica de INSS ativa por organização. INSS reapurado ao calcular, ao lançar e ao remover. Rubrica de INSS recusa valor digitado. |
 | 3 | Testes de segurança | Administrador de Empresa recebe **403** ao tentar cadastrar tabela. Tabela sem fonte devolve 400. Rubrica de INSS como provento devolve 400. |
-| 4 | Impacto multiempresa | `tabelas_inss` é a **única tabela do sistema sem `id_organizacao`** e sem filtro global. INSS é lei federal: a mesma vale para todos, e não há dado de ninguém ali — só número publicado em portaria. Dar uma cópia por organização permitiria que uma delas descontasse errado. A contrapartida é a escrita restrita à plataforma. |
+| 4 | Impacto multiempresa | `tabelas_inss` e `faixas_inss` não têm `id_organizacao` nem filtro global — eram as únicas assim até a 4C acrescentar `tabelas_fgts`, pelo mesmo motivo. INSS é lei federal: a mesma vale para todos, e não há dado de ninguém ali — só número publicado em portaria. Dar uma cópia por organização permitiria que uma delas descontasse errado. A contrapartida é a escrita restrita à plataforma. |
 | 5 | Exposição de dados | Nenhum dado pessoal novo. A tabela é pública por natureza. O valor do desconto herda a classificação do holerite. |
 | 6 | Permissões | Leitura para os cinco perfis — o analista precisa conferir a conta. Escrita **só** para Administrador da Plataforma. |
 | 7 | Logging e auditoria | Cadastrar ou alterar tabela legal é dos eventos mais sensíveis do produto: **candidato prioritário** à trilha formal da Fase 7 (`CLAUDE.md §24.17` já o lista). |
@@ -1022,11 +1022,32 @@ Implementar INSS de acordo com regras oficiais vigentes.
 
 ---
 
+### Security Gate — Fase 4C
+
+| # | Ponto | Resposta |
+|---|---|---|
+| 1 | Ameaças introduzidas | Alíquota adulterada muda o depósito de **todas as organizações**. Rubrica de FGTS cadastrada como desconto tiraria 8% do salário de todo funcionário com o holerite ainda fechando. Duas rubricas ativas dobrariam a guia. Alíquota digitada como `8` em vez de `0.08` depositaria oito vezes o salário. Depósito stale após lançamento manual. |
+| 2 | Controles | Fonte oficial **obrigatória** no construtor. Alíquota em fração, com recusa explícita de percentual. Invariante `Informativo` na rubrica. Invariante "não compõe base". Índice único por vigência (`ux_tabelas_fgts_vigencia_inicio`) e índice único parcial de uma rubrica de FGTS ativa por organização (`ux_rubricas_fgts_ativa`). FGTS reapurado ao calcular, ao lançar e ao remover. Rubrica de FGTS recusa valor digitado (**409**, mesmo contrato do INSS). |
+| 3 | Testes de segurança | Administrador de Empresa recebe **403** ao cadastrar alíquota. Alíquota `8` devolve **400**. Alíquota sem fonte devolve **400**. Vigência repetida devolve **409**. Rubrica de FGTS como desconto devolve **400**. Rubrica de FGTS de uma organização não aparece para outra. Contraprova: a tabela federal **é lida** por todas. |
+| 4 | Impacto multiempresa | `tabelas_fgts` não tem `id_organizacao` nem filtro global, pela mesma razão da `tabelas_inss` — lei federal, sem dado de ninguém. A **rubrica** de FGTS, essa sim, é da organização e passa pelo filtro global; há teste de isolamento contra PostgreSQL real provando os dois lados. Organização **D** foi criada na fixture só para esses testes: ligar FGTS na organização A acrescentaria uma linha a todo holerite e faria os testes da Fase 3 falharem conforme a **ordem** de execução. |
+| 5 | Exposição de dados | Nenhum dado pessoal novo. A alíquota é pública por natureza. O valor do depósito herda a classificação do holerite. |
+| 6 | Permissões | Leitura da alíquota para os cinco perfis — o analista precisa conferir de onde saiu o valor. Escrita **só** para Administrador da Plataforma. Rubrica de FGTS segue a política de rubricas (`AdministrarEmpresas`). |
+| 7 | Logging e auditoria | Cadastrar alíquota legal é evento sensível, pelo mesmo motivo da 4B: **candidato prioritário** à trilha formal da Fase 7. |
+| 8 | Dependências | Nenhuma nova. |
+| 9 | Secrets | Não se aplica: nenhum segredo envolvido. |
+| 10 | Superfície pública | Nenhuma rota anônima nova. `GET`/`POST /api/tabelas-fgts` exigem autenticação. |
+| 11 | Risco de custo/abuso | `GET /api/tabelas-fgts` devolve lista fechada — desde 1990 são duas linhas. Sem paginação por ora, pelo mesmo critério da 4B; se o volume crescer, entra no teto geral da Fase 10. No holerite, o FGTS acrescenta **uma** linha, e a apuração é aritmética simples sobre a base já calculada. |
+
+---
+
 ## FASE 4C — FGTS
+
+> **Status: concluída em 27/08/2026.**
 
 ### Objetivo
 
-Calcular base e valor de FGTS quando aplicável.
+Calcular e registrar o depósito de FGTS do empregador sobre a base já apurada
+na 4A, com a alíquota versionada por vigência e memória de cálculo.
 
 ### Requisitos
 
@@ -1034,6 +1055,97 @@ Calcular base e valor de FGTS quando aplicável.
 - parâmetros versionados;
 - memória;
 - testes.
+
+### Fonte oficial
+
+**Lei nº 8.036, de 11 de maio de 1990, art. 15** — depósito mensal de **8%** da
+remuneração paga ou devida no mês anterior.
+
+Registrada no campo `Fonte` da tabela, que é obrigatório no construtor
+(`CLAUDE.md §29`). A alíquota de **2% do contrato de aprendizagem** existe na
+mesma lei e ficou **fora do escopo**: ver as limitações registradas abaixo.
+
+### Decisões registradas
+
+#### 1. FGTS é rubrica **informativa**, nunca desconto
+
+A decisão mais importante da subfase, e a que o domínio protege com invariante:
+`Rubrica` recusa uma rubrica de estratégia `FgtsMensal` que não seja
+`Informativo`.
+
+O FGTS é obrigação do empregador. Não sai do salário de ninguém, e não reduz o
+líquido. Modelá-lo como desconto tiraria 8% do salário de todo funcionário — e o
+holerite **continuaria fechando**, porque proventos menos descontos daria um
+número coerente. Seria um erro caro e silencioso, do tipo que só aparece na
+reclamação do funcionário.
+
+Consequência na interface: `FolhaDetalhe.tsx` ganhou uma coluna **Informativo**,
+separada de Proventos e Descontos, que só existe quando há lançamento
+informativo no holerite. Pôr o depósito entre os proventos sugeriria que o
+funcionário recebeu aquele valor.
+
+#### 2. A rubrica de FGTS **não compõe base alguma**
+
+Segunda invariante do construtor: `FgtsMensal` com `BasesIncidentes` diferente
+de `Nenhuma` é recusado.
+
+Ela precisa ser explícita porque `Informativo` **pode** compor base — é para isso
+que o tipo existe. Mas se o FGTS compusesse a base de FGTS, cada cálculo
+aumentaria a base do cálculo seguinte: 3.000 → 3.240 → 3.499,20. O valor nunca
+estabilizaria, e nada no holerite pareceria errado linha a linha.
+
+#### 3. `TabelaFgts` é um tipo próprio, e **não** reusa `TabelaInss`
+
+FGTS é alíquota única e linear; INSS é progressivo com teto. Forçar os dois no
+mesmo tipo produziria ou uma tabela de INSS com uma faixa só, ou uma tabela de
+FGTS com um teto que ela não tem. São duas regras diferentes que por acaso se
+parecem.
+
+A consequência prática do "sem teto": quem ganha R$ 20.000 recolhe INSS sobre
+R$ 8.475,55 e FGTS sobre os R$ 20.000 inteiros. Há teste travando isso.
+
+#### 4. Parâmetro **federal**: sem `id_organizacao` e fora do filtro global
+
+Mesma decisão da 4B, pelo mesmo motivo. `tabelas_fgts` é a **terceira e última**
+tabela do sistema sem `id_organizacao` (ao lado de `tabelas_inss` e
+`faixas_inss`). É lei federal: não há dado de ninguém ali, e dar uma cópia por
+organização permitiria que uma delas depositasse errado.
+
+A contrapartida é a escrita restrita ao Administrador da Plataforma.
+
+#### 5. Alíquota como **fração**, não percentual
+
+`0.08`, nunca `8`. O construtor recusa qualquer valor fora do intervalo aberto
+`(0, 1)`. Sem essa guarda, um `8` digitado por engano depositaria **oito vezes o
+salário** do funcionário — e o teste que trava isso existe justamente porque o
+erro é de digitação, não de raciocínio.
+
+#### 6. Índice único parcial: **uma** rubrica de FGTS ativa por organização
+
+`ux_rubricas_fgts_ativa`, pelo mesmo padrão já usado no salário-base e no INSS.
+Duas rubricas ativas dobrariam o depósito informado — e aqui o erro seria **pior
+que o do INSS**: como o FGTS não entra no líquido, o holerite continuaria
+fechando certo enquanto a guia de recolhimento sairia com o dobro.
+
+#### 7. Arredondamento: **uma vez**, no valor final
+
+Sem a dúvida jurídica que a 4B registrou. O cálculo do FGTS tem uma etapa só —
+base × alíquota —, então não existe "arredondar por faixa" para escolher.
+Aplica-se o critério geral do projeto (`CLAUDE.md §28`), o mesmo do
+salário proporcional.
+
+### Limitações registradas — 27/08/2026
+
+**Alíquota de 2% do contrato de aprendizagem não é suportada.** O
+`ContratoTrabalho` não tem campo que identifique aprendizagem, e criá-lo seria
+ampliar o domínio além do escopo desta subfase. Um aprendiz cadastrado hoje
+receberia depósito de 8%.
+
+**Multa rescisória de 40% e depósito de FGTS sobre 13º e férias ficam para as
+subfases correspondentes** (4E, 4F, 4G), que são quem introduz essas verbas.
+
+Ambas são limitações de escopo declaradas, não defeitos: o que existe está
+correto para folha mensal.
 
 ---
 

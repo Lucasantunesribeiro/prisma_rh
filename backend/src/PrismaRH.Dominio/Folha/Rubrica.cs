@@ -33,6 +33,27 @@ public sealed class Rubrica
             throw new ArgumentException("Rubrica precisa pertencer a uma organizacao.", nameof(idOrganizacao));
         }
 
+        if (estrategia == EstrategiaRubrica.FgtsMensal && tipo != TipoRubrica.Informativo)
+        {
+            // FGTS nao e desconto: e deposito do empregador, e nao sai do
+            // salario de ninguem. Como provento seria pior ainda - a empresa
+            // pagaria ao funcionario o que deveria depositar na conta
+            // vinculada. Informativo e o unico tipo correto.
+            throw new ArgumentException(
+                "A rubrica de FGTS precisa ser informativa: e deposito do empregador, "
+                + "nao desconto nem provento.", nameof(tipo));
+        }
+
+        if (estrategia == EstrategiaRubrica.FgtsMensal && basesIncidentes != BaseCalculo.Nenhuma)
+        {
+            // Se o FGTS compusesse a base de FGTS, cada calculo aumentaria a
+            // base do calculo seguinte. Informativo PODE compor base - por isso
+            // a recusa precisa ser explicita aqui.
+            throw new ArgumentException(
+                "A rubrica de FGTS nao compoe base alguma: ela incide sobre a base, nao a forma.",
+                nameof(basesIncidentes));
+        }
+
         if (estrategia == EstrategiaRubrica.InssProgressivo && tipo != TipoRubrica.Desconto)
         {
             // INSS que soma no liquido nao existe. Se passasse, a folha

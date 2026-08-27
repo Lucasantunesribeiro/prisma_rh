@@ -82,6 +82,7 @@ public sealed class FolhaPagamento
         Rubrica rubricaSalario,
         IEnumerable<Rubrica> catalogoRubricas,
         ParametrosInss? inss,
+        ParametrosFgts? fgts,
         DateTimeOffset agora)
     {
         ArgumentNullException.ThrowIfNull(contratosDaEmpresa);
@@ -122,7 +123,7 @@ public sealed class FolhaPagamento
                     $"Contrato {contrato.Matricula} passou na elegibilidade mas nao apurou: estado inconsistente.");
 
             holerite.AtualizarIncidenciasManuais(catalogo);
-            holerite.AplicarCalculo(apuracao, rubricaSalario, inss);
+            holerite.AplicarCalculo(apuracao, rubricaSalario, inss, fgts);
         }
 
         VersaoCalculo++;
@@ -133,23 +134,29 @@ public sealed class FolhaPagamento
     }
 
     public LancamentoFolha AdicionarLancamentoManual(
-        Guid idFolhaFuncionario, Rubrica rubrica, decimal valor, string? referencia, ParametrosInss? inss)
+        Guid idFolhaFuncionario,
+        Rubrica rubrica,
+        decimal valor,
+        string? referencia,
+        ParametrosInss? inss,
+        ParametrosFgts? fgts)
     {
         GarantirAberta("lancar");
 
         var holerite = ObterHolerite(idFolhaFuncionario);
-        var lancamento = holerite.AdicionarManual(rubrica, valor, referencia, inss);
+        var lancamento = holerite.AdicionarManual(rubrica, valor, referencia, inss, fgts);
 
         RecalcularTotais();
 
         return lancamento;
     }
 
-    public bool RemoverLancamento(Guid idFolhaFuncionario, Guid idLancamento, ParametrosInss? inss)
+    public bool RemoverLancamento(
+        Guid idFolhaFuncionario, Guid idLancamento, ParametrosInss? inss, ParametrosFgts? fgts)
     {
         GarantirAberta("remover lancamento de");
 
-        var removeu = ObterHolerite(idFolhaFuncionario).RemoverLancamento(idLancamento, inss);
+        var removeu = ObterHolerite(idFolhaFuncionario).RemoverLancamento(idLancamento, inss, fgts);
 
         if (removeu)
         {

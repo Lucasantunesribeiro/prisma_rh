@@ -2,14 +2,15 @@
 
 Plataforma B2B de gestão, cálculo, conferência e auditoria de folha de pagamento brasileira.
 
-> **Estado atual: Fase 4B concluída — INSS progressivo.**
+> **Estado atual: Fase 4C concluída — FGTS.**
 >
 > Existe login com JWT, cinco perfis, organizações isoladas entre si, o cadastro de
 > funcionários, contratos e histórico contratual por vigência, e a **primeira folha
 > mensal calculada e armazenada pelo próprio Prisma RH**, com memória de cálculo,
 > reprocessamento e fechamento.
-> As bases de INSS, FGTS e IRRF são apuradas por holerite, e o **INSS do segurado já é
-> descontado** pela tabela progressiva vigente. FGTS e IRRF são as Fases 4C e 4D.
+> As bases de INSS, FGTS e IRRF são apuradas por holerite, o **INSS do segurado é
+> descontado** pela tabela progressiva vigente e o **FGTS do empregador é depositado**
+> a 8% sobre a base — como linha informativa, que não reduz o líquido. IRRF é a Fase 4D.
 > Consulte o [ROADMAP.md](ROADMAP.md) para as fases seguintes e o
 > [CLAUDE.md](CLAUDE.md) para as regras do projeto.
 
@@ -95,7 +96,7 @@ frontend React + TypeScript + Vite + Tailwind + shadcn/ui.
   parâmetros da própria competência, não a mais recente.
 - O desconto é reapurado ao calcular, ao **lançar** e ao **remover**: adicionar uma
   comissão não deixa a contribuição parada no valor antigo.
-- `tabelas_inss` é a **única tabela sem organização** do sistema, porque INSS é lei
+- `tabelas_inss` não tem organização, porque INSS é lei
   federal. Todos leem; só o Administrador da Plataforma escreve.
 
 > ⚠️ **Pendência legal registrada:** nenhuma fonte oficial alcançada declara em **qual
@@ -103,14 +104,41 @@ frontend React + TypeScript + Vite + Tailwind + shadcn/ui.
 > valor final da rubrica — explicitamente como escolha de engenharia, não como afirmação
 > jurídica. Detalhes e o impacto numérico estão na Fase 4B do [ROADMAP.md](ROADMAP.md).
 
+**FGTS (Fase 4C)**
+
+Fonte: **Lei nº 8.036/1990, art. 15** — 8% da remuneração, registrada como campo
+obrigatório da tabela.
+
+- **FGTS não é desconto.** É depósito do empregador: entra no holerite como rubrica
+  **informativa**, aparece em coluna própria e **não reduz o líquido de ninguém**. O
+  domínio recusa uma rubrica de FGTS que não seja informativa — modelá-la como desconto
+  tiraria 8% do salário de todo funcionário, e o holerite **continuaria fechando**.
+- **A rubrica de FGTS não compõe base alguma.** A guarda é explícita porque informativo
+  *pode* compor base; se o FGTS entrasse na base de FGTS, cada cálculo aumentaria a base
+  do seguinte — 3.000 → 3.240 → 3.499,20 — sem que nenhuma linha parecesse errada.
+- **Alíquota única e sem teto**, ao contrário do INSS: quem ganha R$ 20.000 recolhe INSS
+  sobre R$ 8.475,55 e FGTS sobre os R$ 20.000 inteiros.
+- **Alíquota como fração**, nunca percentual: `0.08`. O construtor recusa `8`, que
+  depositaria oito vezes o salário.
+- **Uma rubrica de FGTS ativa por organização**, garantida por índice único parcial. Duas
+  dobrariam a guia — e aqui o erro seria pior que o do INSS, porque o holerite continuaria
+  fechando certo.
+- O depósito é reapurado ao calcular, ao **lançar** e ao **remover**, como o INSS.
+- `tabelas_fgts` também não tem organização, pelo mesmo motivo: é lei federal.
+
+> **Limitações declaradas:** a alíquota de **2% do contrato de aprendizagem** não é
+> suportada — o contrato não tem campo que identifique aprendizagem, e criá-lo sairia do
+> escopo da subfase. A **multa rescisória de 40%** e o FGTS sobre 13º e férias pertencem
+> às Fases 4E, 4F e 4G, que introduzem essas verbas.
+
 ## O que ainda NÃO existe
 
-Dependentes, FGTS, IRRF, férias, 13º, rescisão, importações, motor de análises,
-integrações, recursos AWS e CI/CD. Tudo isso pertence às fases seguintes do roadmap.
+Dependentes, IRRF, férias, 13º, rescisão, importações, motor de análises, integrações,
+recursos AWS e CI/CD. Tudo isso pertence às fases seguintes do roadmap.
 
 Cada encargo exige fonte oficial registrada e parâmetro versionado (`CLAUDE.md §29`). A
-Fase 4A criou as bases e a 4B aplicou a primeira alíquota; **FGTS (4C) e IRRF (4D)
-continuam fora**.
+Fase 4A criou as bases, a 4B aplicou a primeira alíquota e a 4C acrescentou o depósito do
+empregador; **IRRF (4D) continua fora**.
 
 ### Camada de IA — planejada, não implementada
 
@@ -296,6 +324,8 @@ Todos usam a senha de `PRISMARH_SEED_SENHA`.
 | `PUT /api/rubricas/{id}/incidencias` | Adm. Plataforma, Adm. Empresa | Em quais bases a rubrica entra |
 | `GET /api/tabelas-inss` | todos os 5 | Tabelas de INSS por vigência, com as faixas |
 | `POST /api/tabelas-inss` | **só Adm. Plataforma** | Cadastra a vigência de um ano novo |
+| `GET /api/tabelas-fgts` | todos os 5 | Alíquotas de FGTS por vigência |
+| `POST /api/tabelas-fgts` | **só Adm. Plataforma** | Cadastra uma vigência nova de alíquota |
 | `GET /api/folhas` | todos os 5 | Lista, com filtro por empresa e competência |
 | `GET /api/folhas/{id}` | todos os 5 | Folha com os holerites |
 | `GET /api/folhas/{id}/funcionarios/{idHolerite}` | todos os 5 | Holerite, memória de cálculo e bases |

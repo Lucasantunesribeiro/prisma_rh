@@ -340,6 +340,17 @@ function PainelHolerite({
   const [erro, definirErro] = useState<string | null>(null)
   const [memoria, definirMemoria] = useState<Lancamento | null>(null)
 
+  const informativos = holerite?.lancamentos.filter((l) => l.tipo === 'Informativo') ?? []
+  const temInformativo = informativos.length > 0
+
+  /*
+   * Somado aqui e não no backend porque não é um total do documento: o
+   * holerite tem proventos, descontos e líquido, e o informativo fica de fora
+   * dos três de propósito. O arredondamento explícito existe porque somar
+   * números decimais em JavaScript produz 240.00000000000003.
+   */
+  const totalInformativo = Math.round(informativos.reduce((s, l) => s + l.valor, 0) * 100) / 100
+
   const carregar = useCallback(async () => {
     definirErro(null)
 
@@ -410,6 +421,11 @@ function PainelHolerite({
                * O holerite é tratado como documento financeiro: código à
                * esquerda, referência no meio, proventos e descontos em duas
                * colunas alinhadas à direita, totais no rodapé.
+               *
+               * A coluna de informativos só existe quando há algum. Ela é
+               * separada de propósito: FGTS é depósito do empregador, e
+               * mostrá-lo entre os proventos sugeriria que o funcionário
+               * recebeu aquele valor.
                */}
               <table className="w-full border-collapse text-[13px]">
                 <caption className="sr-only">Lançamentos do holerite</caption>
@@ -430,6 +446,11 @@ function PainelHolerite({
                     <th scope="col" className="w-32 px-3 py-2 text-right font-medium">
                       Descontos
                     </th>
+                    {temInformativo && (
+                      <th scope="col" className="w-32 px-3 py-2 text-right font-medium">
+                        Informativo
+                      </th>
+                    )}
                     <th scope="col" className="w-8 px-1 py-2">
                       <span className="sr-only">Ações</span>
                     </th>
@@ -470,6 +491,11 @@ function PainelHolerite({
                         <td className="px-3 py-2 text-right align-middle">
                           {l.tipo === 'Desconto' ? <Dinheiro valor={l.valor} /> : ''}
                         </td>
+                        {temInformativo && (
+                          <td className="px-3 py-2 text-right align-middle text-muted-foreground">
+                            {l.tipo === 'Informativo' ? <Dinheiro valor={l.valor} /> : ''}
+                          </td>
+                        )}
                         <td className="px-1 py-2 align-middle">
                           {editavel && l.origem === 'Manual' && (
                             <Button
@@ -499,6 +525,11 @@ function PainelHolerite({
                     <td className="px-3 py-2 text-right">
                       <Dinheiro valor={holerite.resumo.totalDescontos} />
                     </td>
+                    {temInformativo && (
+                      <td className="px-3 py-2 text-right text-muted-foreground">
+                        <Dinheiro valor={totalInformativo} />
+                      </td>
+                    )}
                     <td />
                   </tr>
                   <tr>
@@ -508,6 +539,7 @@ function PainelHolerite({
                     <td className="px-3 pb-1 pt-2 text-right text-[15px]">
                       <Dinheiro valor={holerite.resumo.liquido} enfase />
                     </td>
+                    {temInformativo && <td />}
                     <td />
                   </tr>
                 </tfoot>
@@ -516,6 +548,10 @@ function PainelHolerite({
               <p className="mt-2 text-xs text-muted-foreground">
                 Rubricas sublinhadas são calculadas pelo sistema. Clique para ver a memória de
                 cálculo.
+                {temInformativo && (
+                  <> Valores informativos, como o FGTS, são obrigação do empregador: não entram
+                  no líquido nem saem do salário.</>
+                )}
               </p>
             </section>
 
