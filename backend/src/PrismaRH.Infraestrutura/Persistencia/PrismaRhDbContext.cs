@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using PrismaRH.Aplicacao.Identidade;
 using PrismaRH.Dominio.Contratos;
 using PrismaRH.Dominio.Empresas;
@@ -42,6 +42,7 @@ public sealed class PrismaRhDbContext(
     public DbSet<FolhaFuncionario> FolhasFuncionario => Set<FolhaFuncionario>();
     public DbSet<LancamentoFolha> LancamentosFolha => Set<LancamentoFolha>();
     public DbSet<LinhaMemoriaCalculo> MemoriasCalculo => Set<LinhaMemoriaCalculo>();
+    public DbSet<BaseApurada> BasesApuradas => Set<BaseApurada>();
 
     /// <summary>Organizacao do token atual. Exposta para os filtros e para diagnostico.</summary>
     public Guid IdOrganizacaoAtual => contextoUsuario.IdOrganizacao;
@@ -76,6 +77,7 @@ public sealed class PrismaRhDbContext(
         construtor.Entity<FolhaFuncionario>().HasQueryFilter(f => f.IdOrganizacao == IdOrganizacaoAtual);
         construtor.Entity<LancamentoFolha>().HasQueryFilter(l => l.IdOrganizacao == IdOrganizacaoAtual);
         construtor.Entity<LinhaMemoriaCalculo>().HasQueryFilter(m => m.IdOrganizacao == IdOrganizacaoAtual);
+        construtor.Entity<BaseApurada>().HasQueryFilter(b => b.IdOrganizacao == IdOrganizacaoAtual);
 
         // RefreshToken NAO entra: e lido antes de existir usuario autenticado.
         // Ver o comentario em RefreshToken.cs.

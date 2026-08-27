@@ -66,5 +66,15 @@ public sealed class FolhaFuncionarioConfiguracao : IEntityTypeConfiguration<Folh
         builder.Navigation(f => f.Lancamentos)
             .HasField("_lancamentos")
             .UsePropertyAccessMode(PropertyAccessMode.Field);
+
+        builder.HasMany(f => f.Bases)
+            .WithOne()
+            .HasForeignKey(b => b.IdFolhaFuncionario)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // Mesmo motivo dos lancamentos: Bases devolve copia ordenada.
+        builder.Navigation(f => f.Bases)
+            .HasField("_bases")
+            .UsePropertyAccessMode(PropertyAccessMode.Field);
     }
 }

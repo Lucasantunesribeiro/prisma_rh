@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using PrismaRH.Dominio.Folha;
@@ -32,6 +32,10 @@ public sealed class LancamentoFolhaConfiguracao : IEntityTypeConfiguration<Lanca
             .IsRequired();
 
         builder.Property(l => l.Tipo).HasColumnName("tipo").HasConversion<int>().IsRequired();
+        // Congelada no calculo, como codigo, nome e tipo acima.
+        builder.Property(l => l.BasesIncidentes)
+            .HasColumnName("bases_incidentes").HasConversion<int>().IsRequired();
+
         builder.Property(l => l.Origem).HasColumnName("origem").HasConversion<int>().IsRequired();
         builder.Property(l => l.Valor).HasColumnName("valor").HasPrecision(14, 2).IsRequired();
 

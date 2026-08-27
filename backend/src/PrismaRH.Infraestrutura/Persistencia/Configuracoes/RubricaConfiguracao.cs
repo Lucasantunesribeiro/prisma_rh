@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using PrismaRH.Dominio.Folha;
 
@@ -27,6 +27,11 @@ public sealed class RubricaConfiguracao : IEntityTypeConfiguration<Rubrica>
 
         builder.Property(r => r.Tipo).HasColumnName("tipo").HasConversion<int>().IsRequired();
         builder.Property(r => r.Estrategia).HasColumnName("estrategia").HasConversion<int>().IsRequired();
+        // Enum de bits numa coluna so: a rubrica que entra em INSS e FGTS
+        // guarda 3. Ver BaseCalculo para por que os valores sao potencias de dois.
+        builder.Property(r => r.BasesIncidentes)
+            .HasColumnName("bases_incidentes").HasConversion<int>().IsRequired();
+
         builder.Property(r => r.Ativa).HasColumnName("ativa").IsRequired();
         builder.Property(r => r.CriadoEm).HasColumnName("criado_em").IsRequired();
 
