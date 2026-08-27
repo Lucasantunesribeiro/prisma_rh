@@ -7,6 +7,7 @@ using PrismaRH.Dominio.Contratos;
 using PrismaRH.Dominio.Empresas;
 using PrismaRH.Dominio.Folha;
 using PrismaRH.Dominio.Identidade;
+using PrismaRH.Dominio.Parametros;
 using PrismaRH.Dominio.Pessoas;
 
 namespace PrismaRH.Infraestrutura.Persistencia;
@@ -75,6 +76,14 @@ public static class SemeadorDesenvolvimento
             log.LogInformation("Semeadura: {Quantidade} funcionarios com contrato criados.", quantidade);
         }
 
+        // Parametro legal e independente das organizacoes e das fases: entra
+        // antes da folha, e roda mesmo em banco que ja tinha rubricas.
+        if (!await contexto.TabelasInss.AnyAsync(ct))
+        {
+            await SemearTabelaInssAsync(contexto, agora, ct);
+            log.LogInformation("Semeadura: tabela de INSS vigente desde 01/01/2026 cadastrada.");
+        }
+
         if (await contexto.Rubricas.IgnoreQueryFilters().AnyAsync(ct))
         {
             log.LogInformation("Semeadura: folha ja existia, nada a fazer.");
@@ -83,6 +92,40 @@ public static class SemeadorDesenvolvimento
 
         var competencias = await SemearFolhaAsync(contexto, prisma, agora, ct);
         log.LogInformation("Semeadura: folhas de {Competencias} criadas.", competencias);
+    }
+
+    // -----------------------------------------------------------------------
+    // Fase 4B: parametro legal federal
+    // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// A tabela de INSS vigente a partir de 01/01/2026.
+    ///
+    /// Os numeros entram como DADO VERSIONADO, nunca na formula: quando sair a
+    /// tabela de 2027, basta cadastrar outra vigencia e o algoritmo
+    /// progressivo permanece intacto (CLAUDE.md secao 4.1).
+    ///
+    /// Aliquotas em FRACAO: 7,5% e 0.075.
+    /// </summary>
+    private static async Task SemearTabelaInssAsync(
+        PrismaRhDbContext contexto,
+        DateTimeOffset agora,
+        CancellationToken ct)
+    {
+        var tabela = new TabelaInss(
+            new DateOnly(2026, 1, 1),
+            "Portaria Interministerial MPS/MF n. 13, de 09/01/2026, Anexo II - "
+            + "tabela de contribuicao dos segurados empregado, empregado domestico e trabalhador avulso",
+            [
+                (1621.00m, 0.075m),
+                (2902.84m, 0.09m),
+                (4354.27m, 0.12m),
+                (8475.55m, 0.14m),
+            ],
+            agora);
+
+        contexto.TabelasInss.Add(tabela);
+        await contexto.SaveChangesAsync(ct);
     }
 
     // -----------------------------------------------------------------------

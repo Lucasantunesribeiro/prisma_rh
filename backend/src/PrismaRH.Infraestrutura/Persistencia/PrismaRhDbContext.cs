@@ -4,6 +4,7 @@ using PrismaRH.Dominio.Contratos;
 using PrismaRH.Dominio.Empresas;
 using PrismaRH.Dominio.Folha;
 using PrismaRH.Dominio.Identidade;
+using PrismaRH.Dominio.Parametros;
 using PrismaRH.Dominio.Pessoas;
 
 namespace PrismaRH.Infraestrutura.Persistencia;
@@ -43,6 +44,14 @@ public sealed class PrismaRhDbContext(
     public DbSet<LancamentoFolha> LancamentosFolha => Set<LancamentoFolha>();
     public DbSet<LinhaMemoriaCalculo> MemoriasCalculo => Set<LinhaMemoriaCalculo>();
     public DbSet<BaseApurada> BasesApuradas => Set<BaseApurada>();
+
+    /// <summary>
+    /// Parametros legais federais. NAO tem filtro global de organizacao, e e
+    /// a unica excecao do sistema: INSS e lei, vale igual para todos os
+    /// tenants, e nao ha dado de ninguem aqui. Ver TabelaInssConfiguracao.
+    /// </summary>
+    public DbSet<TabelaInss> TabelasInss => Set<TabelaInss>();
+    public DbSet<FaixaInss> FaixasInss => Set<FaixaInss>();
 
     /// <summary>Organizacao do token atual. Exposta para os filtros e para diagnostico.</summary>
     public Guid IdOrganizacaoAtual => contextoUsuario.IdOrganizacao;

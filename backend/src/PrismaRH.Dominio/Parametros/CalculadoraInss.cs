@@ -7,6 +7,7 @@ namespace PrismaRH.Dominio.Parametros;
 public sealed record ApuracaoInss(
     decimal BaseInss,
     decimal BaseLimitadaAoTeto,
+    decimal SomaExata,
     decimal Valor,
     Guid IdTabela,
     IReadOnlyList<PassoCalculo> Passos);
@@ -19,26 +20,50 @@ public sealed record ApuracaoInss(
 /// paga 7,5% sobre o primeiro trecho, 9% sobre o seguinte, e assim por diante.
 /// Aplicar a aliquota da ultima faixa sobre a base inteira e o erro mais comum
 /// de quem implementa INSS pela primeira vez, e ele desconta a mais de todo
-/// mundo.
+/// mundo sem que o holerite pare de fechar.
 ///
 /// Funcao pura: sem banco, sem relogio, sem HTTP. O CLAUDE.md secao 10 exige
 /// isso do motor, e e o que torna cada faixa testavel isoladamente.
 ///
 /// Esta classe nao conhece nenhum numero legal. Faixas, aliquotas e teto vem
-/// da TabelaInss, que por sua vez exige fonte oficial registrada.
+/// da TabelaInss, que por sua vez exige fonte oficial registrada. Trocar a
+/// tabela de 2026 pela de 2027 e cadastrar uma vigencia nova - o algoritmo
+/// aqui nao muda.
 /// </summary>
 public static class CalculadoraInss
 {
     private static readonly CultureInfo Brasil = CultureInfo.GetCultureInfo("pt-BR");
 
     /// <summary>
-    /// Aplica a tabela sobre a base.
+    /// ⚠️ PENDENCIA LEGAL REGISTRADA EM 27/08/2026 - CONFERIR ANTES DE PRODUCAO.
     ///
-    /// O arredondamento acontece UMA vez, no valor final da rubrica, e nao a
-    /// cada faixa. Arredondar faixa a faixa acumularia ate quatro
-    /// arredondamentos num desconto so, e o resultado passaria a depender de
-    /// quantas faixas a tabela tem naquele ano. E a mesma regra da Fase 3
-    /// (CLAUDE.md secao 28): arredonda-se o valor final de cada rubrica.
+    /// Nenhuma fonte oficial alcancada declara em QUAL ETAPA a contribuicao do
+    /// segurado e arredondada. Foram consultadas, sem sucesso: a pagina da
+    /// tabela de contribuicao mensal do INSS (gov.br), que nao menciona
+    /// arredondamento; a Portaria Interministerial MPS/MF 13/2026, que traz os
+    /// valores mas nao o procedimento; e a Nota Orientativa eSocial 2018.008,
+    /// que trata de casas decimais do LEIAUTE, nao do calculo.
+    ///
+    /// Enquanto nao houver fonte, adota-se o criterio ja registrado do projeto
+    /// (CLAUDE.md secao 28, Fase 3): arredonda-se UMA vez, no valor final da
+    /// rubrica, com MidpointRounding.AwayFromZero.
+    ///
+    /// A escolha importa. Na base do teto de 2026 (8.475,55) as parcelas
+    /// exatas somam 988,0914, e o resultado publicado seria:
+    ///     arredondar so no total ....... 988,09  (adotado)
+    ///     arredondar cada faixa ........ 988,10
+    ///     truncar cada faixa ........... 988,07
+    ///
+    /// PARA TROCAR: altere apenas este metodo. O teste
+    /// Arredondamento_AplicadoUmaVezNoTotal trava a regra vigente e vai falhar
+    /// de proposito, apontando o que precisa ser revisto.
+    /// </summary>
+    private static decimal ArredondarContribuicao(decimal somaExata) =>
+        Dinheiro.Arredondar(somaExata);
+
+    /// <summary>
+    /// Aplica a tabela sobre a base e devolve a memoria completa: a base, cada
+    /// faixa com o trecho usado e sua aliquota, e o total.
     /// </summary>
     public static ApuracaoInss Apurar(decimal baseInss, TabelaInss tabela)
     {
@@ -52,15 +77,14 @@ public static class CalculadoraInss
         var passos = new List<PassoCalculo>();
         var limitada = Math.Min(baseInss, tabela.Teto);
 
-        if (limitada < baseInss)
-        {
-            passos.Add(new PassoCalculo(
-                "Base limitada ao teto do salario-de-contribuicao",
-                $"{Moeda(baseInss)} -> {Moeda(tabela.Teto)}",
-                limitada));
-        }
+        passos.Add(new PassoCalculo(
+            "Base de contribuicao",
+            limitada < baseInss
+                ? $"{Moeda(baseInss)} limitada ao teto de {Moeda(tabela.Teto)}"
+                : Moeda(baseInss),
+            limitada));
 
-        var total = 0m;
+        var somaExata = 0m;
         var piso = 0m;
 
         foreach (var faixa in tabela.Faixas)
@@ -76,27 +100,36 @@ public static class CalculadoraInss
             }
 
             var parcela = trecho * faixa.Aliquota;
-            total += parcela;
+            somaExata += parcela;
 
             passos.Add(new PassoCalculo(
-                $"Faixa {faixa.Ordem}: de {Moeda(piso)} ate {Moeda(topo)}",
-                $"{Moeda(trecho)} x {Percentual(faixa.AliquotaPercentual)}",
+                $"Faixa {faixa.Ordem}: de {Moeda(piso)} a {Moeda(topo)}, aliquota {Percentual(faixa.AliquotaPercentual)}",
+                // O valor EXATO vai na expressao porque a coluna de valor e
+                // numeric(14,2) e engoliria as casas seguintes. Sem isto, quem
+                // somasse as linhas nao chegaria ao total, e a memoria
+                // deixaria de explicar o numero que ela mesma exibe.
+                $"{Moeda(trecho)} x {Percentual(faixa.AliquotaPercentual)} = {Exato(parcela)}",
                 Dinheiro.Arredondar(parcela)));
 
             piso = faixa.LimiteSuperior;
         }
 
-        var valor = Dinheiro.Arredondar(total);
+        var valor = ArredondarContribuicao(somaExata);
 
-        if (passos.Count > 1)
-        {
-            passos.Add(new PassoCalculo("Total do INSS", "soma das faixas", valor));
-        }
+        passos.Add(new PassoCalculo(
+            "Total do INSS",
+            somaExata == valor
+                ? $"soma das faixas = {Moeda(valor)}"
+                : $"soma exata {Exato(somaExata)} arredondada para {Moeda(valor)}",
+            valor));
 
-        return new ApuracaoInss(baseInss, limitada, valor, tabela.Id, passos);
+        return new ApuracaoInss(baseInss, limitada, somaExata, valor, tabela.Id, passos);
     }
 
     private static string Moeda(decimal valor) => valor.ToString("N2", Brasil);
+
+    /// <summary>Ate quatro casas, sem zeros a direita: 988,0914 e 121,575.</summary>
+    private static string Exato(decimal valor) => valor.ToString("0.####", Brasil);
 
     private static string Percentual(decimal percentual) =>
         percentual.ToString("0.##", Brasil) + "%";

@@ -1,4 +1,4 @@
-using PrismaRH.Dominio.Parametros;
+﻿using PrismaRH.Dominio.Parametros;
 
 namespace PrismaRH.Testes.Dominio;
 
@@ -36,7 +36,9 @@ public class CalculadoraInssTestes
         var apuracao = CalculadoraInss.Apurar(800m, Tabela());
 
         Assert.Equal(80m, apuracao.Valor);
-        Assert.Single(apuracao.Passos);
+
+        // Base + a unica faixa alcancada + total.
+        Assert.Equal(3, apuracao.Passos.Count);
     }
 
     [Fact]
@@ -87,7 +89,9 @@ public class CalculadoraInssTestes
     {
         var apuracao = CalculadoraInss.Apurar(50000m, Tabela());
 
-        Assert.Contains(apuracao.Passos, p => p.Descricao.Contains("teto", StringComparison.OrdinalIgnoreCase));
+        // O corte aparece na expressao da linha da base.
+        Assert.Contains("teto", apuracao.Passos[0].Expressao, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(3000m, apuracao.Passos[0].Valor);
     }
 
     [Fact]
@@ -95,7 +99,7 @@ public class CalculadoraInssTestes
     {
         var apuracao = CalculadoraInss.Apurar(1500m, Tabela());
 
-        Assert.DoesNotContain(apuracao.Passos, p => p.Descricao.Contains("teto", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain("teto", apuracao.Passos[0].Expressao, StringComparison.OrdinalIgnoreCase);
     }
 
     // ------------------------------------------------------------- bordas
@@ -111,12 +115,15 @@ public class CalculadoraInssTestes
         Assert.Equal(esperado, CalculadoraInss.Apurar(baseInss, Tabela()).Valor);
 
     [Fact]
-    public void BaseZero_NaoGeraPassoNenhum()
+    public void BaseZero_NaoAlcancaFaixaNenhuma()
     {
         var apuracao = CalculadoraInss.Apurar(0m, Tabela());
 
         Assert.Equal(0m, apuracao.Valor);
-        Assert.Empty(apuracao.Passos);
+
+        // So a base e o total: nenhuma faixa foi alcancada.
+        Assert.Equal(2, apuracao.Passos.Count);
+        Assert.DoesNotContain(apuracao.Passos, p => p.Descricao.StartsWith("Faixa "));
     }
 
     [Fact]
@@ -149,20 +156,23 @@ public class CalculadoraInssTestes
     {
         var apuracao = CalculadoraInss.Apurar(1500m, Tabela());
 
-        // Duas faixas mais a linha do total.
-        Assert.Equal(3, apuracao.Passos.Count);
-        Assert.Equal("1.000,00 x 10%", apuracao.Passos[0].Expressao);
-        Assert.Equal("500,00 x 20%", apuracao.Passos[1].Expressao);
-        Assert.Equal(200m, apuracao.Passos[2].Valor);
+        // Base, duas faixas e o total.
+        Assert.Equal(4, apuracao.Passos.Count);
+        Assert.Equal("1.000,00 x 10% = 100", apuracao.Passos[1].Expressao);
+        Assert.Equal("500,00 x 20% = 100", apuracao.Passos[2].Expressao);
+        Assert.Equal(200m, apuracao.Passos[3].Valor);
     }
 
     [Fact]
-    public void UmaFaixaSo_NaoGeraLinhaDeTotalRedundante()
+    public void MemoriaSempreTermina_NaLinhaDoTotal()
     {
+        // Mesmo com uma faixa so. O formato pedido pelo responsavel termina
+        // sempre em "Total INSS", e uma memoria que as vezes tem a linha e as
+        // vezes nao obrigaria a tela a tratar dois casos.
         var apuracao = CalculadoraInss.Apurar(500m, Tabela());
 
-        var passo = Assert.Single(apuracao.Passos);
-        Assert.Equal(50m, passo.Valor);
+        Assert.Equal("Total do INSS", apuracao.Passos[^1].Descricao);
+        Assert.Equal(50m, apuracao.Passos[^1].Valor);
     }
 
     // -------------------------------------------------------- tabela e vigencia
