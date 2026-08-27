@@ -3,128 +3,178 @@
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
 
-@custom-variant dark (&:is(.dark *));
+/*
+ * Prisma RH — tokens visuais.
+ *
+ * Fonte de verdade: DESIGN.md na raiz. Valor arbitrário (text-[#...],
+ * bg-[#...]) espalhado pelas páginas é proibido: se uma cor precisa existir,
+ * ela vira token aqui.
+ *
+ * A base é neutra, mas o azul da marca tem PRESENÇA: sidebar em superfície
+ * azulada, marca em azul, item ativo preenchido, ação primária sólida. Um
+ * sistema de folha precisa parecer um produto, não um rascunho — e interface
+ * inteiramente branca e cinza lê como rascunho.
+ */
 
 @theme inline {
     --font-heading: var(--font-sans);
     --font-sans: 'Geist Variable', sans-serif;
-    --color-sidebar-ring: var(--sidebar-ring);
-    --color-sidebar-border: var(--sidebar-border);
-    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-    --color-sidebar-accent: var(--sidebar-accent);
-    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-    --color-sidebar-primary: var(--sidebar-primary);
-    --color-sidebar-foreground: var(--sidebar-foreground);
-    --color-sidebar: var(--sidebar);
-    --color-chart-5: var(--chart-5);
-    --color-chart-4: var(--chart-4);
-    --color-chart-3: var(--chart-3);
-    --color-chart-2: var(--chart-2);
-    --color-chart-1: var(--chart-1);
-    --color-ring: var(--ring);
-    --color-input: var(--input);
-    --color-border: var(--border);
-    --color-destructive: var(--destructive);
-    --color-accent-foreground: var(--accent-foreground);
-    --color-accent: var(--accent);
-    --color-muted-foreground: var(--muted-foreground);
-    --color-muted: var(--muted);
-    --color-secondary-foreground: var(--secondary-foreground);
-    --color-secondary: var(--secondary);
-    --color-primary-foreground: var(--primary-foreground);
-    --color-primary: var(--primary);
-    --color-popover-foreground: var(--popover-foreground);
-    --color-popover: var(--popover);
-    --color-card-foreground: var(--card-foreground);
-    --color-card: var(--card);
-    --color-foreground: var(--foreground);
+
     --color-background: var(--background);
-    --radius-sm: calc(var(--radius) * 0.6);
-    --radius-md: calc(var(--radius) * 0.8);
+    --color-foreground: var(--foreground);
+    --color-card: var(--card);
+    --color-card-foreground: var(--card-foreground);
+    --color-popover: var(--popover);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-primary: var(--primary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-primary-suave: var(--primary-suave);
+    --color-primary-forte: var(--primary-forte);
+    --color-secondary: var(--secondary);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-muted: var(--muted);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-accent: var(--accent);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-destructive: var(--destructive);
+    --color-border: var(--border);
+    --color-border-forte: var(--border-forte);
+    --color-input: var(--input);
+    --color-ring: var(--ring);
+
+    /* Chrome da aplicação */
+    --color-sidebar: var(--sidebar);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-hover: var(--sidebar-hover);
+
+    /* Status: texto e fundo andam em par para garantir contraste AA. */
+    --color-sucesso: var(--sucesso);
+    --color-sucesso-suave: var(--sucesso-suave);
+    --color-atencao: var(--atencao);
+    --color-atencao-suave: var(--atencao-suave);
+    --color-critico: var(--critico);
+    --color-critico-suave: var(--critico-suave);
+    --color-info: var(--info);
+    --color-info-suave: var(--info-suave);
+    --color-neutro: var(--neutro);
+    --color-neutro-suave: var(--neutro-suave);
+
+    --radius-sm: calc(var(--radius) * 0.5);
+    --radius-md: calc(var(--radius) * 0.75);
     --radius-lg: var(--radius);
-    --radius-xl: calc(var(--radius) * 1.4);
-    --radius-2xl: calc(var(--radius) * 1.8);
-    --radius-3xl: calc(var(--radius) * 2.2);
-    --radius-4xl: calc(var(--radius) * 2.6);
+    --radius-xl: calc(var(--radius) * 1.5);
+    --radius-2xl: calc(var(--radius) * 2);
 }
 
 :root {
-    --background: oklch(1 0 0);
-    --foreground: oklch(0.145 0 0);
-    --card: oklch(1 0 0);
-    --card-foreground: oklch(0.145 0 0);
-    --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.145 0 0);
-    --primary: oklch(0.205 0 0);
-    --primary-foreground: oklch(0.985 0 0);
-    --secondary: oklch(0.97 0 0);
-    --secondary-foreground: oklch(0.205 0 0);
-    --muted: oklch(0.97 0 0);
-    --muted-foreground: oklch(0.556 0 0);
-    --accent: oklch(0.97 0 0);
-    --accent-foreground: oklch(0.205 0 0);
-    --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.922 0 0);
-    --input: oklch(0.922 0 0);
-    --ring: oklch(0.708 0 0);
-    --chart-1: oklch(0.87 0 0);
-    --chart-2: oklch(0.556 0 0);
-    --chart-3: oklch(0.439 0 0);
-    --chart-4: oklch(0.371 0 0);
-    --chart-5: oklch(0.269 0 0);
-    --radius: 0.625rem;
-    --sidebar: oklch(0.985 0 0);
-    --sidebar-foreground: oklch(0.145 0 0);
-    --sidebar-primary: oklch(0.205 0 0);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.97 0 0);
-    --sidebar-accent-foreground: oklch(0.205 0 0);
-    --sidebar-border: oklch(0.922 0 0);
-    --sidebar-ring: oklch(0.708 0 0);
-}
+    /* Superfícies. O fundo tem um traço de azul: separa o workspace do
+       branco puro das tabelas sem precisar de sombra. */
+    --background: #f6f7fb;
+    --foreground: #111a2e;
+    --card: #ffffff;
+    --card-foreground: #111a2e;
+    --popover: #ffffff;
+    --popover-foreground: #111a2e;
 
-.dark {
-    --background: oklch(0.145 0 0);
-    --foreground: oklch(0.985 0 0);
-    --card: oklch(0.205 0 0);
-    --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.205 0 0);
-    --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.922 0 0);
-    --primary-foreground: oklch(0.205 0 0);
-    --secondary: oklch(0.269 0 0);
-    --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.269 0 0);
-    --muted-foreground: oklch(0.708 0 0);
-    --accent: oklch(0.269 0 0);
-    --accent-foreground: oklch(0.985 0 0);
-    --destructive: oklch(0.704 0.191 22.216);
-    --border: oklch(1 0 0 / 10%);
-    --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.556 0 0);
-    --chart-1: oklch(0.87 0 0);
-    --chart-2: oklch(0.556 0 0);
-    --chart-3: oklch(0.439 0 0);
-    --chart-4: oklch(0.371 0 0);
-    --chart-5: oklch(0.269 0 0);
-    --sidebar: oklch(0.205 0 0);
-    --sidebar-foreground: oklch(0.985 0 0);
-    --sidebar-primary: oklch(0.488 0.243 264.376);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.269 0 0);
-    --sidebar-accent-foreground: oklch(0.985 0 0);
-    --sidebar-border: oklch(1 0 0 / 10%);
-    --sidebar-ring: oklch(0.556 0 0);
+    /* Azul da marca. Presente, não decorativo: 8,2:1 sobre branco. */
+    --primary: #1f4b8f;
+    --primary-foreground: #ffffff;
+    --primary-forte: #16376b;
+    --primary-suave: #dfe7f7;
+
+    --secondary: #eef1f7;
+    --secondary-foreground: #111a2e;
+    --muted: #f1f4f9;
+    --muted-foreground: #5b6779;
+
+    --accent: #e8eefa;
+    --accent-foreground: #1a417d;
+
+    --destructive: #b42318;
+    --border: #e2e6ee;
+    --border-forte: #cbd3e1;
+    --input: #cbd3e1;
+    --ring: #1f4b8f;
+
+    /* 6px: pequeno e disciplinado. Radius grande dá aparência de template. */
+    --radius: 0.375rem;
+
+    /* Sidebar em superfície azulada, não branca. É o que dá identidade ao
+       chrome sem recorrer a um bloco navy gigante. */
+    --sidebar: #e9edf7;
+    --sidebar-foreground: #111a2e;
+    --sidebar-border: #d6dded;
+    --sidebar-hover: #dfe6f4;
+    --sidebar-accent: #cbd9f2;
+    --sidebar-accent-foreground: #14356a;
+
+    /* Status */
+    --sucesso: #05683f;
+    --sucesso-suave: #dcf5e8;
+    --atencao: #9a4b06;
+    --atencao-suave: #fdf0d5;
+    --critico: #a41d13;
+    --critico-suave: #fde5e3;
+    --info: #14509e;
+    --info-suave: #e2ecfb;
+    --neutro: #414d61;
+    --neutro-suave: #e9edf4;
+
+    /* Dimensões do chrome. Mudar aqui muda a aplicação inteira. */
+    --largura-sidebar: 224px;
+    --largura-sidebar-recolhida: 60px;
+    --altura-topbar: 52px;
 }
 
 @layer base {
-  * {
-    @apply border-border outline-ring/50;
+    * {
+        @apply border-border;
     }
-  body {
-    @apply bg-background text-foreground;
+
+    body {
+        @apply bg-background text-foreground;
+        font-feature-settings: 'cv11', 'ss01';
+        -webkit-font-smoothing: antialiased;
     }
-  html {
-    @apply font-sans;
+
+    /*
+     * Foco visível é sempre o mesmo, em qualquer componente. Anel de 2px com
+     * offset: legível tanto sobre branco quanto sobre linha em hover.
+     */
+    :focus-visible {
+        @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+    }
+
+    /*
+     * Dinheiro e qualquer coluna numérica usam algarismos de largura fixa.
+     * Sem isto, 1.111,11 e 8.888,88 desalinham na vertical e a coluna deixa de
+     * poder ser conferida de relance — que é a única razão de ela existir.
+     */
+    .tabular {
+        font-variant-numeric: tabular-nums;
+        font-feature-settings: 'tnum';
+    }
+
+    /*
+     * Rótulo de seção e de faixa: caixa alta com tracking, pequeno e em tom
+     * secundário. É a assinatura tipográfica do produto — separa blocos sem
+     * gastar o peso de um título, e é o que faz a tela parecer organizada por
+     * alguém em vez de empilhada.
+     */
+    .rotulo-secao {
+        @apply text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+            transition-duration: 0.01ms !important;
+        }
     }
 }

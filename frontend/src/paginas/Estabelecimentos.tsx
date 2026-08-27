@@ -1,127 +1,124 @@
+import { Plus } from 'lucide-react'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
 import {
   criarEstabelecimento,
   listarEstabelecimentos,
   type Empresa,
   type Estabelecimento,
 } from '@/api/empresas'
+import { DataTable, type Coluna } from '@/components/sistema/DataTable'
+import { StatusBadge } from '@/components/sistema/Primitivos'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { Drawer, DrawerClose, DrawerContent, DrawerTrigger } from '@/components/ui/drawer'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 
-type Estado =
-  | { situacao: 'carregando' }
-  | { situacao: 'pronto'; itens: Estabelecimento[] }
-  | { situacao: 'erro'; mensagem: string }
-
-export function Estabelecimentos({
+/**
+ * Estabelecimentos de uma empresa, num painel lateral.
+ *
+ * Não é rota própria de propósito: um estabelecimento só existe dentro de uma
+ * empresa, e uma página separada obrigaria a escolher a empresa de novo, em
+ * outro seletor, para ver o que já estava na linha que a pessoa acabou de
+ * clicar.
+ */
+export function PainelEstabelecimentos({
   empresa,
-  podeAdministrar,
+  administra,
+  aoFechar,
 }: {
   empresa: Empresa
-  podeAdministrar: boolean
+  administra: boolean
+  aoFechar: () => void
 }) {
-  const [estado, definirEstado] = useState<Estado>({ situacao: 'carregando' })
+  const [itens, definirItens] = useState<Estabelecimento[]>([])
+  const [carregando, definirCarregando] = useState(true)
+  const [erro, definirErro] = useState<string | null>(null)
 
   const carregar = useCallback(async () => {
+    definirCarregando(true)
+    definirErro(null)
+
     try {
-      definirEstado({ situacao: 'pronto', itens: await listarEstabelecimentos(empresa.id) })
+      definirItens(await listarEstabelecimentos(empresa.id))
     } catch (falha) {
-      definirEstado({
-        situacao: 'erro',
-        mensagem: falha instanceof Error ? falha.message : 'Falha ao carregar estabelecimentos.',
-      })
+      definirErro(
+        falha instanceof Error ? falha.message : 'Não foi possível carregar os estabelecimentos.',
+      )
+    } finally {
+      definirCarregando(false)
     }
   }, [empresa.id])
 
   useEffect(() => {
-    // O estado so muda DEPOIS do await, quando a resposta da API chega. A regra
-    // nao distingue isso de um setState sincrono, e buscar dados no effect e o
-    // padrao do React sem biblioteca de dados - que a Fase 1 nao justifica.
+    // O estado só muda DEPOIS do await, quando a resposta da API chega.
     // oxlint-disable-next-line react/set-state-in-effect
     void carregar()
   }, [carregar])
 
+  const colunas: Coluna<Estabelecimento>[] = [
+    {
+      cabecalho: 'Código',
+      largura: '110px',
+      celula: (e) => <span className="tabular text-muted-foreground">{e.codigo}</span>,
+    },
+    {
+      cabecalho: 'Nome',
+      celula: (e) => <span className="font-medium text-foreground">{e.nome}</span>,
+    },
+    {
+      cabecalho: 'Situação',
+      largura: '110px',
+      celula: (e) => (
+        <StatusBadge tom={e.ativo ? 'sucesso' : 'neutro'}>
+          {e.ativo ? 'Ativo' : 'Inativo'}
+        </StatusBadge>
+      ),
+    },
+  ]
+
   return (
-    <Card className="mt-6">
-      <CardHeader>
-        <CardTitle className="text-base">Estabelecimentos de {empresa.razaoSocial}</CardTitle>
-      </CardHeader>
+    <Drawer open onOpenChange={(estado) => !estado && aoFechar()}>
+      <DrawerContent
+        titulo={empresa.razaoSocial}
+        descricao={
+          <>
+            <span className="tabular">{empresa.cnpjFormatado}</span> · Estabelecimentos
+          </>
+        }
+        className="max-w-2xl"
+      >
+        <div className="mb-3 flex items-center justify-between gap-4">
+          <h3 className="text-[15px] font-semibold tracking-tight">Estabelecimentos</h3>
+          {administra && <NovoEstabelecimento idEmpresa={empresa.id} aoCriar={carregar} />}
+        </div>
 
-      <CardContent aria-live="polite" aria-busy={estado.situacao === 'carregando'}>
-        {podeAdministrar && <FormularioNovo idEmpresa={empresa.id} aoCriar={carregar} />}
-
-        {estado.situacao === 'carregando' && (
-          <p className="py-2 text-sm text-muted-foreground">Carregando...</p>
-        )}
-
-        {estado.situacao === 'erro' && (
-          <div>
-            <Alert variant="destructive" role="alert">
-              <AlertDescription>{estado.mensagem}</AlertDescription>
-            </Alert>
-            <Button className="mt-4" variant="outline" size="sm" onClick={() => {
-                  definirEstado({ situacao: 'carregando' })
-                  void carregar()
-                }}>
-              Tentar novamente
-            </Button>
-          </div>
-        )}
-
-        {estado.situacao === 'pronto' && estado.itens.length === 0 && (
-          <p className="py-2 text-sm text-muted-foreground">
-            Esta empresa ainda não tem estabelecimentos.
-          </p>
-        )}
-
-        {estado.situacao === 'pronto' && estado.itens.length > 0 && (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Código</TableHead>
-                <TableHead>Nome</TableHead>
-                <TableHead>Situação</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {estado.itens.map((item) => (
-                <TableRow key={item.id}>
-                  <TableCell className="font-mono text-xs">{item.codigo}</TableCell>
-                  <TableCell>{item.nome}</TableCell>
-                  <TableCell>
-                    <Badge variant={item.ativo ? 'default' : 'secondary'}>
-                      {item.ativo ? 'ativo' : 'inativo'}
-                    </Badge>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
-      </CardContent>
-    </Card>
+        <DataTable
+          rotulo={`Estabelecimentos de ${empresa.razaoSocial}`}
+          colunas={colunas}
+          itens={itens}
+          chave={(e) => e.id}
+          carregando={carregando}
+          erro={erro}
+          aoTentarNovamente={() => void carregar()}
+          vazio={{
+            titulo: 'Nenhum estabelecimento',
+            descricao: 'O contrato de trabalho precisa de um estabelecimento para a lotação.',
+          }}
+        />
+      </DrawerContent>
+    </Drawer>
   )
 }
 
-function FormularioNovo({
+function NovoEstabelecimento({
   idEmpresa,
   aoCriar,
 }: {
   idEmpresa: string
   aoCriar: () => Promise<void>
 }) {
+  const [aberto, definirAberto] = useState(false)
   const [codigo, definirCodigo] = useState('')
   const [nome, definirNome] = useState('')
   const [erro, definirErro] = useState<string | null>(null)
@@ -136,49 +133,70 @@ function FormularioNovo({
       await criarEstabelecimento(idEmpresa, { codigo, nome })
       definirCodigo('')
       definirNome('')
+      definirAberto(false)
       await aoCriar()
     } catch (falha) {
-      definirErro(falha instanceof Error ? falha.message : 'Falha ao criar estabelecimento.')
+      definirErro(
+        falha instanceof Error ? falha.message : 'Não foi possível criar o estabelecimento.',
+      )
     } finally {
       definirEnviando(false)
     }
   }
 
   return (
-    <form onSubmit={aoEnviar} className="mb-6 grid gap-4 sm:grid-cols-3" noValidate>
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="codigo">Código</Label>
-        <Input
-          id="codigo"
-          required
-          value={codigo}
-          onChange={(e) => definirCodigo(e.target.value)}
-        />
-      </div>
-
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="nomeEstabelecimento">Nome</Label>
-        <Input
-          id="nomeEstabelecimento"
-          required
-          value={nome}
-          onChange={(e) => definirNome(e.target.value)}
-        />
-      </div>
-
-      <div className="flex items-end">
-        <Button type="submit" size="sm" disabled={enviando}>
-          {enviando ? 'Criando...' : 'Adicionar'}
+    <Drawer open={aberto} onOpenChange={definirAberto}>
+      <DrawerTrigger asChild>
+        <Button variant="outline" size="sm">
+          <Plus aria-hidden />
+          Novo estabelecimento
         </Button>
-      </div>
+      </DrawerTrigger>
 
-      {erro && (
-        <div className="sm:col-span-3">
-          <Alert variant="destructive" role="alert">
-            <AlertDescription>{erro}</AlertDescription>
-          </Alert>
-        </div>
-      )}
-    </form>
+      <DrawerContent titulo="Novo estabelecimento" className="max-w-md">
+        <form onSubmit={aoEnviar} className="space-y-4" noValidate>
+          <div className="space-y-1.5">
+            <Label htmlFor="codigoEstab">Código</Label>
+            <Input
+              id="codigoEstab"
+              required
+              autoFocus
+              placeholder="001"
+              value={codigo}
+              onChange={(e) => definirCodigo(e.target.value)}
+              className="tabular"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="nomeEstab">Nome</Label>
+            <Input
+              id="nomeEstab"
+              required
+              placeholder="Matriz"
+              value={nome}
+              onChange={(e) => definirNome(e.target.value)}
+            />
+          </div>
+
+          {erro && (
+            <Alert variant="destructive" role="alert">
+              <AlertDescription>{erro}</AlertDescription>
+            </Alert>
+          )}
+
+          <div className="flex justify-end gap-2 border-t border-border pt-4">
+            <DrawerClose asChild>
+              <Button type="button" variant="outline" size="sm">
+                Cancelar
+              </Button>
+            </DrawerClose>
+            <Button type="submit" size="sm" disabled={enviando}>
+              {enviando ? 'Criando...' : 'Criar estabelecimento'}
+            </Button>
+          </div>
+        </form>
+      </DrawerContent>
+    </Drawer>
   )
 }

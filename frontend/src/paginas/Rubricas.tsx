@@ -1,18 +1,6 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
+import { Plus } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { podeAdministrar } from '@/api/autenticacao'
 import {
   BASES,
   criarRubrica,
@@ -27,28 +15,45 @@ import {
   type Rubrica,
   type TipoRubrica,
 } from '@/api/folha'
-import { podeAdministrar } from '@/api/autenticacao'
 import { useSessao } from '@/auth/useSessao'
-
-type Estado =
-  | { situacao: 'carregando' }
-  | { situacao: 'pronto'; rubricas: Rubrica[] }
-  | { situacao: 'erro'; mensagem: string }
+import { DataTable, type Coluna } from '@/components/sistema/DataTable'
+import {
+  CabecalhoPagina,
+  CampoBusca,
+  EspacoToolbar,
+  FiltroSelect,
+  StatusBadge,
+} from '@/components/sistema/Primitivos'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogClose, DialogContent, DialogTrigger } from '@/components/ui/dialog'
+import { Drawer, DrawerClose, DrawerContent, DrawerTrigger } from '@/components/ui/drawer'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { usePagina } from '@/layout/usePagina'
 
 export default function Rubricas() {
   const { usuario } = useSessao()
   const administra = podeAdministrar(usuario?.perfil)
 
-  const [estado, definirEstado] = useState<Estado>({ situacao: 'carregando' })
+  usePagina([{ texto: 'Folha' }, { texto: 'Rubricas' }])
+
+  const [rubricas, definirRubricas] = useState<Rubrica[]>([])
+  const [carregando, definirCarregando] = useState(true)
+  const [erro, definirErro] = useState<string | null>(null)
+  const [busca, definirBusca] = useState('')
+  const [tipo, definirTipo] = useState<'todos' | TipoRubrica>('todos')
 
   const carregar = useCallback(async () => {
+    definirCarregando(true)
+    definirErro(null)
+
     try {
-      definirEstado({ situacao: 'pronto', rubricas: await listarRubricas() })
+      definirRubricas(await listarRubricas())
     } catch (falha) {
-      definirEstado({
-        situacao: 'erro',
-        mensagem: falha instanceof Error ? falha.message : 'Falha ao carregar rubricas.',
-      })
+      definirErro(falha instanceof Error ? falha.message : 'Não foi possível carregar as rubricas.')
+    } finally {
+      definirCarregando(false)
     }
   }, [])
 
@@ -58,143 +63,194 @@ export default function Rubricas() {
     void carregar()
   }, [carregar])
 
-  const temSalario =
-    estado.situacao === 'pronto' &&
-    estado.rubricas.some((r) => r.ativa && r.estrategia === 'SalarioBaseProporcional')
+  const temSalario = rubricas.some(
+    (r) => r.ativa && r.estrategia === 'SalarioBaseProporcional',
+  )
+
+  const filtradas = useMemo(() => {
+    const termo = busca.trim().toLowerCase()
+
+    return rubricas.filter(
+      (r) =>
+        (tipo === 'todos' || r.tipo === tipo) &&
+        (!termo || `${r.codigo} ${r.nome}`.toLowerCase().includes(termo)),
+    )
+  }, [rubricas, busca, tipo])
+
+  const colunas: Coluna<Rubrica>[] = [
+    {
+      cabecalho: 'Código',
+      largura: '110px',
+      celula: (r) => <span className="tabular text-muted-foreground">{r.codigo}</span>,
+    },
+    {
+      cabecalho: 'Rubrica',
+      celula: (r) => <span className="font-medium text-foreground">{r.nome}</span>,
+    },
+    {
+      cabecalho: 'Tipo',
+      largura: '120px',
+      celula: (r) => ROTULO_TIPO_RUBRICA[r.tipo],
+    },
+    {
+      cabecalho: 'Origem do valor',
+      largura: '180px',
+      secundaria: true,
+      celula: (r) => <span className="text-muted-foreground">{ORIGEM_DO_VALOR[r.estrategia]}</span>,
+    },
+    {
+      cabecalho: 'Compõe base de',
+      largura: '190px',
+      celula: (r) => {
+        const bases = separarBases(r.basesIncidentes)
+
+        /*
+         * Texto, e não três badges coloridos por linha: numa lista de vinte
+         * rubricas, sessenta pastilhas viram ruído e a coluna deixa de poder
+         * ser lida de cima a baixo.
+         */
+        if (bases.length === 0) {
+          return (
+            <span className="text-muted-foreground">
+              {r.tipo === 'Desconto' ? '—' : 'nenhuma'}
+            </span>
+          )
+        }
+
+        return <span>{bases.map((b) => ROTULO_BASE[b]).join(' · ')}</span>
+      },
+    },
+    {
+      cabecalho: 'Situação',
+      largura: '110px',
+      celula: (r) => (
+        <StatusBadge tom={r.ativa ? 'sucesso' : 'neutro'}>
+          {r.ativa ? 'Ativa' : 'Inativa'}
+        </StatusBadge>
+      ),
+    },
+    ...(administra
+      ? [
+          {
+            cabecalho: '',
+            largura: '90px',
+            className: 'text-right',
+            celula: (r: Rubrica) =>
+              r.ativa ? <Inativar rubrica={r} aoInativar={carregar} /> : null,
+          } satisfies Coluna<Rubrica>,
+        ]
+      : []),
+  ]
 
   return (
-    <main className="mx-auto w-full max-w-4xl px-6 py-8">
-      <header className="mb-6">
-        <h1 className="text-xl font-semibold tracking-tight">Rubricas</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Os eventos que podem aparecer numa folha. O salário-base é calculado pelo sistema; o
-          resto é digitado no lançamento. A incidência diz em quais bases a rubrica entra —
-          INSS, FGTS e IRRF não incidem sobre o total do holerite.
-        </p>
-      </header>
+    <>
+      <CabecalhoPagina
+        titulo="Rubricas"
+        descricao="Catálogo de eventos da folha. A incidência define em quais bases cada rubrica entra."
+        acao={administra && <NovaRubrica temSalario={temSalario} aoCriar={carregar} />}
+      />
 
-      {estado.situacao === 'pronto' && !temSalario && (
-        <Alert className="mb-6">
+      {!carregando && !erro && !temSalario && rubricas.length > 0 && (
+        <Alert className="mb-5">
           <AlertDescription>
             Nenhuma rubrica de salário-base ativa. Sem ela a folha não tem o que calcular.
           </AlertDescription>
         </Alert>
       )}
 
-      {administra && <FormularioNovaRubrica temSalario={temSalario} aoCriar={carregar} />}
+      <DataTable
+        rotulo="Catálogo de rubricas"
+        colunas={colunas}
+        itens={filtradas}
+        chave={(r) => r.id}
+        carregando={carregando}
+        erro={erro}
+        aoTentarNovamente={() => void carregar()}
+        filtrado={busca.trim().length > 0 || tipo !== 'todos'}
+        aoLimparFiltros={() => {
+          definirBusca('')
+          definirTipo('todos')
+        }}
+        vazio={{
+          titulo: 'Nenhuma rubrica cadastrada',
+          descricao: 'A folha precisa de ao menos uma rubrica de salário-base para calcular.',
+        }}
+        toolbar={
+          <>
+            <CampoBusca
+              rotulo="Buscar rubrica"
+              placeholder="Buscar por código ou nome"
+              valor={busca}
+              aoMudar={definirBusca}
+            />
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">
-            {estado.situacao === 'pronto' ? `${estado.rubricas.length} rubrica(s)` : 'Rubricas'}
-          </CardTitle>
-        </CardHeader>
+            <FiltroSelect
+              rotulo="Tipo"
+              valor={tipo}
+              aoMudar={(v) => definirTipo(v as 'todos' | TipoRubrica)}
+              opcoes={[
+                { valor: 'todos', texto: 'Todos os tipos' },
+                { valor: 'Provento', texto: 'Proventos' },
+                { valor: 'Desconto', texto: 'Descontos' },
+                { valor: 'Informativo', texto: 'Informativos' },
+              ]}
+            />
 
-        <CardContent aria-live="polite" aria-busy={estado.situacao === 'carregando'}>
-          {estado.situacao === 'carregando' && (
-            <p className="py-2 text-sm text-muted-foreground">Carregando...</p>
-          )}
-
-          {estado.situacao === 'erro' && (
-            <div>
-              <Alert variant="destructive" role="alert">
-                <AlertDescription>{estado.mensagem}</AlertDescription>
-              </Alert>
-              <Button
-                className="mt-4"
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  definirEstado({ situacao: 'carregando' })
-                  void carregar()
-                }}
-              >
-                Tentar novamente
-              </Button>
-            </div>
-          )}
-
-          {estado.situacao === 'pronto' && estado.rubricas.length === 0 && (
-            <p className="py-2 text-sm text-muted-foreground">
-              Nenhuma rubrica cadastrada.
-            </p>
-          )}
-
-          {estado.situacao === 'pronto' && estado.rubricas.length > 0 && (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Código</TableHead>
-                  <TableHead>Nome</TableHead>
-                  <TableHead>Tipo</TableHead>
-                  <TableHead>Origem do valor</TableHead>
-                  <TableHead>Compõe base de</TableHead>
-                  <TableHead>Situação</TableHead>
-                  {administra && <TableHead className="text-right">Ação</TableHead>}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {estado.rubricas.map((rubrica) => (
-                  <TableRow key={rubrica.id}>
-                    <TableCell className="font-mono text-xs">{rubrica.codigo}</TableCell>
-                    <TableCell className="font-medium">{rubrica.nome}</TableCell>
-                    <TableCell>{ROTULO_TIPO_RUBRICA[rubrica.tipo]}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {ORIGEM_DO_VALOR[rubrica.estrategia]}
-                    </TableCell>
-                    <TableCell>
-                      {separarBases(rubrica.basesIncidentes).length === 0 ? (
-                        <span className="text-sm text-muted-foreground">
-                          {rubrica.tipo === 'Desconto' ? '—' : 'nenhuma'}
-                        </span>
-                      ) : (
-                        <span className="flex flex-wrap gap-1">
-                          {separarBases(rubrica.basesIncidentes).map((base) => (
-                            <Badge key={base} variant="outline">
-                              {ROTULO_BASE[base]}
-                            </Badge>
-                          ))}
-                        </span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={rubrica.ativa ? 'default' : 'secondary'}>
-                        {rubrica.ativa ? 'ativa' : 'inativa'}
-                      </Badge>
-                    </TableCell>
-                    {administra && (
-                      <TableCell className="text-right">
-                        {rubrica.ativa && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              void inativarRubrica(rubrica.id).then(carregar)
-                            }}
-                          >
-                            Inativar
-                          </Button>
-                        )}
-                      </TableCell>
-                    )}
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
-    </main>
+            <EspacoToolbar />
+          </>
+        }
+        rodape={
+          <span>
+            {filtradas.length} {filtradas.length === 1 ? 'rubrica' : 'rubricas'}
+          </span>
+        }
+      />
+    </>
   )
 }
 
-function FormularioNovaRubrica({
+function Inativar({ rubrica, aoInativar }: { rubrica: Rubrica; aoInativar: () => Promise<void> }) {
+  const [aberto, definirAberto] = useState(false)
+
+  return (
+    <Dialog open={aberto} onOpenChange={definirAberto}>
+      <DialogTrigger asChild>
+        <Button variant="ghost" size="sm">
+          Inativar
+        </Button>
+      </DialogTrigger>
+
+      <DialogContent
+        titulo={`Inativar ${rubrica.codigo}?`}
+        descricao="A rubrica deixa de aparecer para novos lançamentos. Os holerites já emitidos não mudam."
+      >
+        <DialogClose asChild>
+          <Button variant="outline" size="sm">
+            Cancelar
+          </Button>
+        </DialogClose>
+        <Button
+          size="sm"
+          onClick={() => {
+            definirAberto(false)
+            void inativarRubrica(rubrica.id).then(aoInativar)
+          }}
+        >
+          Inativar
+        </Button>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function NovaRubrica({
   temSalario,
   aoCriar,
 }: {
   temSalario: boolean
   aoCriar: () => Promise<void>
 }) {
+  const [aberto, definirAberto] = useState(false)
   const [codigo, definirCodigo] = useState('')
   const [nome, definirNome] = useState('')
   const [tipo, definirTipo] = useState<TipoRubrica>('Provento')
@@ -203,8 +259,8 @@ function FormularioNovaRubrica({
   const [erro, definirErro] = useState<string | null>(null)
   const [enviando, definirEnviando] = useState(false)
 
-  // Salário-base é sempre provento; fora isso vale o que está no seletor.
   const tipoAtual: TipoRubrica = salarioBase ? 'Provento' : tipo
+  const desconto = tipoAtual === 'Desconto'
 
   const aoEnviar = async (evento: FormEvent) => {
     evento.preventDefault()
@@ -212,134 +268,148 @@ function FormularioNovaRubrica({
     definirEnviando(true)
 
     try {
-      const tipoFinal = salarioBase ? 'Provento' : tipo
-
       await criarRubrica({
         codigo,
         nome,
-        tipo: tipoFinal,
+        tipo: tipoAtual,
         estrategia: salarioBase ? 'SalarioBaseProporcional' : 'ValorInformado',
         // Desconto nunca compõe base: o backend recusa, e mandar assim evita
         // um 400 previsível quando alguém marca as caixas e depois troca o tipo.
-        basesIncidentes: tipoFinal === 'Desconto' ? 'Nenhuma' : juntarBases(bases),
+        basesIncidentes: desconto ? 'Nenhuma' : juntarBases(bases),
       })
+
       definirCodigo('')
       definirNome('')
       definirBases([])
       definirSalarioBase(false)
+      definirAberto(false)
       await aoCriar()
     } catch (falha) {
-      definirErro(falha instanceof Error ? falha.message : 'Falha ao criar rubrica.')
+      definirErro(falha instanceof Error ? falha.message : 'Não foi possível criar a rubrica.')
     } finally {
       definirEnviando(false)
     }
   }
 
   return (
-    <Card className="mb-6">
-      <CardHeader>
-        <CardTitle className="text-base">Nova rubrica</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={aoEnviar} className="grid items-end gap-4 sm:grid-cols-4" noValidate>
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="codigoRubrica">Código</Label>
-            <Input
-              id="codigoRubrica"
-              required
-              placeholder="VT"
-              value={codigo}
-              onChange={(e) => definirCodigo(e.target.value)}
-            />
-          </div>
+    <Drawer open={aberto} onOpenChange={definirAberto}>
+      <DrawerTrigger asChild>
+        <Button size="sm">
+          <Plus aria-hidden />
+          Nova rubrica
+        </Button>
+      </DrawerTrigger>
 
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="nomeRubrica">Nome</Label>
-            <Input
-              id="nomeRubrica"
-              required
-              value={nome}
-              onChange={(e) => definirNome(e.target.value)}
-            />
-          </div>
+      <DrawerContent titulo="Nova rubrica" className="max-w-lg">
+        <form onSubmit={aoEnviar} className="space-y-5" noValidate>
+          <section className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-[9rem_1fr]">
+              <div className="space-y-1.5">
+                <Label htmlFor="codigoRubrica">Código</Label>
+                <Input
+                  id="codigoRubrica"
+                  required
+                  autoFocus
+                  placeholder="VT"
+                  value={codigo}
+                  onChange={(e) => definirCodigo(e.target.value)}
+                  className="tabular"
+                />
+              </div>
 
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="tipoRubrica">Tipo</Label>
-            <select
-              id="tipoRubrica"
-              className="h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs disabled:opacity-50"
-              value={salarioBase ? 'Provento' : tipo}
-              disabled={salarioBase}
-              onChange={(e) => definirTipo(e.target.value as TipoRubrica)}
-            >
-              <option value="Provento">provento</option>
-              <option value="Desconto">desconto</option>
-              <option value="Informativo">informativo</option>
-            </select>
-          </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="nomeRubrica">Nome</Label>
+                <Input
+                  id="nomeRubrica"
+                  required
+                  value={nome}
+                  onChange={(e) => definirNome(e.target.value)}
+                />
+              </div>
+            </div>
 
-          <div className="flex items-center gap-2 pb-2">
-            <input
-              id="salarioBase"
-              type="checkbox"
-              className="size-4"
-              checked={salarioBase}
-              disabled={temSalario}
-              onChange={(e) => definirSalarioBase(e.target.checked)}
-            />
-            <Label htmlFor="salarioBase">
-              Salário-base
-              {temSalario && (
-                <span className="ml-1 text-xs font-normal text-muted-foreground">(já existe)</span>
-              )}
-            </Label>
-          </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="tipoRubrica">Tipo</Label>
+                <select
+                  id="tipoRubrica"
+                  value={tipoAtual}
+                  disabled={salarioBase}
+                  onChange={(e) => definirTipo(e.target.value as TipoRubrica)}
+                  className="h-9 w-full rounded-md border border-input bg-card px-3 text-[13px] shadow-xs disabled:opacity-50"
+                >
+                  <option value="Provento">Provento</option>
+                  <option value="Desconto">Desconto</option>
+                  <option value="Informativo">Informativo</option>
+                </select>
+              </div>
 
-          <fieldset className="sm:col-span-4" disabled={tipoAtual === 'Desconto'}>
-            <legend className="mb-2 text-sm font-medium">
-              Compõe base de
-              {tipoAtual === 'Desconto' && (
-                <span className="ml-2 text-xs font-normal text-muted-foreground">
-                  desconto não compõe base — o que reduz base é dedução, e isso é outro conceito
-                </span>
-              )}
-            </legend>
-
-            <div className="flex flex-wrap gap-4">
-              {BASES.map((base) => (
-                <div key={base} className="flex items-center gap-2">
+              <div className="flex items-end pb-2">
+                <label className="flex items-center gap-2 text-[13px]">
                   <input
-                    id={`base-${base}`}
                     type="checkbox"
                     className="size-4"
-                    checked={tipoAtual !== 'Desconto' && bases.includes(base)}
-                    onChange={(e) =>
-                      definirBases((atuais) =>
-                        e.target.checked ? [...atuais, base] : atuais.filter((b) => b !== base),
-                      )
-                    }
+                    checked={salarioBase}
+                    disabled={temSalario}
+                    onChange={(e) => definirSalarioBase(e.target.checked)}
                   />
-                  <Label htmlFor={`base-${base}`}>{ROTULO_BASE[base]}</Label>
-                </div>
-              ))}
+                  Salário-base
+                  {temSalario && (
+                    <span className="text-xs text-muted-foreground">(já existe)</span>
+                  )}
+                </label>
+              </div>
             </div>
+          </section>
+
+          <fieldset disabled={desconto} className="border-t border-border pt-4">
+            <legend className="sr-only">Incidências</legend>
+
+            <p className="mb-2 text-[13px] font-medium">Compõe base de</p>
+
+            {desconto ? (
+              <p className="text-xs text-muted-foreground">
+                Desconto não compõe base. O que reduz base é dedução, que é outro conceito.
+              </p>
+            ) : (
+              <div className="flex flex-wrap gap-4">
+                {BASES.map((base) => (
+                  <label key={base} className="flex items-center gap-2 text-[13px]">
+                    <input
+                      type="checkbox"
+                      className="size-4"
+                      checked={bases.includes(base)}
+                      onChange={(e) =>
+                        definirBases((atuais) =>
+                          e.target.checked ? [...atuais, base] : atuais.filter((b) => b !== base),
+                        )
+                      }
+                    />
+                    {ROTULO_BASE[base]}
+                  </label>
+                ))}
+              </div>
+            )}
           </fieldset>
 
           {erro && (
-            <div className="sm:col-span-4">
-              <Alert variant="destructive" role="alert">
-                <AlertDescription>{erro}</AlertDescription>
-              </Alert>
-            </div>
+            <Alert variant="destructive" role="alert">
+              <AlertDescription>{erro}</AlertDescription>
+            </Alert>
           )}
 
-          <div className="sm:col-span-4">
+          <div className="flex justify-end gap-2 border-t border-border pt-4">
+            <DrawerClose asChild>
+              <Button type="button" variant="outline" size="sm">
+                Cancelar
+              </Button>
+            </DrawerClose>
             <Button type="submit" size="sm" disabled={enviando}>
               {enviando ? 'Criando...' : 'Criar rubrica'}
             </Button>
           </div>
         </form>
-      </CardContent>
-    </Card>
+      </DrawerContent>
+    </Drawer>
   )
 }

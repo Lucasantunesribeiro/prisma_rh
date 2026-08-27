@@ -1,19 +1,6 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { Link } from 'react-router'
-import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
+import { Plus } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useNavigate } from 'react-router'
 import {
   abrirFolha,
   competenciaPorExtenso,
@@ -22,31 +9,60 @@ import {
   podeProcessarFolha,
   ROTULO_SITUACAO_FOLHA,
   type FolhaResumo,
+  type SituacaoFolha,
 } from '@/api/folha'
-import { listarEmpresas, type Empresa } from '@/api/empresas'
-import { formatarSalario } from '@/api/pessoas'
 import { useSessao } from '@/auth/useSessao'
+import { DataTable, type Coluna } from '@/components/sistema/DataTable'
+import {
+  CabecalhoPagina,
+  Dinheiro,
+  EspacoToolbar,
+  FiltroSelect,
+  StatusBadge,
+} from '@/components/sistema/Primitivos'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { Drawer, DrawerClose, DrawerContent, DrawerTrigger } from '@/components/ui/drawer'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { useEmpresaAtual } from '@/layout/contexto'
+import { usePagina } from '@/layout/usePagina'
 
-type Estado =
-  | { situacao: 'carregando' }
-  | { situacao: 'pronto'; folhas: FolhaResumo[]; empresas: Empresa[] }
-  | { situacao: 'erro'; mensagem: string }
+const TOM: Record<SituacaoFolha, 'neutro' | 'info' | 'sucesso'> = {
+  Rascunho: 'neutro',
+  Calculada: 'info',
+  Fechada: 'sucesso',
+}
 
 export default function Folhas() {
   const { usuario } = useSessao()
+  const navegar = useNavigate()
+  const { empresas, empresaAtual } = useEmpresaAtual()
   const processa = podeProcessarFolha(usuario?.perfil)
 
-  const [estado, definirEstado] = useState<Estado>({ situacao: 'carregando' })
+  usePagina([{ texto: 'Folha' }, { texto: 'Folhas' }])
+
+  const [folhas, definirFolhas] = useState<FolhaResumo[]>([])
+  const [carregando, definirCarregando] = useState(true)
+  const [erro, definirErro] = useState<string | null>(null)
+  const [situacao, definirSituacao] = useState<'todas' | SituacaoFolha>('todas')
+
+  /*
+   * A empresa da sidebar pré-filtra a lista. É conveniência de interface: o
+   * backend continua devolvendo só o que a organização do token pode ver.
+   */
+  const [idEmpresa, definirIdEmpresa] = useState('')
 
   const carregar = useCallback(async () => {
+    definirCarregando(true)
+    definirErro(null)
+
     try {
-      const [folhas, empresas] = await Promise.all([listarFolhas(), listarEmpresas()])
-      definirEstado({ situacao: 'pronto', folhas, empresas: empresas.itens })
+      definirFolhas(await listarFolhas())
     } catch (falha) {
-      definirEstado({
-        situacao: 'erro',
-        mensagem: falha instanceof Error ? falha.message : 'Falha ao carregar folhas.',
-      })
+      definirErro(falha instanceof Error ? falha.message : 'Não foi possível carregar as folhas.')
+    } finally {
+      definirCarregando(false)
     }
   }, [])
 
@@ -56,113 +72,153 @@ export default function Folhas() {
     void carregar()
   }, [carregar])
 
+  const filtradas = useMemo(
+    () =>
+      folhas.filter(
+        (f) =>
+          (!idEmpresa || f.idEmpresa === idEmpresa) &&
+          (situacao === 'todas' || f.situacao === situacao),
+      ),
+    [folhas, idEmpresa, situacao],
+  )
+
+  const temFiltro = Boolean(idEmpresa) || situacao !== 'todas'
+
+  const colunas: Coluna<FolhaResumo>[] = [
+    {
+      cabecalho: 'Competência',
+      largura: '190px',
+      celula: (f) => (
+        <div>
+          <span className="tabular block font-medium text-foreground">{f.competencia}</span>
+          <span className="block text-xs text-muted-foreground">
+            {competenciaPorExtenso(f.competencia)}
+          </span>
+        </div>
+      ),
+    },
+    {
+      cabecalho: 'Empresa',
+      celula: (f) => <span className="truncate">{f.empresa}</span>,
+    },
+    {
+      cabecalho: 'Funcionários',
+      numerica: true,
+      largura: '110px',
+      celula: (f) => <span className="tabular">{f.quantidadeFuncionarios}</span>,
+    },
+    {
+      cabecalho: 'Proventos',
+      numerica: true,
+      secundaria: true,
+      celula: (f) => <Dinheiro valor={f.totalProventos} />,
+    },
+    {
+      cabecalho: 'Descontos',
+      numerica: true,
+      secundaria: true,
+      celula: (f) => <Dinheiro valor={f.totalDescontos} sinal="desconto" />,
+    },
+    {
+      cabecalho: 'Líquido',
+      numerica: true,
+      celula: (f) => <Dinheiro valor={f.totalLiquido} enfase />,
+    },
+    {
+      cabecalho: 'Status',
+      largura: '130px',
+      celula: (f) => <StatusBadge tom={TOM[f.situacao]}>{ROTULO_SITUACAO_FOLHA[f.situacao]}</StatusBadge>,
+    },
+  ]
+
   return (
-    <main className="mx-auto w-full max-w-5xl px-6 py-8">
-      <header className="mb-6">
-        <h1 className="text-xl font-semibold tracking-tight">Folhas de pagamento</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Uma folha por empresa e competência. Depois de fechada, ela não muda mais.
-        </p>
-      </header>
+    <>
+      <CabecalhoPagina
+        titulo="Folhas"
+        descricao="Uma folha por empresa e competência. Fechar é definitivo."
+        acao={
+          processa &&
+          empresas.length > 0 && (
+            <AbrirFolha
+              empresas={empresas}
+              idPadrao={empresaAtual?.id ?? empresas[0].id}
+              aoAbrir={carregar}
+            />
+          )
+        }
+      />
 
-      {estado.situacao === 'pronto' && processa && (
-        <FormularioAbertura empresas={estado.empresas} aoAbrir={carregar} />
-      )}
+      <DataTable
+        rotulo="Folhas de pagamento"
+        colunas={colunas}
+        itens={filtradas}
+        chave={(f) => f.id}
+        carregando={carregando}
+        erro={erro}
+        aoTentarNovamente={() => void carregar()}
+        filtrado={temFiltro}
+        aoLimparFiltros={() => {
+          definirIdEmpresa('')
+          definirSituacao('todas')
+        }}
+        aoClicarLinha={(f) => navegar(`/folhas/${f.id}`)}
+        vazio={{
+          titulo: 'Nenhuma folha aberta',
+          descricao: processa
+            ? 'Abra a folha de uma competência para começar o processamento.'
+            : 'Nenhuma competência foi aberta ainda.',
+        }}
+        toolbar={
+          <>
+            <FiltroSelect
+              rotulo="Empresa"
+              valor={idEmpresa}
+              aoMudar={definirIdEmpresa}
+              opcoes={[
+                { valor: '', texto: 'Todas as empresas' },
+                ...empresas.map((e) => ({
+                  valor: e.id,
+                  texto: e.nomeFantasia ?? e.razaoSocial,
+                })),
+              ]}
+            />
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">
-            {estado.situacao === 'pronto' ? `${estado.folhas.length} folha(s)` : 'Folhas'}
-          </CardTitle>
-        </CardHeader>
+            <FiltroSelect
+              rotulo="Status"
+              valor={situacao}
+              aoMudar={(v) => definirSituacao(v as 'todas' | SituacaoFolha)}
+              opcoes={[
+                { valor: 'todas', texto: 'Todos os status' },
+                { valor: 'Rascunho', texto: 'Rascunho' },
+                { valor: 'Calculada', texto: 'Calculada' },
+                { valor: 'Fechada', texto: 'Fechada' },
+              ]}
+            />
 
-        <CardContent aria-live="polite" aria-busy={estado.situacao === 'carregando'}>
-          {estado.situacao === 'carregando' && (
-            <p className="py-2 text-sm text-muted-foreground">Carregando...</p>
-          )}
-
-          {estado.situacao === 'erro' && (
-            <div>
-              <Alert variant="destructive" role="alert">
-                <AlertDescription>{estado.mensagem}</AlertDescription>
-              </Alert>
-              <Button
-                className="mt-4"
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  definirEstado({ situacao: 'carregando' })
-                  void carregar()
-                }}
-              >
-                Tentar novamente
-              </Button>
-            </div>
-          )}
-
-          {estado.situacao === 'pronto' && estado.folhas.length === 0 && (
-            <p className="py-2 text-sm text-muted-foreground">
-              {processa
-                ? 'Nenhuma folha aberta. Abra a primeira acima.'
-                : 'Nenhuma folha aberta.'}
-            </p>
-          )}
-
-          {estado.situacao === 'pronto' && estado.folhas.length > 0 && (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Competência</TableHead>
-                  <TableHead>Empresa</TableHead>
-                  <TableHead>Situação</TableHead>
-                  <TableHead className="text-right">Funcionários</TableHead>
-                  <TableHead className="text-right">Líquido</TableHead>
-                  <TableHead className="text-right">Abrir</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {estado.folhas.map((folha) => (
-                  <TableRow key={folha.id}>
-                    <TableCell className="font-medium">
-                      {folha.competencia}
-                      <span className="ml-2 text-xs font-normal text-muted-foreground">
-                        {competenciaPorExtenso(folha.competencia)}
-                      </span>
-                    </TableCell>
-                    <TableCell>{folha.empresa}</TableCell>
-                    <TableCell>
-                      <Badge variant={folha.situacao === 'Fechada' ? 'secondary' : 'default'}>
-                        {ROTULO_SITUACAO_FOLHA[folha.situacao]}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right">{folha.quantidadeFuncionarios}</TableCell>
-                    <TableCell className="text-right font-medium">
-                      {formatarSalario(folha.totalLiquido)}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button asChild variant="ghost" size="sm">
-                        <Link to={`/folhas/${folha.id}`}>Abrir</Link>
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
-    </main>
+            <EspacoToolbar />
+          </>
+        }
+        rodape={
+          <span>
+            {filtradas.length} {filtradas.length === 1 ? 'folha' : 'folhas'}
+          </span>
+        }
+      />
+    </>
   )
 }
 
-function FormularioAbertura({
+function AbrirFolha({
   empresas,
+  idPadrao,
   aoAbrir,
 }: {
-  empresas: Empresa[]
+  empresas: { id: string; razaoSocial: string; nomeFantasia: string | null }[]
+  idPadrao: string
   aoAbrir: () => Promise<void>
 }) {
-  const [idEmpresa, definirIdEmpresa] = useState(empresas[0]?.id ?? '')
+  const [aberto, definirAberto] = useState(false)
+  const [idEmpresa, definirIdEmpresa] = useState(idPadrao)
   const [competencia, definirCompetencia] = useState('')
   const [erro, definirErro] = useState<string | null>(null)
   const [enviando, definirEnviando] = useState(false)
@@ -174,7 +230,7 @@ function FormularioAbertura({
     const normalizada = normalizarCompetencia(competencia)
 
     if (!normalizada) {
-      definirErro('Competência inválida. Escreva o mês e o ano, como 08/2026.')
+      definirErro('Informe a competência no formato 08/2026.')
       return
     }
 
@@ -183,50 +239,47 @@ function FormularioAbertura({
     try {
       await abrirFolha(idEmpresa, normalizada)
       definirCompetencia('')
+      definirAberto(false)
       await aoAbrir()
     } catch (falha) {
-      definirErro(falha instanceof Error ? falha.message : 'Falha ao abrir a folha.')
+      definirErro(falha instanceof Error ? falha.message : 'Não foi possível abrir a folha.')
     } finally {
       definirEnviando(false)
     }
   }
 
-  if (empresas.length === 0) {
-    return (
-      <Card className="mb-6">
-        <CardContent className="pt-6">
-          <p className="text-sm text-muted-foreground">
-            Cadastre uma empresa antes de abrir folha — a folha é sempre de uma empresa.
-          </p>
-        </CardContent>
-      </Card>
-    )
-  }
-
   return (
-    <Card className="mb-6">
-      <CardHeader>
-        <CardTitle className="text-base">Abrir folha</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={aoEnviar} className="grid items-end gap-4 sm:grid-cols-3" noValidate>
-          <div className="flex flex-col gap-2">
+    <Drawer open={aberto} onOpenChange={definirAberto}>
+      <DrawerTrigger asChild>
+        <Button size="sm">
+          <Plus aria-hidden />
+          Abrir folha
+        </Button>
+      </DrawerTrigger>
+
+      <DrawerContent
+        titulo="Abrir folha"
+        descricao="Uma folha por empresa e competência. Entra quem teve vínculo em qualquer dia do mês."
+        className="max-w-md"
+      >
+        <form onSubmit={aoEnviar} className="space-y-4" noValidate>
+          <div className="space-y-1.5">
             <Label htmlFor="empresaFolha">Empresa</Label>
             <select
               id="empresaFolha"
-              className="h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs"
               value={idEmpresa}
               onChange={(e) => definirIdEmpresa(e.target.value)}
+              className="h-9 w-full rounded-md border border-input bg-card px-3 text-[13px] shadow-xs"
             >
-              {empresas.map((empresa) => (
-                <option key={empresa.id} value={empresa.id}>
-                  {empresa.nomeFantasia ?? empresa.razaoSocial}
+              {empresas.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.nomeFantasia ?? e.razaoSocial}
                 </option>
               ))}
             </select>
           </div>
 
-          <div className="flex flex-col gap-2">
+          <div className="space-y-1.5">
             <Label htmlFor="competenciaFolha">Competência</Label>
             <Input
               id="competenciaFolha"
@@ -234,24 +287,29 @@ function FormularioAbertura({
               placeholder="08/2026"
               value={competencia}
               onChange={(e) => definirCompetencia(e.target.value)}
+              className="tabular"
             />
+            <p className="text-xs text-muted-foreground">Mês e ano: 08/2026.</p>
           </div>
 
-          <div>
+          {erro && (
+            <Alert variant="destructive" role="alert">
+              <AlertDescription>{erro}</AlertDescription>
+            </Alert>
+          )}
+
+          <div className="flex justify-end gap-2 border-t border-border pt-4">
+            <DrawerClose asChild>
+              <Button type="button" variant="outline" size="sm">
+                Cancelar
+              </Button>
+            </DrawerClose>
             <Button type="submit" size="sm" disabled={enviando}>
               {enviando ? 'Abrindo...' : 'Abrir folha'}
             </Button>
           </div>
-
-          {erro && (
-            <div className="sm:col-span-3">
-              <Alert variant="destructive" role="alert">
-                <AlertDescription>{erro}</AlertDescription>
-              </Alert>
-            </div>
-          )}
         </form>
-      </CardContent>
-    </Card>
+      </DrawerContent>
+    </Drawer>
   )
 }

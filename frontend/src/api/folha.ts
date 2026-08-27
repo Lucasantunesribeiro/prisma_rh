@@ -35,9 +35,9 @@ export interface Rubrica {
 }
 
 export const ROTULO_TIPO_RUBRICA: Record<TipoRubrica, string> = {
-  Provento: 'provento',
-  Desconto: 'desconto',
-  Informativo: 'informativo',
+  Provento: 'Provento',
+  Desconto: 'Desconto',
+  Informativo: 'Informativo',
 }
 
 export const listarRubricas = (somenteAtivas = false): Promise<Rubrica[]> =>
@@ -78,9 +78,9 @@ export type SituacaoFolha = 'Rascunho' | 'Calculada' | 'Fechada'
 export type OrigemLancamento = 'Calculado' | 'Manual'
 
 export const ROTULO_SITUACAO_FOLHA: Record<SituacaoFolha, string> = {
-  Rascunho: 'rascunho',
-  Calculada: 'calculada',
-  Fechada: 'fechada',
+  Rascunho: 'Rascunho',
+  Calculada: 'Calculada',
+  Fechada: 'Fechada',
 }
 
 export interface FolhaResumo {
@@ -243,3 +243,25 @@ export function competenciaPorExtenso(competencia: string): string {
   const indice = Number(mes) - 1
   return indice >= 0 && indice < 12 ? `${nomes[indice]} de ${ano}` : competencia
 }
+
+// ------------------------------------------------- parametros legais (4B)
+
+export interface FaixaInss {
+  ordem: number
+  limiteInferior: number
+  limiteSuperior: number
+  aliquota: number
+  aliquotaPercentual: number
+}
+
+export interface TabelaInss {
+  id: string
+  vigenciaInicio: string
+  fonte: string
+  teto: number
+  vigente: boolean
+  faixas: FaixaInss[]
+}
+
+/** Parâmetro legal federal: a mesma tabela vale para todas as organizações. */
+export const listarTabelasInss = (): Promise<TabelaInss[]> => obter('/api/tabelas-inss')

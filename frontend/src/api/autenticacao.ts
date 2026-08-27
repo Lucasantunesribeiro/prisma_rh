@@ -10,9 +10,24 @@ export type Perfil =
 export interface UsuarioAutenticado {
   id: string
   idOrganizacao: string
-  nome: string
-  email: string
   perfil: Perfil
+
+  /**
+   * ⚠️ OPCIONAIS PORQUE A API NEM SEMPRE OS ENVIA.
+   *
+   * POST /api/autenticacao/entrar devolve o usuario completo, mas
+   * GET /api/autenticacao/eu - usado ao restaurar a sessao num F5 - devolve
+   * apenas id, idOrganizacao e perfil. Depois de recarregar a pagina, nome e
+   * e-mail somem.
+   *
+   * Tipar como obrigatorio era mentira do tipo: o codigo antigo renderizava
+   * `undefined` em silencio e ninguem via. Marcar como opcional obriga cada
+   * uso a decidir o que mostrar quando falta.
+   *
+   * A correcao definitiva e no backend, e depende de decisao do responsavel.
+   */
+  nome?: string
+  email?: string
 }
 
 interface SessaoResposta {

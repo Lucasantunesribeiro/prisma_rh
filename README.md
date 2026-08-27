@@ -138,7 +138,7 @@ na Fase 11 do [ROADMAP.md](ROADMAP.md); as regras permanentes, no `CLAUDE.md §3
 | Documentação da API | OpenAPI |
 | Testes backend | xUnit, Testcontainers |
 | Frontend | React 19, TypeScript, Vite, React Router |
-| Estilo | Tailwind CSS v4, shadcn/ui |
+| Estilo | Tailwind CSS v4, shadcn/ui, Radix, Lucide |
 | Testes frontend | Vitest, Testing Library |
 | Infra local | Docker Compose |
 
@@ -354,6 +354,23 @@ npm run test        # execução única
 npm run lint
 npm run build       # verificação de tipos + build de produção
 ```
+
+---
+
+## Interface
+
+O frontend usa um **application shell único**: sidebar com contexto de empresa,
+topbar com breadcrumb e um workspace que ocupa a largura disponível. Todas as
+telas — atuais e futuras — seguem o mesmo sistema.
+
+A direção é *data-first*: tabelas como componente de primeira classe, resumo
+financeiro em faixa tipográfica em vez de grade de cards, valores monetários
+com algarismo de largura fixa, e detalhe em painel lateral (o holerite abre a
+memória de cálculo sem sair da folha).
+
+**A fonte de verdade visual é o [DESIGN.md](DESIGN.md)**, obrigatório para
+qualquer tela nova. Ele traz a paleta, a tipografia, o shell, os componentes
+compartilhados e a lista do que é proibido.
 
 ---
 

@@ -1,19 +1,6 @@
+import { Calculator, Lock, Plus, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { Link, useParams } from 'react-router'
-import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
+import { useParams } from 'react-router'
 import {
   calcularFolha,
   competenciaPorExtenso,
@@ -24,42 +11,76 @@ import {
   obterHolerite,
   podeProcessarFolha,
   removerLancamento,
+  ROTULO_BASE,
   ROTULO_SITUACAO_FOLHA,
+  type BaseApurada,
   type FolhaDetalhe as Detalhe,
   type Holerite,
+  type HoleriteResumo,
+  type Lancamento,
   type Rubrica,
-  ROTULO_BASE,
-  type BaseApurada,
+  type SituacaoFolha,
 } from '@/api/folha'
-import { formatarSalario } from '@/api/pessoas'
 import { useSessao } from '@/auth/useSessao'
+import { DataTable, type Coluna } from '@/components/sistema/DataTable'
+import { EstadoCarregando, EstadoErro } from '@/components/sistema/Estados'
+import {
+  CabecalhoPagina,
+  CabecalhoSecao,
+  Dinheiro,
+  ResumoFinanceiro,
+  StatusBadge,
+} from '@/components/sistema/Primitivos'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogClose, DialogContent, DialogTrigger } from '@/components/ui/dialog'
+import { Drawer, DrawerClose, DrawerContent, DrawerTrigger } from '@/components/ui/drawer'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { usePagina } from '@/layout/usePagina'
+import { cn } from '@/lib/utils'
 
-type Estado =
-  | { situacao: 'carregando' }
-  | { situacao: 'pronto'; detalhe: Detalhe; rubricas: Rubrica[] }
-  | { situacao: 'erro'; mensagem: string }
+const TOM_SITUACAO: Record<SituacaoFolha, 'neutro' | 'info' | 'sucesso'> = {
+  Rascunho: 'neutro',
+  Calculada: 'info',
+  Fechada: 'sucesso',
+}
 
 export default function FolhaDetalhe() {
   const { id } = useParams<{ id: string }>()
   const { usuario } = useSessao()
   const processa = podeProcessarFolha(usuario?.perfil)
 
-  const [estado, definirEstado] = useState<Estado>({ situacao: 'carregando' })
-  const [aberto, definirAberto] = useState<string | null>(null)
+  const [detalhe, definirDetalhe] = useState<Detalhe | null>(null)
+  const [rubricas, definirRubricas] = useState<Rubrica[]>([])
+  const [carregando, definirCarregando] = useState(true)
+  const [erro, definirErro] = useState<string | null>(null)
   const [acao, definirAcao] = useState<string | null>(null)
   const [erroAcao, definirErroAcao] = useState<string | null>(null)
+  const [aberto, definirAberto] = useState<HoleriteResumo | null>(null)
+
+  usePagina(
+    [
+      { texto: 'Folha' },
+      { texto: 'Folhas', para: '/folhas' },
+      { texto: detalhe ? detalhe.folha.competencia : 'Carregando' },
+    ],
+    detalhe ? competenciaPorExtenso(detalhe.folha.competencia) : null,
+  )
 
   const carregar = useCallback(async () => {
     if (!id) return
 
+    definirErro(null)
+
     try {
-      const [detalhe, rubricas] = await Promise.all([obterFolha(id), listarRubricas(true)])
-      definirEstado({ situacao: 'pronto', detalhe, rubricas })
+      const [novo, catalogo] = await Promise.all([obterFolha(id), listarRubricas(true)])
+      definirDetalhe(novo)
+      definirRubricas(catalogo)
     } catch (falha) {
-      definirEstado({
-        situacao: 'erro',
-        mensagem: falha instanceof Error ? falha.message : 'Falha ao carregar a folha.',
-      })
+      definirErro(falha instanceof Error ? falha.message : 'Não foi possível carregar a folha.')
+    } finally {
+      definirCarregando(false)
     }
   }, [id])
 
@@ -77,255 +98,257 @@ export default function FolhaDetalhe() {
       await operacao()
       await carregar()
     } catch (falha) {
-      definirErroAcao(falha instanceof Error ? falha.message : 'Falha na operação.')
+      definirErroAcao(falha instanceof Error ? falha.message : 'Não foi possível concluir a ação.')
     } finally {
       definirAcao(null)
     }
   }
 
-  return (
-    <main className="mx-auto w-full max-w-5xl px-6 py-8">
-      <Button asChild variant="ghost" size="sm" className="mb-4 -ml-2">
-        <Link to="/folhas">← Folhas</Link>
-      </Button>
+  if (carregando) return <EstadoCarregando rotulo="Carregando a folha" />
 
-      <div aria-live="polite" aria-busy={estado.situacao === 'carregando'}>
-        {estado.situacao === 'carregando' && (
-          <p className="text-sm text-muted-foreground">Carregando...</p>
-        )}
+  if (erro || !detalhe || !id) {
+    return (
+      <EstadoErro
+        mensagem={erro ?? 'Folha não encontrada.'}
+        aoTentarNovamente={() => void carregar()}
+      />
+    )
+  }
 
-        {estado.situacao === 'erro' && (
-          <div>
-            <Alert variant="destructive" role="alert">
-              <AlertDescription>{estado.mensagem}</AlertDescription>
-            </Alert>
-            <Button
-              className="mt-4"
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                definirEstado({ situacao: 'carregando' })
-                void carregar()
-              }}
-            >
-              Tentar novamente
-            </Button>
-          </div>
-        )}
-
-        {estado.situacao === 'pronto' && id && (
-          <>
-            <Cabecalho
-              detalhe={estado.detalhe}
-              processa={processa}
-              acao={acao}
-              aoCalcular={() => executar('calcular', () => calcularFolha(id))}
-              aoFechar={() => executar('fechar', () => fecharFolha(id))}
-            />
-
-            {erroAcao && (
-              <Alert variant="destructive" role="alert" className="mb-6">
-                <AlertDescription>{erroAcao}</AlertDescription>
-              </Alert>
-            )}
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">
-                  {estado.detalhe.funcionarios.length} funcionário(s) na folha
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {estado.detalhe.funcionarios.length === 0 ? (
-                  <p className="py-2 text-sm text-muted-foreground">
-                    Nenhum funcionário ainda. Quem teve vínculo em qualquer dia de{' '}
-                    {competenciaPorExtenso(estado.detalhe.folha.competencia)} entra ao calcular.
-                  </p>
-                ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Funcionário</TableHead>
-                        <TableHead>Matrícula</TableHead>
-                        <TableHead className="text-right">Avos</TableHead>
-                        <TableHead className="text-right">Proventos</TableHead>
-                        <TableHead className="text-right">Descontos</TableHead>
-                        <TableHead className="text-right">Líquido</TableHead>
-                        <TableHead className="text-right">Memória</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {estado.detalhe.funcionarios.map((holerite) => (
-                        <TableRow key={holerite.id}>
-                          <TableCell className="font-medium">{holerite.funcionario}</TableCell>
-                          <TableCell className="font-mono text-xs">{holerite.matricula}</TableCell>
-                          <TableCell className="text-right">
-                            {holerite.avos}/{holerite.divisor}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {formatarSalario(holerite.totalProventos)}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {holerite.totalDescontos > 0
-                              ? `− ${formatarSalario(holerite.totalDescontos)}`
-                              : '—'}
-                          </TableCell>
-                          <TableCell className="text-right font-medium">
-                            {formatarSalario(holerite.liquido)}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() =>
-                                definirAberto(aberto === holerite.id ? null : holerite.id)
-                              }
-                            >
-                              {aberto === holerite.id ? 'Fechar' : 'Ver'}
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                )}
-              </CardContent>
-            </Card>
-
-            {aberto && (
-              <PainelHolerite
-                idFolha={id}
-                idHolerite={aberto}
-                rubricas={estado.rubricas}
-                editavel={processa && estado.detalhe.folha.situacao !== 'Fechada'}
-                aoMudar={carregar}
-              />
-            )}
-          </>
-        )}
-      </div>
-    </main>
-  )
-}
-
-function Cabecalho({
-  detalhe,
-  processa,
-  acao,
-  aoCalcular,
-  aoFechar,
-}: {
-  detalhe: Detalhe
-  processa: boolean
-  acao: string | null
-  aoCalcular: () => Promise<void>
-  aoFechar: () => Promise<void>
-}) {
   const { folha } = detalhe
   const fechada = folha.situacao === 'Fechada'
+  const editavel = processa && !fechada
+
+  const colunas: Coluna<HoleriteResumo>[] = [
+    {
+      cabecalho: 'Funcionário',
+      largura: '30%',
+      celula: (h) => (
+        <div className="min-w-0">
+          <span className="block truncate font-medium text-foreground">{h.funcionario}</span>
+          <span className="tabular block text-xs text-muted-foreground">
+            Matrícula {h.matricula}
+          </span>
+        </div>
+      ),
+    },
+    {
+      cabecalho: 'Avos',
+      numerica: true,
+      largura: '90px',
+      celula: (h) => (
+        <span className="tabular text-muted-foreground">
+          {h.avos}/{h.divisor}
+        </span>
+      ),
+    },
+    {
+      cabecalho: 'Salário base',
+      numerica: true,
+      secundaria: true,
+      celula: (h) => <Dinheiro valor={h.salarioReferencia} className="text-muted-foreground" />,
+    },
+    {
+      cabecalho: 'Proventos',
+      numerica: true,
+      celula: (h) => <Dinheiro valor={h.totalProventos} />,
+    },
+    {
+      cabecalho: 'Descontos',
+      numerica: true,
+      celula: (h) =>
+        h.totalDescontos > 0 ? (
+          <Dinheiro valor={h.totalDescontos} sinal="desconto" />
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        ),
+    },
+    {
+      cabecalho: 'Líquido',
+      numerica: true,
+      celula: (h) => <Dinheiro valor={h.liquido} enfase />,
+    },
+  ]
 
   return (
-    <header className="mb-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">
-            {folha.empresa} · {folha.competencia}
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {competenciaPorExtenso(folha.competencia)}
-            {folha.versaoCalculo > 0 && ` · calculada ${folha.versaoCalculo}x`}
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <Badge variant={fechada ? 'secondary' : 'default'}>
-            {ROTULO_SITUACAO_FOLHA[folha.situacao]}
-          </Badge>
-
-          {processa && !fechada && (
+    <>
+      <CabecalhoPagina
+        titulo={`Folha mensal · ${competenciaPorExtenso(folha.competencia)}`}
+        descricao={folha.empresa}
+        meta={
+          <div className="flex flex-wrap items-center gap-2 pt-0.5">
+            <StatusBadge tom={TOM_SITUACAO[folha.situacao]}>
+              {ROTULO_SITUACAO_FOLHA[folha.situacao]}
+            </StatusBadge>
+            {folha.versaoCalculo > 0 && (
+              <span className="text-xs text-muted-foreground">
+                {folha.versaoCalculo}ª versão do cálculo
+              </span>
+            )}
+          </div>
+        }
+        acao={
+          processa &&
+          !fechada && (
             <>
-              <Button size="sm" disabled={acao !== null} onClick={() => void aoCalcular()}>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={acao !== null}
+                onClick={() => void executar('calcular', () => calcularFolha(id))}
+              >
+                <Calculator aria-hidden />
                 {acao === 'calcular'
                   ? 'Calculando...'
                   : folha.versaoCalculo > 0
                     ? 'Recalcular'
                     : 'Calcular'}
               </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={acao !== null || folha.situacao !== 'Calculada'}
-                onClick={() => void aoFechar()}
-              >
-                {acao === 'fechar' ? 'Fechando...' : 'Fechar folha'}
-              </Button>
+
+              <FecharFolha
+                habilitado={acao === null && folha.situacao === 'Calculada'}
+                aoConfirmar={() => executar('fechar', () => fecharFolha(id))}
+              />
             </>
-          )}
-        </div>
-      </div>
+          )
+        }
+      />
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-3">
-        <Totalizador rotulo="Proventos" valor={folha.totalProventos} />
-        <Totalizador rotulo="Descontos" valor={folha.totalDescontos} />
-        <Totalizador rotulo="Líquido" valor={folha.totalLiquido} destaque />
-      </div>
-
-      {!fechada && folha.versaoCalculo > 0 && (
-        <p className="mt-3 text-xs text-muted-foreground">
-          Recalcular refaz o salário e mantém os lançamentos digitados. Fechar é definitivo:
-          não há reabertura nesta versão.
-        </p>
+      {erroAcao && (
+        <Alert variant="destructive" role="alert" className="mb-5">
+          <AlertDescription>{erroAcao}</AlertDescription>
+        </Alert>
       )}
-    </header>
+
+      {/*
+       * Faixa tipográfica, e não uma grade de KPI cards: quatro números com
+       * divisores dizem o mesmo que quatro caixas com sombra, ocupando um
+       * terço do espaço e sem sugerir que cada número é um painel próprio.
+       */}
+      <ResumoFinanceiro
+        className="mb-6"
+        itens={[
+          { rotulo: 'Funcionários', valor: <span>{folha.quantidadeFuncionarios}</span> },
+          { rotulo: 'Proventos', valor: <Dinheiro valor={folha.totalProventos} /> },
+          {
+            rotulo: 'Descontos',
+            valor: <Dinheiro valor={folha.totalDescontos} sinal="desconto" />,
+          },
+          { rotulo: 'Líquido', valor: <Dinheiro valor={folha.totalLiquido} />, enfase: true },
+        ]}
+      />
+
+      <DataTable
+        rotulo={`Holerites da folha de ${folha.competencia}`}
+        colunas={colunas}
+        itens={detalhe.funcionarios}
+        chave={(h) => h.id}
+        aoClicarLinha={(h) => definirAberto(h)}
+        vazio={{
+          titulo: 'Nenhum funcionário na folha',
+          descricao: `Quem teve vínculo em qualquer dia de ${competenciaPorExtenso(
+            folha.competencia,
+          )} entra ao calcular.`,
+        }}
+        rodape={
+          !fechada && folha.versaoCalculo > 0 ? (
+            <span className="text-xs">
+              Recalcular refaz o salário e o INSS e mantém os lançamentos digitados. Fechar é
+              definitivo: não há reabertura nesta versão.
+            </span>
+          ) : undefined
+        }
+      />
+
+      {aberto && (
+        <PainelHolerite
+          idFolha={id}
+          resumo={aberto}
+          rubricas={rubricas}
+          editavel={editavel}
+          competencia={folha.competencia}
+          aoFechar={() => definirAberto(null)}
+          aoMudar={carregar}
+        />
+      )}
+    </>
   )
 }
 
-function Totalizador({
-  rotulo,
-  valor,
-  destaque = false,
+function FecharFolha({
+  habilitado,
+  aoConfirmar,
 }: {
-  rotulo: string
-  valor: number
-  destaque?: boolean
+  habilitado: boolean
+  aoConfirmar: () => Promise<void>
 }) {
+  const [aberto, definirAberto] = useState(false)
+
   return (
-    <Card>
-      <CardContent className="pt-6">
-        <p className="text-xs text-muted-foreground">{rotulo}</p>
-        <p className={`mt-1 ${destaque ? 'text-lg font-semibold' : 'text-base font-medium'}`}>
-          {formatarSalario(valor)}
-        </p>
-      </CardContent>
-    </Card>
+    <Dialog open={aberto} onOpenChange={definirAberto}>
+      <DialogTrigger asChild>
+        <Button size="sm" disabled={!habilitado}>
+          <Lock aria-hidden />
+          Fechar folha
+        </Button>
+      </DialogTrigger>
+
+      {/* Confirmação porque a ação é irreversível — não há reabertura. */}
+      <DialogContent
+        titulo="Fechar a folha?"
+        descricao="Depois de fechada, a folha não aceita cálculo, lançamento nem reabertura. É um fato histórico."
+      >
+        <DialogClose asChild>
+          <Button variant="outline" size="sm">
+            Cancelar
+          </Button>
+        </DialogClose>
+        <Button
+          size="sm"
+          onClick={() => {
+            definirAberto(false)
+            void aoConfirmar()
+          }}
+        >
+          Fechar folha
+        </Button>
+      </DialogContent>
+    </Dialog>
   )
 }
+
+// ---------------------------------------------------------------- holerite
 
 function PainelHolerite({
   idFolha,
-  idHolerite,
+  resumo,
   rubricas,
   editavel,
+  competencia,
+  aoFechar,
   aoMudar,
 }: {
   idFolha: string
-  idHolerite: string
+  resumo: HoleriteResumo
   rubricas: Rubrica[]
   editavel: boolean
+  competencia: string
+  aoFechar: () => void
   aoMudar: () => Promise<void>
 }) {
   const [holerite, definirHolerite] = useState<Holerite | null>(null)
   const [erro, definirErro] = useState<string | null>(null)
+  const [memoria, definirMemoria] = useState<Lancamento | null>(null)
 
   const carregar = useCallback(async () => {
     definirErro(null)
 
     try {
-      definirHolerite(await obterHolerite(idFolha, idHolerite))
+      definirHolerite(await obterHolerite(idFolha, resumo.id))
     } catch (falha) {
-      definirErro(falha instanceof Error ? falha.message : 'Falha ao carregar o holerite.')
+      definirErro(falha instanceof Error ? falha.message : 'Não foi possível carregar o holerite.')
     }
-  }, [idFolha, idHolerite])
+  }, [idFolha, resumo.id])
 
   useEffect(() => {
     // O estado só muda DEPOIS do await, quando a resposta da API chega.
@@ -335,176 +358,294 @@ function PainelHolerite({
 
   const apagar = async (idLancamento: string) => {
     try {
-      await removerLancamento(idFolha, idHolerite, idLancamento)
+      await removerLancamento(idFolha, resumo.id, idLancamento)
       await carregar()
       await aoMudar()
     } catch (falha) {
-      definirErro(falha instanceof Error ? falha.message : 'Falha ao remover o lançamento.')
+      definirErro(falha instanceof Error ? falha.message : 'Não foi possível remover o lançamento.')
     }
-  }
-
-  if (erro) {
-    return (
-      <Alert variant="destructive" role="alert" className="mt-6">
-        <AlertDescription>{erro}</AlertDescription>
-      </Alert>
-    )
-  }
-
-  if (!holerite) {
-    return <p className="mt-6 text-sm text-muted-foreground">Carregando holerite...</p>
   }
 
   const manuais = rubricas.filter((r) => r.estrategia === 'ValorInformado')
 
   return (
-    <Card className="mt-6">
-      <CardHeader>
-        <CardTitle className="text-base">
-          {holerite.resumo.funcionario} · {holerite.competencia}
-        </CardTitle>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Matrícula {holerite.resumo.matricula} · {holerite.resumo.avos}/{holerite.resumo.divisor}{' '}
-          avos · salário de referência {formatarSalario(holerite.resumo.salarioReferencia)}
-        </p>
-      </CardHeader>
-
-      <CardContent>
-        {editavel && manuais.length > 0 && (
-          <FormularioLancamento
-            idFolha={idFolha}
-            idHolerite={idHolerite}
-            rubricas={manuais}
-            aoLancar={async () => {
-              await carregar()
-              await aoMudar()
-            }}
-          />
+    <Drawer open onOpenChange={(estado) => !estado && aoFechar()}>
+      <DrawerContent
+        titulo={resumo.funcionario}
+        descricao={
+          <>
+            Folha mensal · {competenciaPorExtenso(competencia)} · Matrícula{' '}
+            <span className="tabular">{resumo.matricula}</span>
+          </>
+        }
+        className="max-w-3xl"
+      >
+        {erro && (
+          <Alert variant="destructive" role="alert" className="mb-4">
+            <AlertDescription>{erro}</AlertDescription>
+          </Alert>
         )}
 
-        <h3 className="mb-3 text-sm font-medium">Lançamentos e memória de cálculo</h3>
+        {!holerite && !erro && <EstadoCarregando rotulo="Carregando holerite" />}
 
-        {holerite.lancamentos.length === 0 && (
-          <p className="text-sm text-muted-foreground">
-            Nenhum lançamento. Calcule a folha para gerar o salário.
-          </p>
-        )}
-
-        <ul className="divide-y divide-border">
-          {holerite.lancamentos.map((lancamento) => (
-            <li key={lancamento.id} className="py-3">
-              <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <span className="text-sm">
-                  <span className="font-mono text-xs text-muted-foreground">
-                    {lancamento.codigoRubrica}
-                  </span>{' '}
-                  <span className="font-medium">{lancamento.nomeRubrica}</span>
-                  {lancamento.referencia && (
-                    <span className="ml-2 text-xs text-muted-foreground">
-                      {lancamento.referencia}
-                    </span>
-                  )}
-                  {lancamento.origem === 'Manual' && (
-                    <Badge variant="secondary" className="ml-2">
-                      manual
-                    </Badge>
-                  )}
-                </span>
-
-                <span className="flex items-center gap-3">
-                  <span
-                    className={`text-sm font-medium ${
-                      lancamento.tipo === 'Desconto' ? 'text-muted-foreground' : ''
-                    }`}
-                  >
-                    {lancamento.tipo === 'Desconto' ? '− ' : ''}
-                    {formatarSalario(lancamento.valor)}
-                  </span>
-
-                  {editavel && lancamento.origem === 'Manual' && (
-                    <Button variant="ghost" size="sm" onClick={() => void apagar(lancamento.id)}>
-                      Remover
-                    </Button>
-                  )}
-                </span>
+        {holerite && (
+          <div className="space-y-7">
+            <section>
+              <div className="mb-3 flex items-center justify-between gap-4">
+                <h3 className="text-[15px] font-semibold tracking-tight">Lançamentos</h3>
+                {editavel && manuais.length > 0 && (
+                  <NovoLancamento
+                    idFolha={idFolha}
+                    idHolerite={resumo.id}
+                    rubricas={manuais}
+                    aoLancar={async () => {
+                      await carregar()
+                      await aoMudar()
+                    }}
+                  />
+                )}
               </div>
 
-              {/* A memória: como aquele número apareceu. */}
-              <ol className="mt-2 space-y-0.5 border-l border-border pl-3">
-                {lancamento.memoria.map((linha) => (
-                  <li
-                    key={linha.ordem}
-                    className="flex flex-wrap justify-between gap-2 text-xs text-muted-foreground"
-                  >
-                    <span>
-                      {linha.descricao}
-                      <span className="ml-2 font-mono">{linha.expressao}</span>
-                    </span>
-                    <span className="font-mono">{formatarSalario(linha.valor)}</span>
-                  </li>
-                ))}
-              </ol>
-            </li>
-          ))}
-        </ul>
+              {/*
+               * O holerite é tratado como documento financeiro: código à
+               * esquerda, referência no meio, proventos e descontos em duas
+               * colunas alinhadas à direita, totais no rodapé.
+               */}
+              <table className="w-full border-collapse text-[13px]">
+                <caption className="sr-only">Lançamentos do holerite</caption>
+                <thead>
+                  <tr className="border-y border-border bg-muted/40 text-xs text-muted-foreground">
+                    <th scope="col" className="w-16 px-3 py-2 text-left font-medium">
+                      Cód.
+                    </th>
+                    <th scope="col" className="px-3 py-2 text-left font-medium">
+                      Rubrica
+                    </th>
+                    <th scope="col" className="w-24 px-3 py-2 text-left font-medium">
+                      Ref.
+                    </th>
+                    <th scope="col" className="w-32 px-3 py-2 text-right font-medium">
+                      Proventos
+                    </th>
+                    <th scope="col" className="w-32 px-3 py-2 text-right font-medium">
+                      Descontos
+                    </th>
+                    <th scope="col" className="w-8 px-1 py-2">
+                      <span className="sr-only">Ações</span>
+                    </th>
+                  </tr>
+                </thead>
 
-        <div className="mt-4 flex justify-end gap-6 border-t border-border pt-4 text-sm">
-          <span className="text-muted-foreground">
-            Proventos {formatarSalario(holerite.resumo.totalProventos)}
-          </span>
-          <span className="text-muted-foreground">
-            Descontos {formatarSalario(holerite.resumo.totalDescontos)}
-          </span>
-          <span className="font-semibold">Líquido {formatarSalario(holerite.resumo.liquido)}</span>
-        </div>
+                <tbody className="divide-y divide-border">
+                  {holerite.lancamentos.map((l) => {
+                    const calculado = l.origem === 'Calculado'
 
-        <BasesDeCalculo bases={holerite.bases} />
-      </CardContent>
-    </Card>
+                    return (
+                      <tr key={l.id} className="hover:bg-muted/30">
+                        <td className="tabular px-3 py-2 align-middle text-muted-foreground">
+                          {l.codigoRubrica}
+                        </td>
+                        <td className="px-3 py-2 align-middle">
+                          {calculado ? (
+                            <button
+                              type="button"
+                              onClick={() => definirMemoria(l)}
+                              className="text-left underline decoration-dotted underline-offset-4 hover:text-primary"
+                            >
+                              {l.nomeRubrica}
+                            </button>
+                          ) : (
+                            <span>
+                              {l.nomeRubrica}
+                              <span className="ml-2 text-xs text-muted-foreground">manual</span>
+                            </span>
+                          )}
+                        </td>
+                        <td className="tabular px-3 py-2 align-middle text-xs text-muted-foreground">
+                          {l.referencia ?? ''}
+                        </td>
+                        <td className="px-3 py-2 text-right align-middle">
+                          {l.tipo === 'Provento' ? <Dinheiro valor={l.valor} /> : ''}
+                        </td>
+                        <td className="px-3 py-2 text-right align-middle">
+                          {l.tipo === 'Desconto' ? <Dinheiro valor={l.valor} /> : ''}
+                        </td>
+                        <td className="px-1 py-2 align-middle">
+                          {editavel && l.origem === 'Manual' && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              aria-label={`Remover ${l.nomeRubrica}`}
+                              className="size-7 p-0"
+                              onClick={() => void apagar(l.id)}
+                            >
+                              <Trash2 className="size-3.5" aria-hidden />
+                            </Button>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+
+                <tfoot className="border-t-2 border-border">
+                  <tr>
+                    <td colSpan={3} className="px-3 py-2 text-right text-muted-foreground">
+                      Totais
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <Dinheiro valor={holerite.resumo.totalProventos} />
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <Dinheiro valor={holerite.resumo.totalDescontos} />
+                    </td>
+                    <td />
+                  </tr>
+                  <tr>
+                    <td colSpan={4} className="px-3 pb-1 pt-2 text-right font-medium">
+                      Líquido
+                    </td>
+                    <td className="px-3 pb-1 pt-2 text-right text-[15px]">
+                      <Dinheiro valor={holerite.resumo.liquido} enfase />
+                    </td>
+                    <td />
+                  </tr>
+                </tfoot>
+              </table>
+
+              <p className="mt-2 text-xs text-muted-foreground">
+                Rubricas sublinhadas são calculadas pelo sistema. Clique para ver a memória de
+                cálculo.
+              </p>
+            </section>
+
+            <BasesDeCalculo bases={holerite.bases} />
+          </div>
+        )}
+
+        {memoria && <DrawerMemoria lancamento={memoria} aoFechar={() => definirMemoria(null)} />}
+      </DrawerContent>
+    </Drawer>
   )
 }
 
 /**
- * As bases de calculo do holerite.
+ * A memória num drawer sobre o holerite, e não numa parede permanente ao lado.
  *
- * A composicao vem do backend, mas nao esta gravada: cada lancamento carrega a
- * incidencia congelada no calculo, e dizer quais formaram a base e filtrar o
- * que ja veio. E a memoria de calculo da base - CLAUDE.md secao 4.2 pede que o
- * numero seja explicavel, nao que os passos sejam duplicados no banco.
+ * A conta de uma rubrica é informação de apoio: interessa quando alguém
+ * questiona aquele número específico. Mostrá-la sempre, para todas as
+ * rubricas, transforma o holerite num muro de dígitos em que o valor que
+ * importa deixa de saltar.
  */
+function DrawerMemoria({
+  lancamento,
+  aoFechar,
+}: {
+  lancamento: Lancamento
+  aoFechar: () => void
+}) {
+  return (
+    <Drawer open onOpenChange={(estado) => !estado && aoFechar()}>
+      <DrawerContent
+        titulo="Memória de cálculo"
+        descricao={`${lancamento.codigoRubrica} · ${lancamento.nomeRubrica}`}
+        className="max-w-lg"
+      >
+        <table className="w-full border-collapse text-[13px]">
+          <caption className="sr-only">Passos do cálculo de {lancamento.nomeRubrica}</caption>
+          <thead>
+            <tr className="border-y border-border bg-muted/40 text-xs text-muted-foreground">
+              <th scope="col" className="px-3 py-2 text-left font-medium">
+                Etapa
+              </th>
+              <th scope="col" className="px-3 py-2 text-left font-medium">
+                Conta
+              </th>
+              <th scope="col" className="w-28 px-3 py-2 text-right font-medium">
+                Valor
+              </th>
+            </tr>
+          </thead>
+
+          <tbody className="divide-y divide-border">
+            {lancamento.memoria.map((linha, indice) => {
+              const ultima = indice === lancamento.memoria.length - 1
+
+              return (
+                <tr key={linha.ordem} className={cn(ultima && 'bg-muted/30')}>
+                  <td className={cn('px-3 py-2 align-top', ultima && 'font-medium')}>
+                    {linha.descricao}
+                  </td>
+                  <td className="tabular px-3 py-2 align-top text-xs text-muted-foreground">
+                    {linha.expressao}
+                  </td>
+                  <td className="px-3 py-2 text-right align-top">
+                    <Dinheiro valor={linha.valor} enfase={ultima} />
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+
+        <p className="mt-4 text-xs text-muted-foreground">
+          Valores congelados no momento do cálculo. Alterar a rubrica depois não altera este
+          holerite.
+        </p>
+      </DrawerContent>
+    </Drawer>
+  )
+}
+
 function BasesDeCalculo({ bases }: { bases: BaseApurada[] }) {
-  // Tolera resposta sem o campo: uma seção ausente é ruim, uma tela em branco
-  // é pior.
   if (!bases || bases.length === 0) return null
 
   return (
-    <section className="mt-6 border-t border-border pt-4">
-      <h3 className="mb-1 text-sm font-medium">Bases de cálculo</h3>
-      <p className="mb-3 text-xs text-muted-foreground">
-        INSS, FGTS e IRRF não incidem sobre o total: cada um tem sua base. Nenhum imposto é
-        calculado nesta fase.
-      </p>
+    <section>
+      <CabecalhoSecao
+        titulo="Bases de cálculo"
+        descricao="INSS, FGTS e IRRF não incidem sobre o total: cada um tem sua base."
+      />
 
-      <dl className="grid gap-3 sm:grid-cols-3">
-        {bases.map((base) => (
-          <div key={base.base} className="rounded-md border border-border p-3">
-            <dt className="text-xs font-medium text-muted-foreground">{ROTULO_BASE[base.base]}</dt>
-            <dd className="mt-1 text-sm font-semibold">{formatarSalario(base.valor)}</dd>
-            <dd className="mt-1 text-xs text-muted-foreground">
-              {base.composta.length === 0 ? (
-                'nenhuma rubrica incide'
-              ) : (
-                <span className="font-mono">{base.composta.join(' + ')}</span>
-              )}
-            </dd>
-          </div>
-        ))}
-      </dl>
+      <table className="w-full border-collapse text-[13px]">
+        <caption className="sr-only">Bases de cálculo apuradas no holerite</caption>
+        <thead>
+          <tr className="border-b border-border text-xs text-muted-foreground">
+            <th scope="col" className="w-24 py-2 text-left font-medium">
+              Base
+            </th>
+            <th scope="col" className="py-2 text-left font-medium">
+              Composta por
+            </th>
+            <th scope="col" className="w-32 py-2 text-right font-medium">
+              Valor
+            </th>
+          </tr>
+        </thead>
+
+        <tbody className="divide-y divide-border">
+          {bases.map((base) => (
+            <tr key={base.base}>
+              <td className="py-2 align-middle font-medium">{ROTULO_BASE[base.base]}</td>
+              <td className="py-2 align-middle text-xs text-muted-foreground">
+                {base.composta.length === 0 ? (
+                  'nenhuma rubrica incide'
+                ) : (
+                  <span className="tabular">{base.composta.join(' + ')}</span>
+                )}
+              </td>
+              <td className="py-2 text-right align-middle">
+                <Dinheiro valor={base.valor} />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </section>
   )
 }
 
-function FormularioLancamento({
+function NovoLancamento({
   idFolha,
   idHolerite,
   rubricas,
@@ -515,6 +656,7 @@ function FormularioLancamento({
   rubricas: Rubrica[]
   aoLancar: () => Promise<void>
 }) {
+  const [aberto, definirAberto] = useState(false)
   const [idRubrica, definirIdRubrica] = useState(rubricas[0]?.id ?? '')
   const [valor, definirValor] = useState('')
   const [referencia, definirReferencia] = useState('')
@@ -529,80 +671,94 @@ function FormularioLancamento({
     try {
       await lancar(idFolha, idHolerite, {
         idRubrica,
-        valor: Number(valor),
-        referencia: referencia.trim() || null,
+        valor: Number(valor.replace(',', '.')),
+        referencia: referencia || null,
       })
       definirValor('')
       definirReferencia('')
+      definirAberto(false)
       await aoLancar()
     } catch (falha) {
-      definirErro(falha instanceof Error ? falha.message : 'Falha ao lançar.')
+      definirErro(falha instanceof Error ? falha.message : 'Não foi possível lançar.')
     } finally {
       definirEnviando(false)
     }
   }
 
   return (
-    <form onSubmit={aoEnviar} className="mb-6 grid items-end gap-4 sm:grid-cols-4" noValidate>
-      <div className="sm:col-span-4">
-        <h3 className="text-sm font-medium">Lançamento manual</h3>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          O valor é sempre positivo — quem define se soma ou subtrai é o tipo da rubrica.
-        </p>
-      </div>
-
-      <div className="flex flex-col gap-2">
-        <Label htmlFor={`rubrica-${idHolerite}`}>Rubrica</Label>
-        <select
-          id={`rubrica-${idHolerite}`}
-          className="h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs"
-          value={idRubrica}
-          onChange={(e) => definirIdRubrica(e.target.value)}
-        >
-          {rubricas.map((rubrica) => (
-            <option key={rubrica.id} value={rubrica.id}>
-              {rubrica.codigo} — {rubrica.nome}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div className="flex flex-col gap-2">
-        <Label htmlFor={`valor-${idHolerite}`}>Valor</Label>
-        <Input
-          id={`valor-${idHolerite}`}
-          type="number"
-          step="0.01"
-          min="0"
-          required
-          value={valor}
-          onChange={(e) => definirValor(e.target.value)}
-        />
-      </div>
-
-      <div className="flex flex-col gap-2">
-        <Label htmlFor={`ref-${idHolerite}`}>Referência</Label>
-        <Input
-          id={`ref-${idHolerite}`}
-          placeholder="opcional"
-          value={referencia}
-          onChange={(e) => definirReferencia(e.target.value)}
-        />
-      </div>
-
-      <div>
-        <Button type="submit" size="sm" disabled={enviando}>
-          {enviando ? 'Lançando...' : 'Lançar'}
+    <Drawer open={aberto} onOpenChange={definirAberto}>
+      <DrawerTrigger asChild>
+        <Button variant="outline" size="sm">
+          <Plus aria-hidden />
+          Lançar
         </Button>
-      </div>
+      </DrawerTrigger>
 
-      {erro && (
-        <div className="sm:col-span-4">
-          <Alert variant="destructive" role="alert">
-            <AlertDescription>{erro}</AlertDescription>
-          </Alert>
-        </div>
-      )}
-    </form>
+      <DrawerContent
+        titulo="Novo lançamento"
+        descricao="Provento ou desconto digitado. Ele sobrevive ao recálculo da folha."
+        className="max-w-md"
+      >
+        <form onSubmit={aoEnviar} className="space-y-4" noValidate>
+          <div className="space-y-1.5">
+            <Label htmlFor="rubricaLancamento">Rubrica</Label>
+            <select
+              id="rubricaLancamento"
+              value={idRubrica}
+              onChange={(e) => definirIdRubrica(e.target.value)}
+              className="h-9 w-full rounded-md border border-input bg-card px-3 text-[13px] shadow-xs"
+            >
+              {rubricas.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.codigo} — {r.nome}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="valorLancamento">Valor</Label>
+              <Input
+                id="valorLancamento"
+                required
+                inputMode="decimal"
+                placeholder="0,00"
+                value={valor}
+                onChange={(e) => definirValor(e.target.value)}
+                className="tabular"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="refLancamento">Referência</Label>
+              <Input
+                id="refLancamento"
+                placeholder="22 dias"
+                value={referencia}
+                onChange={(e) => definirReferencia(e.target.value)}
+              />
+            </div>
+          </div>
+
+          {erro && (
+            <Alert variant="destructive" role="alert">
+              <AlertDescription>{erro}</AlertDescription>
+            </Alert>
+          )}
+
+          <div className="flex justify-end gap-2 border-t border-border pt-4">
+            <DrawerClose asChild>
+              <Button type="button" variant="outline" size="sm">
+                Cancelar
+              </Button>
+            </DrawerClose>
+            <Button type="submit" size="sm" disabled={enviando}>
+              {enviando ? 'Lançando...' : 'Lançar'}
+            </Button>
+          </div>
+        </form>
+      </DrawerContent>
+    </Drawer>
   )
 }

@@ -1,60 +1,77 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { Link, useParams } from 'react-router'
-import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { ArrowRight, Pencil } from 'lucide-react'
+import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import { useParams } from 'react-router'
+import { podeAdministrarPessoas } from '@/api/autenticacao'
 import {
   formatarData,
   formatarSalario,
   listarCargos,
   listarContratos,
   listarVigencias,
+  obterFuncionario,
   registrarAlteracao,
   ROTULO_MOTIVO,
   type Cargo,
   type Contrato,
+  type Funcionario,
+  type MotivoVigencia,
   type Vigencia,
 } from '@/api/pessoas'
-import { obterFuncionario, type Funcionario } from '@/api/pessoas'
-import { podeAdministrarPessoas } from '@/api/autenticacao'
 import { useSessao } from '@/auth/useSessao'
-
-interface Carregado {
-  funcionario: Funcionario
-  contratos: Contrato[]
-  cargos: Cargo[]
-}
-
-type Estado =
-  | { situacao: 'carregando' }
-  | { situacao: 'pronto'; dados: Carregado }
-  | { situacao: 'erro'; mensagem: string }
+import { EstadoCarregando, EstadoErro } from '@/components/sistema/Estados'
+import {
+  CabecalhoPagina,
+  CabecalhoSecao,
+  Campo,
+  ListaCampos,
+  StatusBadge,
+} from '@/components/sistema/Primitivos'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { Drawer, DrawerClose, DrawerContent, DrawerTrigger } from '@/components/ui/drawer'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { usePagina } from '@/layout/usePagina'
+import { cn } from '@/lib/utils'
 
 export default function FuncionarioDetalhe() {
   const { id } = useParams<{ id: string }>()
   const { usuario } = useSessao()
   const administra = podeAdministrarPessoas(usuario?.perfil)
 
-  const [estado, definirEstado] = useState<Estado>({ situacao: 'carregando' })
+  const [funcionario, definirFuncionario] = useState<Funcionario | null>(null)
+  const [contratos, definirContratos] = useState<Contrato[]>([])
+  const [cargos, definirCargos] = useState<Cargo[]>([])
+  const [carregando, definirCarregando] = useState(true)
+  const [erro, definirErro] = useState<string | null>(null)
+
+  usePagina([
+    { texto: 'Pessoas' },
+    { texto: 'Funcionários', para: '/funcionarios' },
+    { texto: funcionario?.nome ?? 'Carregando' },
+  ])
 
   const carregar = useCallback(async () => {
     if (!id) return
 
+    definirErro(null)
+
     try {
-      const [funcionario, contratos, cargos] = await Promise.all([
+      const [pessoa, vinculos, catalogo] = await Promise.all([
         obterFuncionario(id),
         listarContratos(id),
         listarCargos(),
       ])
-      definirEstado({ situacao: 'pronto', dados: { funcionario, contratos, cargos } })
+
+      definirFuncionario(pessoa)
+      definirContratos(vinculos)
+      definirCargos(catalogo)
     } catch (falha) {
-      definirEstado({
-        situacao: 'erro',
-        mensagem: falha instanceof Error ? falha.message : 'Falha ao carregar o funcionário.',
-      })
+      definirErro(
+        falha instanceof Error ? falha.message : 'Não foi possível carregar o funcionário.',
+      )
+    } finally {
+      definirCarregando(false)
     }
   }, [id])
 
@@ -64,89 +81,57 @@ export default function FuncionarioDetalhe() {
     void carregar()
   }, [carregar])
 
-  return (
-    <main className="mx-auto w-full max-w-4xl px-6 py-8">
-      <Button asChild variant="ghost" size="sm" className="mb-4 -ml-2">
-        <Link to="/funcionarios">← Funcionários</Link>
-      </Button>
+  if (carregando) return <EstadoCarregando rotulo="Carregando funcionário" />
 
-      <div aria-live="polite" aria-busy={estado.situacao === 'carregando'}>
-        {estado.situacao === 'carregando' && (
-          <p className="text-sm text-muted-foreground">Carregando...</p>
-        )}
-
-        {estado.situacao === 'erro' && (
-          <div>
-            <Alert variant="destructive" role="alert">
-              <AlertDescription>{estado.mensagem}</AlertDescription>
-            </Alert>
-            <Button
-              className="mt-4"
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                definirEstado({ situacao: 'carregando' })
-                void carregar()
-              }}
-            >
-              Tentar novamente
-            </Button>
-          </div>
-        )}
-
-        {estado.situacao === 'pronto' && (
-          <Conteudo dados={estado.dados} administra={administra} aoMudar={carregar} />
-        )}
-      </div>
-    </main>
-  )
-}
-
-function Conteudo({
-  dados,
-  administra,
-  aoMudar,
-}: {
-  dados: Carregado
-  administra: boolean
-  aoMudar: () => Promise<void>
-}) {
-  const { funcionario, contratos, cargos } = dados
+  if (erro || !funcionario) {
+    return (
+      <EstadoErro
+        mensagem={erro ?? 'Funcionário não encontrado.'}
+        aoTentarNovamente={() => void carregar()}
+      />
+    )
+  }
 
   return (
     <>
-      <header className="mb-6">
-        <h1 className="text-xl font-semibold tracking-tight">{funcionario.nome}</h1>
-        <p className="mt-1 font-mono text-sm text-muted-foreground">
-          {funcionario.cpfFormatado} · nascimento {formatarData(funcionario.dataNascimento)}
-        </p>
-      </header>
+      <CabecalhoPagina
+        titulo={funcionario.nome}
+        meta={
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-0.5 text-[13px] text-muted-foreground">
+            <StatusBadge tom={funcionario.ativo ? 'sucesso' : 'neutro'}>
+              {funcionario.ativo ? 'Ativo' : 'Inativo'}
+            </StatusBadge>
+            <span className="tabular">{funcionario.cpfFormatado}</span>
+            <span>Nascimento {formatarData(funcionario.dataNascimento)}</span>
+          </div>
+        }
+      />
 
       {contratos.length === 0 && (
-        <Card>
-          <CardContent className="pt-6">
-            <p className="text-sm text-muted-foreground">
-              Esta pessoa ainda não tem contrato. Sem contrato não há salário, cargo nem lotação —
-              e a folha não teria o que calcular.
-            </p>
-          </CardContent>
-        </Card>
+        <Alert>
+          <AlertDescription>
+            Esta pessoa ainda não tem contrato. Sem contrato não há salário, cargo nem lotação — e a
+            folha não teria o que calcular.
+          </AlertDescription>
+        </Alert>
       )}
 
-      {contratos.map((contrato) => (
-        <CartaoContrato
-          key={contrato.id}
-          contrato={contrato}
-          cargos={cargos}
-          administra={administra}
-          aoMudar={aoMudar}
-        />
-      ))}
+      <div className="space-y-9">
+        {contratos.map((contrato) => (
+          <SecaoContrato
+            key={contrato.id}
+            contrato={contrato}
+            cargos={cargos}
+            administra={administra}
+            aoMudar={carregar}
+          />
+        ))}
+      </div>
     </>
   )
 }
 
-function CartaoContrato({
+function SecaoContrato({
   contrato,
   cargos,
   administra,
@@ -164,7 +149,7 @@ function CartaoContrato({
     try {
       definirVigencias(await listarVigencias(contrato.id))
     } catch (falha) {
-      definirErro(falha instanceof Error ? falha.message : 'Falha ao carregar o histórico.')
+      definirErro(falha instanceof Error ? falha.message : 'Não foi possível carregar o histórico.')
     }
   }, [contrato.id])
 
@@ -178,82 +163,183 @@ function CartaoContrato({
   const ativo = contrato.situacao === 'Ativo'
 
   return (
-    <Card className="mt-6">
-      <CardHeader>
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <CardTitle className="text-base">Matrícula {contrato.matricula}</CardTitle>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Admissão em {formatarData(contrato.dataAdmissao)}
-              {contrato.dataDesligamento &&
-                ` · desligado em ${formatarData(contrato.dataDesligamento)}`}
-            </p>
+    <section>
+      <CabecalhoSecao
+        titulo={`Matrícula ${contrato.matricula}`}
+        descricao={
+          contrato.dataDesligamento
+            ? `Admissão em ${formatarData(contrato.dataAdmissao)} · desligado em ${formatarData(contrato.dataDesligamento)}`
+            : `Admissão em ${formatarData(contrato.dataAdmissao)}`
+        }
+        acao={
+          <div className="flex items-center gap-2">
+            <StatusBadge tom={ativo ? 'sucesso' : 'neutro'}>
+              {ativo ? 'Ativo' : 'Desligado'}
+            </StatusBadge>
+
+            {administra && ativo && contrato.vigenciaAtual && (
+              <RegistrarAlteracao
+                contrato={contrato}
+                cargos={cargos}
+                aoRegistrar={async () => {
+                  await carregarHistorico()
+                  await aoMudar()
+                }}
+              />
+            )}
           </div>
-          <Badge variant={ativo ? 'default' : 'secondary'}>
-            {ativo ? 'ativo' : 'desligado'}
-          </Badge>
-        </div>
-      </CardHeader>
+        }
+      />
 
-      <CardContent>
-        {administra && ativo && contrato.vigenciaAtual && (
-          <FormularioAlteracao
-            contrato={contrato}
-            cargos={cargos}
-            aoRegistrar={async () => {
-              await carregarHistorico()
-              await aoMudar()
-            }}
-          />
-        )}
+      {contrato.vigenciaAtual && (
+        <ListaCampos colunas={4}>
+          <Campo rotulo="Salário atual">
+            <span className="tabular font-medium">
+              {formatarSalario(contrato.vigenciaAtual.salario)}
+            </span>
+          </Campo>
+          <Campo rotulo="Cargo">{nomeCargo(contrato.vigenciaAtual.idCargo)}</Campo>
+          <Campo rotulo="Jornada">
+            <span className="tabular">{contrato.vigenciaAtual.jornadaMensalHoras}h/mês</span>
+          </Campo>
+          <Campo rotulo="Vigente desde">
+            <span className="tabular">{formatarData(contrato.vigenciaAtual.validoDe)}</span>
+          </Campo>
+        </ListaCampos>
+      )}
 
-        <h3 className="mb-3 text-sm font-medium">Histórico contratual</h3>
+      <h3 className="mb-3 mt-6 text-[13px] font-medium">Histórico contratual</h3>
 
-        {erro && (
-          <Alert variant="destructive" role="alert">
-            <AlertDescription>{erro}</AlertDescription>
-          </Alert>
-        )}
+      {erro && (
+        <Alert variant="destructive" role="alert">
+          <AlertDescription>{erro}</AlertDescription>
+        </Alert>
+      )}
 
-        {!vigencias && !erro && <p className="text-sm text-muted-foreground">Carregando...</p>}
+      {!vigencias && !erro && (
+        <p className="text-[13px] text-muted-foreground" role="status">
+          Carregando histórico...
+        </p>
+      )}
 
-        {vigencias && (
-          <ol className="border-l border-border">
-            {vigencias.map((vigencia) => (
-              <li key={vigencia.id} className="relative py-3 pl-6">
-                <span
-                  className={`absolute -left-[5px] top-5 size-2.5 rounded-full ${
-                    vigencia.validoAte === null ? 'bg-foreground' : 'bg-border'
-                  }`}
-                  aria-hidden="true"
-                />
-                <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <span className="text-sm font-medium">
-                    {formatarSalario(vigencia.salario)}
-                    <span className="ml-2 font-normal text-muted-foreground">
-                      {nomeCargo(vigencia.idCargo)} · {vigencia.jornadaMensalHoras}h/mês
-                    </span>
-                  </span>
-                  <Badge variant={vigencia.validoAte === null ? 'default' : 'secondary'}>
-                    {ROTULO_MOTIVO[vigencia.motivo]}
-                  </Badge>
-                </div>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  {formatarData(vigencia.validoDe)}
-                  {vigencia.validoAte
-                    ? ` até ${formatarData(vigencia.validoAte)}`
-                    : ' — vigência atual'}
-                </p>
-              </li>
-            ))}
-          </ol>
-        )}
-      </CardContent>
-    </Card>
+      {vigencias && <LinhaDoTempo vigencias={vigencias} nomeCargo={nomeCargo} />}
+    </section>
   )
 }
 
-function FormularioAlteracao({
+/**
+ * A linha do tempo do contrato.
+ *
+ * Mostra o que MUDOU em cada vigência, e não só o estado dela: "5.100 → 6.200"
+ * conta a história que "6.200" sozinho esconde. É a característica central do
+ * Prisma RH — alteração não sobrescreve o passado — e a interface tem que
+ * deixar isso evidente sem precisar de legenda.
+ *
+ * Uma linha por vigência, com divisores discretos. Um card por alteração
+ * transformaria um contrato de cinco anos numa pilha de vinte caixas.
+ */
+function LinhaDoTempo({
+  vigencias,
+  nomeCargo,
+}: {
+  vigencias: Vigencia[]
+  nomeCargo: (id: string) => string
+}) {
+  // Mais recente primeiro: é o que se procura ao abrir.
+  const ordenadas = [...vigencias].sort((a, b) => b.validoDe.localeCompare(a.validoDe))
+
+  return (
+    <ol className="border-l border-border">
+      {ordenadas.map((vigencia, indice) => {
+        // A anterior no tempo é a próxima da lista, porque está em ordem
+        // decrescente. É contra ela que se compara para mostrar a mudança.
+        const anterior = ordenadas[indice + 1]
+        const atual = vigencia.validoAte === null
+
+        return (
+          <li key={vigencia.id} className="relative py-3.5 pl-6">
+            <span
+              aria-hidden
+              className={cn(
+                'absolute -left-[4.5px] top-[1.35rem] size-2 rounded-full ring-2 ring-background',
+                atual ? 'bg-primary' : 'bg-border',
+              )}
+            />
+
+            <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+              <span className="text-[13px] font-medium">{ROTULO_MOTIVO[vigencia.motivo]}</span>
+              <span className="tabular text-xs text-muted-foreground">
+                {formatarData(vigencia.validoDe)}
+                {vigencia.validoAte
+                  ? ` até ${formatarData(vigencia.validoAte)}`
+                  : ' — vigência atual'}
+              </span>
+            </div>
+
+            <dl className="mt-1.5 space-y-1">
+              <Mudanca
+                rotulo="Salário"
+                de={anterior && anterior.salario !== vigencia.salario ? formatarSalario(anterior.salario) : null}
+                para={formatarSalario(vigencia.salario)}
+                tabular
+              />
+              <Mudanca
+                rotulo="Cargo"
+                de={
+                  anterior && anterior.idCargo !== vigencia.idCargo
+                    ? nomeCargo(anterior.idCargo)
+                    : null
+                }
+                para={nomeCargo(vigencia.idCargo)}
+              />
+              <Mudanca
+                rotulo="Jornada"
+                de={
+                  anterior && anterior.jornadaMensalHoras !== vigencia.jornadaMensalHoras
+                    ? `${anterior.jornadaMensalHoras}h/mês`
+                    : null
+                }
+                para={`${vigencia.jornadaMensalHoras}h/mês`}
+                tabular
+              />
+            </dl>
+          </li>
+        )
+      })}
+    </ol>
+  )
+}
+
+function Mudanca({
+  rotulo,
+  de,
+  para,
+  tabular,
+}: {
+  rotulo: string
+  de: string | null
+  para: ReactNode
+  tabular?: boolean
+}) {
+  return (
+    <div className="flex flex-wrap items-baseline gap-x-2 text-[13px]">
+      <dt className="w-16 shrink-0 text-xs text-muted-foreground">{rotulo}</dt>
+      <dd className="flex flex-wrap items-baseline gap-1.5">
+        {de && (
+          <>
+            <span className={cn('text-muted-foreground line-through', tabular && 'tabular')}>
+              {de}
+            </span>
+            <ArrowRight className="size-3 shrink-0 text-muted-foreground" aria-label="alterado para" />
+          </>
+        )}
+        <span className={cn(de && 'font-medium', tabular && 'tabular')}>{para}</span>
+      </dd>
+    </div>
+  )
+}
+
+function RegistrarAlteracao({
   contrato,
   cargos,
   aoRegistrar,
@@ -264,6 +350,7 @@ function FormularioAlteracao({
 }) {
   const atual = contrato.vigenciaAtual!
 
+  const [aberto, definirAberto] = useState(false)
   const [validoDe, definirValidoDe] = useState('')
   const [salario, definirSalario] = useState(String(atual.salario))
   const [idCargo, definirIdCargo] = useState(atual.idCargo)
@@ -278,8 +365,10 @@ function FormularioAlteracao({
 
     // O motivo é deduzido do que realmente mudou. Pedir para o usuário
     // escolher abriria espaço para um rótulo que não descreve a alteração.
-    const motivo =
-      Number(salario) !== atual.salario
+    const valorSalario = Number(salario.replace(',', '.'))
+
+    const motivo: MotivoVigencia =
+      valorSalario !== atual.salario
         ? 'AlteracaoSalarial'
         : idCargo !== atual.idCargo
           ? 'MudancaCargo'
@@ -288,96 +377,110 @@ function FormularioAlteracao({
     try {
       await registrarAlteracao(contrato.id, {
         validoDe,
-        salario: Number(salario),
+        salario: valorSalario,
         idCargo,
         idEstabelecimento: atual.idEstabelecimento,
         jornadaMensalHoras: Number(jornada),
         motivo,
       })
+
       definirValidoDe('')
+      definirAberto(false)
       await aoRegistrar()
     } catch (falha) {
-      definirErro(falha instanceof Error ? falha.message : 'Falha ao registrar a alteração.')
+      definirErro(falha instanceof Error ? falha.message : 'Não foi possível registrar a alteração.')
     } finally {
       definirEnviando(false)
     }
   }
 
   return (
-    <form onSubmit={aoEnviar} className="mb-6 grid gap-4 sm:grid-cols-4" noValidate>
-      <div className="sm:col-span-4">
-        <h3 className="text-sm font-medium">Registrar alteração</h3>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          A vigência atual será fechada na véspera da data informada. Nada é sobrescrito.
-        </p>
-      </div>
-
-      <div className="flex flex-col gap-2">
-        <Label htmlFor={`de-${contrato.id}`}>A partir de</Label>
-        <Input
-          id={`de-${contrato.id}`}
-          type="date"
-          required
-          value={validoDe}
-          onChange={(e) => definirValidoDe(e.target.value)}
-        />
-      </div>
-
-      <div className="flex flex-col gap-2">
-        <Label htmlFor={`salario-${contrato.id}`}>Salário</Label>
-        <Input
-          id={`salario-${contrato.id}`}
-          type="number"
-          step="0.01"
-          min="0.01"
-          required
-          value={salario}
-          onChange={(e) => definirSalario(e.target.value)}
-        />
-      </div>
-
-      <div className="flex flex-col gap-2">
-        <Label htmlFor={`cargo-${contrato.id}`}>Cargo</Label>
-        <select
-          id={`cargo-${contrato.id}`}
-          className="h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs"
-          value={idCargo}
-          onChange={(e) => definirIdCargo(e.target.value)}
-        >
-          {cargos.map((cargo) => (
-            <option key={cargo.id} value={cargo.id}>
-              {cargo.nome}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div className="flex flex-col gap-2">
-        <Label htmlFor={`jornada-${contrato.id}`}>Jornada (h/mês)</Label>
-        <Input
-          id={`jornada-${contrato.id}`}
-          type="number"
-          min="1"
-          max="400"
-          required
-          value={jornada}
-          onChange={(e) => definirJornada(e.target.value)}
-        />
-      </div>
-
-      {erro && (
-        <div className="sm:col-span-4">
-          <Alert variant="destructive" role="alert">
-            <AlertDescription>{erro}</AlertDescription>
-          </Alert>
-        </div>
-      )}
-
-      <div className="sm:col-span-4">
-        <Button type="submit" size="sm" disabled={enviando}>
-          {enviando ? 'Registrando...' : 'Registrar alteração'}
+    <Drawer open={aberto} onOpenChange={definirAberto}>
+      <DrawerTrigger asChild>
+        <Button variant="outline" size="sm">
+          <Pencil aria-hidden />
+          Registrar alteração
         </Button>
-      </div>
-    </form>
+      </DrawerTrigger>
+
+      <DrawerContent
+        titulo="Registrar alteração contratual"
+        descricao="A vigência atual é fechada na véspera e uma nova é aberta. O passado permanece consultável."
+        className="max-w-lg"
+      >
+        <form onSubmit={aoEnviar} className="space-y-4" noValidate>
+          <div className="space-y-1.5">
+            <Label htmlFor="validoDe">Válido a partir de</Label>
+            <Input
+              id="validoDe"
+              type="date"
+              required
+              autoFocus
+              value={validoDe}
+              onChange={(e) => definirValidoDe(e.target.value)}
+            />
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="salarioAlteracao">Salário</Label>
+              <Input
+                id="salarioAlteracao"
+                required
+                inputMode="decimal"
+                value={salario}
+                onChange={(e) => definirSalario(e.target.value)}
+                className="tabular"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="jornadaAlteracao">Jornada mensal</Label>
+              <Input
+                id="jornadaAlteracao"
+                required
+                inputMode="numeric"
+                value={jornada}
+                onChange={(e) => definirJornada(e.target.value)}
+                className="tabular"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="cargoAlteracao">Cargo</Label>
+            <select
+              id="cargoAlteracao"
+              value={idCargo}
+              onChange={(e) => definirIdCargo(e.target.value)}
+              className="h-9 w-full rounded-md border border-input bg-card px-3 text-[13px] shadow-xs"
+            >
+              {cargos.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.codigo} — {c.nome}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {erro && (
+            <Alert variant="destructive" role="alert">
+              <AlertDescription>{erro}</AlertDescription>
+            </Alert>
+          )}
+
+          <div className="flex justify-end gap-2 border-t border-border pt-4">
+            <DrawerClose asChild>
+              <Button type="button" variant="outline" size="sm">
+                Cancelar
+              </Button>
+            </DrawerClose>
+            <Button type="submit" size="sm" disabled={enviando}>
+              {enviando ? 'Registrando...' : 'Registrar alteração'}
+            </Button>
+          </div>
+        </form>
+      </DrawerContent>
+    </Drawer>
   )
 }

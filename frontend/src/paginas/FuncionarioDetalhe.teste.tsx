@@ -105,8 +105,20 @@ describe('FuncionarioDetalhe', () => {
     expect(await screen.findByText('Carla Analista')).toBeInTheDocument()
 
     // O que o ROADMAP exige: alteracao nao reescreve o passado.
-    expect(await screen.findByText(/R\$\s*3\.000,00/)).toBeInTheDocument()
-    expect(screen.getByText(/R\$\s*4\.200,00/)).toBeInTheDocument()
+    //
+    // O salario antigo aparece DUAS vezes de proposito: como o "de" da
+    // mudanca na vigencia nova, e como o valor da vigencia antiga. E
+    // justamente essa duplicidade que conta a historia.
+    const antigos = await screen.findAllByText(/R\$\s*3\.000,00/)
+    expect(antigos.length).toBeGreaterThanOrEqual(2)
+
+    // O valor antigo aparece riscado na linha da mudanca.
+    expect(antigos.some((no) => no.className.includes('line-through'))).toBe(true)
+
+    // E ha uma seta explicando que aquilo virou outra coisa.
+    expect(screen.getAllByLabelText('alterado para').length).toBeGreaterThanOrEqual(1)
+
+    expect(screen.getAllByText(/R\$\s*4\.200,00/).length).toBeGreaterThanOrEqual(2)
 
     // E o periodo fechado continua legivel.
     expect(screen.getByText(/15\/01\/2026 até 31\/05\/2026/)).toBeInTheDocument()
@@ -124,9 +136,9 @@ describe('FuncionarioDetalhe', () => {
     // mostrar um formulario que sempre devolve 403 seria pior ainda.
     expect(screen.queryByRole('button', { name: /registrar alteração/i })).not.toBeInTheDocument()
 
-    // A leitura do historico continua disponivel. findBy porque a linha do
+    // A leitura do historico continua disponivel. findAllBy porque a linha do
     // tempo carrega num efeito proprio, depois do cabecalho.
-    expect(await screen.findByText(/R\$\s*3\.000,00/)).toBeInTheDocument()
+    expect((await screen.findAllByText(/R\$\s*3\.000,00/)).length).toBeGreaterThan(0)
   })
 
   it('formata data civil sem deslocar o dia por fuso horario', async () => {

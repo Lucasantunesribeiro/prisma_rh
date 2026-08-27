@@ -2,11 +2,18 @@ import { useState, type FormEvent } from 'react'
 import { Navigate } from 'react-router'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useSessao } from '@/auth/useSessao'
 
+/**
+ * Login.
+ *
+ * Uma coluna centrada, sem painel decorativo, sem ilustração e sem gradiente:
+ * a tela existe para o usuário digitar duas coisas e entrar. Metade da tela
+ * ocupada por arte é metade da tela que não ajuda ninguém a trabalhar — e
+ * numa ferramenta usada todo dia, ela cansa muito antes de impressionar.
+ */
 export default function Entrar() {
   const { usuario, entrar, carregando } = useSessao()
 
@@ -20,7 +27,7 @@ export default function Entrar() {
   }
 
   if (usuario) {
-    return <Navigate to="/empresas" replace />
+    return <Navigate to="/funcionarios" replace />
   }
 
   const aoEnviar = async (evento: FormEvent) => {
@@ -40,55 +47,70 @@ export default function Entrar() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-sm flex-col justify-center px-6">
-      <header className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Prisma RH</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Entre com suas credenciais.</p>
-      </header>
+    <main className="flex min-h-screen items-center justify-center bg-background px-6 py-12">
+      <div className="w-full max-w-[22rem]">
+        <div className="mb-7 flex items-center gap-2.5">
+          <span
+            aria-hidden
+            className="grid size-7 place-items-center rounded bg-primary text-xs font-semibold text-primary-foreground"
+          >
+            P
+          </span>
+          <span className="text-[15px] font-semibold tracking-tight">Prisma RH</span>
+        </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Acessar</CardTitle>
-        </CardHeader>
+        <h1 className="text-[22px] font-semibold leading-tight tracking-tight">
+          Acessar Prisma RH
+        </h1>
+        <p className="mt-1.5 text-[13px] text-muted-foreground">
+          Gestão, cálculo e conferência de folha de pagamento.
+        </p>
 
-        <CardContent>
-          <form onSubmit={aoEnviar} className="flex flex-col gap-4" noValidate>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="email">E-mail</Label>
-              <Input
-                id="email"
-                type="email"
-                autoComplete="username"
-                required
-                value={email}
-                onChange={(e) => definirEmail(e.target.value)}
-              />
-            </div>
+        <form onSubmit={aoEnviar} className="mt-7 space-y-4" noValidate>
+          <div className="space-y-1.5">
+            <Label htmlFor="email">E-mail</Label>
+            <Input
+              id="email"
+              type="email"
+              autoComplete="username"
+              required
+              autoFocus
+              value={email}
+              onChange={(e) => definirEmail(e.target.value)}
+            />
+          </div>
 
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="senha">Senha</Label>
-              <Input
-                id="senha"
-                type="password"
-                autoComplete="current-password"
-                required
-                value={senha}
-                onChange={(e) => definirSenha(e.target.value)}
-              />
-            </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="senha">Senha</Label>
+            <Input
+              id="senha"
+              type="password"
+              autoComplete="current-password"
+              required
+              value={senha}
+              onChange={(e) => definirSenha(e.target.value)}
+            />
+          </div>
 
-            {erro && (
-              <Alert variant="destructive" role="alert">
-                <AlertDescription>{erro}</AlertDescription>
-              </Alert>
-            )}
+          {erro && (
+            <Alert variant="destructive" role="alert">
+              <AlertDescription>{erro}</AlertDescription>
+            </Alert>
+          )}
 
-            <Button type="submit" disabled={enviando}>
-              {enviando ? 'Entrando...' : 'Entrar'}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+          <Button type="submit" className="w-full" disabled={enviando}>
+            {enviando ? 'Entrando...' : 'Entrar'}
+          </Button>
+        </form>
+
+        {/*
+         * Sinal de confiança discreto, e não slogan: diz como a sessão é
+         * tratada, que é o que importa a quem digita a senha.
+         */}
+        <p className="mt-6 text-center text-xs text-muted-foreground">
+          Sessão protegida. O acesso expira automaticamente por inatividade.
+        </p>
+      </div>
     </main>
   )
 }

@@ -1,41 +1,43 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { Plus } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { podeAdministrarPessoas } from '@/api/autenticacao'
+import { criarCargo, listarCargos, type Cargo } from '@/api/pessoas'
+import { useSessao } from '@/auth/useSessao'
+import { DataTable, type Coluna } from '@/components/sistema/DataTable'
+import {
+  CabecalhoPagina,
+  CampoBusca,
+  EspacoToolbar,
+  StatusBadge,
+} from '@/components/sistema/Primitivos'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Drawer, DrawerClose, DrawerContent, DrawerTrigger } from '@/components/ui/drawer'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
-import { criarCargo, listarCargos, type Cargo } from '@/api/pessoas'
-import { podeAdministrarPessoas } from '@/api/autenticacao'
-import { useSessao } from '@/auth/useSessao'
-
-type Estado =
-  | { situacao: 'carregando' }
-  | { situacao: 'pronto'; cargos: Cargo[] }
-  | { situacao: 'erro'; mensagem: string }
+import { usePagina } from '@/layout/usePagina'
 
 export default function Cargos() {
   const { usuario } = useSessao()
   const administra = podeAdministrarPessoas(usuario?.perfil)
 
-  const [estado, definirEstado] = useState<Estado>({ situacao: 'carregando' })
+  usePagina([{ texto: 'Pessoas' }, { texto: 'Cargos' }])
+
+  const [cargos, definirCargos] = useState<Cargo[]>([])
+  const [carregando, definirCarregando] = useState(true)
+  const [erro, definirErro] = useState<string | null>(null)
+  const [busca, definirBusca] = useState('')
 
   const carregar = useCallback(async () => {
+    definirCarregando(true)
+    definirErro(null)
+
     try {
-      definirEstado({ situacao: 'pronto', cargos: await listarCargos() })
+      definirCargos(await listarCargos())
     } catch (falha) {
-      definirEstado({
-        situacao: 'erro',
-        mensagem: falha instanceof Error ? falha.message : 'Falha ao carregar cargos.',
-      })
+      definirErro(falha instanceof Error ? falha.message : 'Não foi possível carregar os cargos.')
+    } finally {
+      definirCarregando(false)
     }
   }, [])
 
@@ -45,88 +47,79 @@ export default function Cargos() {
     void carregar()
   }, [carregar])
 
+  const filtrados = useMemo(() => {
+    const termo = busca.trim().toLowerCase()
+    if (!termo) return cargos
+
+    return cargos.filter((c) => `${c.codigo} ${c.nome}`.toLowerCase().includes(termo))
+  }, [cargos, busca])
+
+  const colunas: Coluna<Cargo>[] = [
+    {
+      cabecalho: 'Código',
+      largura: '140px',
+      celula: (c) => <span className="tabular text-muted-foreground">{c.codigo}</span>,
+    },
+    {
+      cabecalho: 'Cargo',
+      celula: (c) => <span className="font-medium text-foreground">{c.nome}</span>,
+    },
+    {
+      cabecalho: 'Situação',
+      largura: '120px',
+      celula: (c) => (
+        <StatusBadge tom={c.ativo ? 'sucesso' : 'neutro'}>
+          {c.ativo ? 'Ativo' : 'Inativo'}
+        </StatusBadge>
+      ),
+    },
+  ]
+
   return (
-    <main className="mx-auto w-full max-w-3xl px-6 py-8">
-      <header className="mb-6">
-        <h1 className="text-xl font-semibold tracking-tight">Cargos</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Catálogo usado pelos contratos. Um cargo inativado continua legível no histórico.
-        </p>
-      </header>
+    <>
+      <CabecalhoPagina
+        titulo="Cargos"
+        descricao="Catálogo da organização. O cargo de cada pessoa é definido na vigência do contrato."
+        acao={administra && <NovoCargo aoCriar={carregar} />}
+      />
 
-      {administra && <FormularioNovoCargo aoCriar={carregar} />}
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">
-            {estado.situacao === 'pronto' ? `${estado.cargos.length} cargo(s)` : 'Cargos'}
-          </CardTitle>
-        </CardHeader>
-
-        <CardContent aria-live="polite" aria-busy={estado.situacao === 'carregando'}>
-          {estado.situacao === 'carregando' && (
-            <p className="py-2 text-sm text-muted-foreground">Carregando...</p>
-          )}
-
-          {estado.situacao === 'erro' && (
-            <div>
-              <Alert variant="destructive" role="alert">
-                <AlertDescription>{estado.mensagem}</AlertDescription>
-              </Alert>
-              <Button
-                className="mt-4"
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  definirEstado({ situacao: 'carregando' })
-                  void carregar()
-                }}
-              >
-                Tentar novamente
-              </Button>
-            </div>
-          )}
-
-          {estado.situacao === 'pronto' && estado.cargos.length === 0 && (
-            <p className="py-2 text-sm text-muted-foreground">
-              Nenhum cargo cadastrado.
-              {administra
-                ? ' Crie o primeiro acima — um contrato precisa de cargo.'
-                : ' Peça a um administrador ou analista para cadastrar.'}
-            </p>
-          )}
-
-          {estado.situacao === 'pronto' && estado.cargos.length > 0 && (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Código</TableHead>
-                  <TableHead>Nome</TableHead>
-                  <TableHead>Situação</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {estado.cargos.map((cargo) => (
-                  <TableRow key={cargo.id}>
-                    <TableCell className="font-mono text-xs">{cargo.codigo}</TableCell>
-                    <TableCell>{cargo.nome}</TableCell>
-                    <TableCell>
-                      <Badge variant={cargo.ativo ? 'default' : 'secondary'}>
-                        {cargo.ativo ? 'ativo' : 'inativo'}
-                      </Badge>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
-    </main>
+      <DataTable
+        rotulo="Catálogo de cargos"
+        colunas={colunas}
+        itens={filtrados}
+        chave={(c) => c.id}
+        carregando={carregando}
+        erro={erro}
+        aoTentarNovamente={() => void carregar()}
+        filtrado={busca.trim().length > 0}
+        aoLimparFiltros={() => definirBusca('')}
+        vazio={{
+          titulo: 'Nenhum cargo cadastrado',
+          descricao: 'O contrato de trabalho exige um cargo — cadastre o primeiro.',
+        }}
+        toolbar={
+          <>
+            <CampoBusca
+              rotulo="Buscar cargo"
+              placeholder="Buscar por código ou nome"
+              valor={busca}
+              aoMudar={definirBusca}
+            />
+            <EspacoToolbar />
+          </>
+        }
+        rodape={
+          <span>
+            {filtrados.length} {filtrados.length === 1 ? 'cargo' : 'cargos'}
+          </span>
+        }
+      />
+    </>
   )
 }
 
-function FormularioNovoCargo({ aoCriar }: { aoCriar: () => Promise<void> }) {
+function NovoCargo({ aoCriar }: { aoCriar: () => Promise<void> }) {
+  const [aberto, definirAberto] = useState(false)
   const [codigo, definirCodigo] = useState('')
   const [nome, definirNome] = useState('')
   const [erro, definirErro] = useState<string | null>(null)
@@ -141,56 +134,68 @@ function FormularioNovoCargo({ aoCriar }: { aoCriar: () => Promise<void> }) {
       await criarCargo({ codigo, nome })
       definirCodigo('')
       definirNome('')
+      definirAberto(false)
       await aoCriar()
     } catch (falha) {
-      definirErro(falha instanceof Error ? falha.message : 'Falha ao criar cargo.')
+      definirErro(falha instanceof Error ? falha.message : 'Não foi possível criar o cargo.')
     } finally {
       definirEnviando(false)
     }
   }
 
   return (
-    <Card className="mb-6">
-      <CardHeader>
-        <CardTitle className="text-base">Novo cargo</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={aoEnviar} className="grid gap-4 sm:grid-cols-3" noValidate>
-          <div className="flex flex-col gap-2">
+    <Drawer open={aberto} onOpenChange={definirAberto}>
+      <DrawerTrigger asChild>
+        <Button size="sm">
+          <Plus aria-hidden />
+          Novo cargo
+        </Button>
+      </DrawerTrigger>
+
+      <DrawerContent titulo="Novo cargo" className="max-w-md">
+        <form onSubmit={aoEnviar} className="space-y-4" noValidate>
+          <div className="space-y-1.5">
             <Label htmlFor="codigoCargo">Código</Label>
             <Input
               id="codigoCargo"
               required
+              autoFocus
+              placeholder="ANA"
               value={codigo}
               onChange={(e) => definirCodigo(e.target.value)}
+              className="tabular"
             />
           </div>
 
-          <div className="flex flex-col gap-2">
+          <div className="space-y-1.5">
             <Label htmlFor="nomeCargo">Nome</Label>
             <Input
               id="nomeCargo"
               required
+              placeholder="Analista"
               value={nome}
               onChange={(e) => definirNome(e.target.value)}
             />
           </div>
 
-          <div className="flex items-end">
+          {erro && (
+            <Alert variant="destructive" role="alert">
+              <AlertDescription>{erro}</AlertDescription>
+            </Alert>
+          )}
+
+          <div className="flex justify-end gap-2 border-t border-border pt-4">
+            <DrawerClose asChild>
+              <Button type="button" variant="outline" size="sm">
+                Cancelar
+              </Button>
+            </DrawerClose>
             <Button type="submit" size="sm" disabled={enviando}>
               {enviando ? 'Criando...' : 'Criar cargo'}
             </Button>
           </div>
-
-          {erro && (
-            <div className="sm:col-span-3">
-              <Alert variant="destructive" role="alert">
-                <AlertDescription>{erro}</AlertDescription>
-              </Alert>
-            </div>
-          )}
         </form>
-      </CardContent>
-    </Card>
+      </DrawerContent>
+    </Drawer>
   )
 }
