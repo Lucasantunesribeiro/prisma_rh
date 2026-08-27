@@ -2,13 +2,14 @@
 
 Plataforma B2B de gestão, cálculo, conferência e auditoria de folha de pagamento brasileira.
 
-> **Estado atual: Fase 3 concluída — Núcleo da folha mensal.**
+> **Estado atual: Fase 4A concluída — Incidências e bases de cálculo.**
 >
 > Existe login com JWT, cinco perfis, organizações isoladas entre si, o cadastro de
 > funcionários, contratos e histórico contratual por vigência, e a **primeira folha
 > mensal calculada e armazenada pelo próprio Prisma RH**, com memória de cálculo,
 > reprocessamento e fechamento.
-> **Nenhum encargo legal é calculado ainda** — INSS, FGTS e IRRF são a Fase 4.
+> As bases de INSS, FGTS e IRRF já são apuradas por holerite, mas
+> **nenhum encargo é calculado ainda** — alíquotas e tabelas são a Fase 4B em diante.
 > Consulte o [ROADMAP.md](ROADMAP.md) para as fases seguintes e o
 > [CLAUDE.md](CLAUDE.md) para as regras do projeto.
 
@@ -65,13 +66,29 @@ frontend React + TypeScript + Vite + Tailwind + shadcn/ui.
 - Arredondamento centralizado: 2 casas, `AwayFromZero`, aplicado na parcela.
 - Telas de rubricas, lista de folhas e detalhe da folha com holerite e memória.
 
+**Incidências e bases (Fase 4A)**
+
+- Cada rubrica declara **em quais bases entra**: INSS, FGTS e IRRF. É um enum de bits
+  numa coluna só — `Inss | Fgts` guarda 3 —, e um teste exige que todo valor seja
+  potência de dois, porque numerar em sequência faria o terceiro colidir com a
+  combinação dos dois primeiros.
+- O holerite passa a apurar as **três bases**, com os códigos das rubricas que formaram
+  cada uma. Essa composição é **derivada**, não gravada: cada lançamento já carrega a
+  incidência, então dizer quais entraram é filtrar o que já está lá.
+- **Rubrica de desconto não compõe base** — o construtor recusa e a API devolve 400.
+  Base de INSS é soma de proventos; desconto não a reduz. O que reduz base é *dedução*,
+  que é outro conceito e pertence à Fase 4D.
+- A incidência é **congelada no lançamento**, como código, nome e tipo já eram. Mudar a
+  incidência de uma rubrica não mexe em holerite já calculado; vale a partir do próximo.
+
 ## O que ainda NÃO existe
 
 Dependentes, INSS, FGTS, IRRF, férias, 13º, rescisão, importações, motor de análises,
 integrações, recursos AWS e CI/CD. Tudo isso pertence às fases seguintes do roadmap.
 
-A folha desta fase **não** calcula nenhum encargo legal: cada um exige fonte oficial
-registrada e parâmetro versionado (`CLAUDE.md §29`), e isso é a Fase 4.
+A folha **não** calcula nenhum encargo legal: cada um exige fonte oficial registrada e
+parâmetro versionado (`CLAUDE.md §29`). A Fase 4A criou as bases; aplicar alíquota sobre
+elas é a 4B (INSS), 4C (FGTS) e 4D (IRRF).
 
 ### Camada de IA — planejada, não implementada
 
@@ -254,9 +271,10 @@ Todos usam a senha de `PRISMARH_SEED_SENHA`.
 | `POST /api/contratos/{id}/desligamento` | + Analista de RH | Encerra o vínculo |
 | `GET /api/rubricas` | todos os 5 | Catálogo de rubricas |
 | `POST`/`PUT`/`DELETE /api/rubricas` | Adm. Plataforma, Adm. Empresa | Parametrização |
+| `PUT /api/rubricas/{id}/incidencias` | Adm. Plataforma, Adm. Empresa | Em quais bases a rubrica entra |
 | `GET /api/folhas` | todos os 5 | Lista, com filtro por empresa e competência |
 | `GET /api/folhas/{id}` | todos os 5 | Folha com os holerites |
-| `GET /api/folhas/{id}/funcionarios/{idHolerite}` | todos os 5 | Holerite e memória de cálculo |
+| `GET /api/folhas/{id}/funcionarios/{idHolerite}` | todos os 5 | Holerite, memória de cálculo e bases |
 | `POST /api/folhas` | + Analista de RH | Abre a folha de uma competência |
 | `POST /api/folhas/{id}/calcular` | + Analista de RH | Calcula ou recalcula |
 | `POST /api/folhas/{id}/fechar` | + Analista de RH | Fecha em definitivo |

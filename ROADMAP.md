@@ -829,6 +829,77 @@ Criar estrutura adequada para bases e incidências.
 - memória de cálculo;
 - testes.
 
+> **Escopo aprovado pelo responsável em 27/08/2026 — só a 4A.**
+>
+> Sem INSS. A regra desta fase manda validar cada bloco antes do próximo, e a 4A tem uma
+> propriedade que nenhuma outra subfase tem: **não usa nenhum número legal**. Ela cria a
+> estrutura da base; quem aplica alíquota sobre ela é a 4B em diante. Por isso é a única
+> que não fica bloqueada esperando tabela oficial vigente.
+>
+> O problema que ela resolve: o holerite já chega ao líquido, mas **INSS, FGTS e IRRF não
+> incidem sobre o total** — cada um tem sua base, formada por um subconjunto das rubricas.
+> Comissão entra na base de INSS; vale-transporte não. Sem essa distinção, qualquer
+> alíquota da 4B estaria sobre o número errado.
+
+> **Decisão registrada em 27/08/2026 — incidência como enum de bits.**
+>
+> `BaseCalculo` é um `[Flags]` com `Nenhuma = 0, Inss = 1, Fgts = 2, Irrf = 4`, gravado
+> numa coluna `int` em `rubricas` e noutra, **congelada**, em `lancamentos_folha`.
+>
+> Três colunas booleanas dariam o mesmo resultado e seriam mais legíveis direto no SQL,
+> mas apurar todas as bases exigiria uma linha de código por base, e acrescentar a quarta
+> seria migration em duas tabelas. Uma tabela filha `incidencias_rubrica` seria mais
+> flexível, mas custaria uma junção em toda leitura de holerite — e uma **segunda** tabela
+> filha só para congelar a incidência no lançamento.
+>
+> `BasesDeCalculo.Individuais` mora no mesmo arquivo do enum de propósito, e um teste
+> exige que todo valor seja potência de dois. Numerar em sequência (1, 2, **3**) faria o
+> terceiro valor colidir com a combinação dos dois primeiros — `Inss | Fgts` já vale 3 —
+> e a consulta passaria a mentir sem erro nenhum.
+
+> **Decisão registrada em 27/08/2026 — desconto não compõe base.**
+>
+> Rubrica do tipo `Desconto` **não pode declarar incidência**: o construtor recusa, e a
+> API devolve 400.
+>
+> Base de INSS é a soma dos proventos que integram o salário-de-contribuição; desconto
+> não a reduz. O que reduz base é **dedução** — o INSS abatendo a base de IRRF, o
+> dependente —, que é conceito distinto e pertence à **4D**.
+>
+> Sem essa invariante, alguém marcaria "vale-transporte incide em INSS" achando que
+> representa o desconto de 6%, e a base sairia menor sem ninguém notar, porque o holerite
+> continuaria fechando.
+>
+> `Informativo` **pode** compor base — é exatamente para isso que o tipo existe.
+
+> **Decisão registrada em 27/08/2026 — memória da base é derivada, não gravada.**
+>
+> `LinhaMemoriaCalculo` **não** é reusada para as bases.
+>
+> O salário proporcional precisa de memória gravada porque seus passos usam valores que
+> não sobrevivem em lugar nenhum: o recorte por vigência dentro do mês. A base é
+> diferente — é soma simples de lançamentos que estão todos ali, cada um carregando sua
+> incidência congelada. Gravar os passos duplicaria dado que já está na mesma tela.
+>
+> `CLAUDE.md §4.2` continua satisfeito: a explicação é integralmente reconstruível a
+> partir do que está persistido, e a API devolve, por base, quais rubricas a compuseram.
+
+### Security Gate — Fase 4A
+
+| # | Ponto | Resposta |
+|---|---|---|
+| 1 | Ameaças introduzidas | Incidência errada produz base errada **em silêncio** — o holerite continua fechando e o líquido continua certo, então nada denuncia. Alteração de incidência reescrevendo folha já calculada. Recálculo duplicando linhas de base. |
+| 2 | Controles | Incidência **congelada** no lançamento; a apuração lê o lançamento, nunca a rubrica atual. Invariante recusando desconto com incidência. `BasesDeCalculo.Conhecidas` recusa bit que não corresponde a base alguma — sem isso, um valor inventado vindo do JSON seria gravado e ignorado em silêncio. Índice único `ux_bases_apuradas_holerite_base`. |
+| 3 | Testes de segurança | Isolamento de `bases_apuradas` contra PostgreSQL real; holerite de organização vizinha devolve 404; recálculo em sequência não duplica base. |
+| 4 | Impacto multiempresa | `bases_apuradas` é tabela de tenant: **filtro global no `PrismaRhDbContext`**, obrigatório por `CLAUDE.md §24.5`. |
+| 5 | Exposição de dados | A base repete valor de salário — **altamente sensível**, mesma classificação do holerite. Só é devolvida a quem já pode ler o holerite. |
+| 6 | Permissões | Nenhuma política nova. Rubrica continua sob `AdministrarEmpresas` por ser parametrização; alterar incidência é a mesma coisa. |
+| 7 | Logging e auditoria | Alterar incidência muda o próximo cálculo de toda folha aberta: **candidata à trilha de auditoria formal da Fase 7**. Valor de base não vai para log. |
+| 8 | Dependências | Nenhuma nova. |
+| 9 | Secrets | Não se aplica — nenhum segredo novo. |
+| 10 | Superfície pública | Nenhuma rota anônima nova. `PUT /api/rubricas/{id}/incidencias` é autenticado e autorizado. |
+| 11 | Risco de custo/abuso | No máximo 3 linhas por holerite, criadas junto com ele. Nenhuma listagem nova, portanto nenhuma listagem nova sem paginação. |
+
 ---
 
 ## FASE 4B — INSS
