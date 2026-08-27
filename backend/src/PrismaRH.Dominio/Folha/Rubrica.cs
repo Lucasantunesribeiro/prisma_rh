@@ -25,6 +25,7 @@ public sealed class Rubrica
         string nome,
         TipoRubrica tipo,
         EstrategiaRubrica estrategia,
+        BaseCalculo basesIncidentes,
         DateTimeOffset criadoEm)
     {
         if (idOrganizacao == Guid.Empty)
@@ -47,6 +48,7 @@ public sealed class Rubrica
         Nome = Cargo.ValidarTexto(nome, TamanhoMaximoNome, "Nome da rubrica", nameof(nome));
         Tipo = tipo;
         Estrategia = estrategia;
+        BasesIncidentes = ValidarIncidencias(basesIncidentes, tipo, nameof(basesIncidentes));
         Ativa = true;
         CriadoEm = criadoEm;
     }
@@ -57,6 +59,14 @@ public sealed class Rubrica
     public string Nome { get; private set; } = string.Empty;
     public TipoRubrica Tipo { get; private set; }
     public EstrategiaRubrica Estrategia { get; private set; }
+
+    /// <summary>
+    /// Em quais bases de calculo esta rubrica entra. Copiado para o lancamento
+    /// no momento do calculo - a apuracao le o lancamento, nunca esta
+    /// propriedade, para nao reescrever folha fechada.
+    /// </summary>
+    public BaseCalculo BasesIncidentes { get; private set; }
+
     public bool Ativa { get; private set; }
     public DateTimeOffset CriadoEm { get; private set; }
 
@@ -70,7 +80,46 @@ public sealed class Rubrica
     public void Renomear(string nome) =>
         Nome = Cargo.ValidarTexto(nome, TamanhoMaximoNome, "Nome da rubrica", nameof(nome));
 
+    /// <summary>
+    /// Alterar incidencia e permitido, ao contrario de tipo e estrategia.
+    ///
+    /// A diferenca nao e de gosto: o lancamento congela a incidencia no
+    /// calculo, entao mudar aqui so afeta calculos futuros. E precisa ser
+    /// permitido - quando a lei muda o que compoe salario-de-contribuicao, a
+    /// alternativa seria inativar a rubrica e criar outra, quebrando todo
+    /// relatorio historico por codigo de rubrica.
+    /// </summary>
+    public void AlterarIncidencias(BaseCalculo basesIncidentes) =>
+        BasesIncidentes = ValidarIncidencias(basesIncidentes, Tipo, nameof(basesIncidentes));
+
     public void Inativar() => Ativa = false;
 
     public void Reativar() => Ativa = true;
+
+    private static BaseCalculo ValidarIncidencias(BaseCalculo bases, TipoRubrica tipo, string parametro)
+    {
+        if (!BasesDeCalculo.Conhecidas(bases))
+        {
+            throw new ArgumentException(
+                "Base de calculo desconhecida.", parametro);
+        }
+
+        if (tipo == TipoRubrica.Desconto && bases != BaseCalculo.Nenhuma)
+        {
+            // Base de INSS e a soma dos proventos que integram o
+            // salario-de-contribuicao; desconto nao a reduz. O que reduz base e
+            // DEDUCAO - o INSS abatendo a base de IRRF, o dependente -, que e
+            // outro conceito e pertence a Fase 4D.
+            //
+            // Sem esta recusa, alguem marcaria "vale-transporte incide em INSS"
+            // achando que representa o desconto de 6%, e a base sairia menor
+            // sem ninguem notar, porque o holerite continuaria fechando.
+            throw new ArgumentException(
+                "Rubrica de desconto nao compoe base de calculo. Desconto nao reduz base: "
+                + "o que reduz e deducao, que e outro conceito.",
+                parametro);
+        }
+
+        return bases;
+    }
 }

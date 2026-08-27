@@ -225,21 +225,33 @@ public static class SemeadorDesenvolvimento
         var empresa = await contexto.Empresas.IgnoreQueryFilters()
             .FirstAsync(e => e.IdOrganizacao == prisma.Id, ct);
 
+        // Incidencias com fonte, conforme CLAUDE.md secao 29.
+        //
+        // Salario e comissao integram o salario-de-contribuicao (Lei 8.212/91,
+        // art. 28, I: "a remuneracao auferida (...), inclusive comissoes"), e
+        // por consequencia compoem tambem a base de FGTS e a de IRRF.
+        //
+        // Vale-transporte e adiantamento sao DESCONTOS: nao compoem base
+        // alguma, e a invariante em Rubrica recusaria se alguem tentasse. O
+        // beneficio vale-transporte tambem nao integraria salario (Lei
+        // 7.418/85, art. 2o), mas isso e outra rubrica, que nao existe aqui.
+        const BaseCalculo integraTudo = BaseCalculo.Inss | BaseCalculo.Fgts | BaseCalculo.Irrf;
+
         var salario = new Rubrica(
             prisma.Id, "SAL", "Salario base",
-            TipoRubrica.Provento, EstrategiaRubrica.SalarioBaseProporcional, agora);
+            TipoRubrica.Provento, EstrategiaRubrica.SalarioBaseProporcional, integraTudo, agora);
 
         var comissao = new Rubrica(
             prisma.Id, "COM", "Comissao",
-            TipoRubrica.Provento, EstrategiaRubrica.ValorInformado, agora);
+            TipoRubrica.Provento, EstrategiaRubrica.ValorInformado, integraTudo, agora);
 
         var valeTransporte = new Rubrica(
             prisma.Id, "VT", "Vale-transporte",
-            TipoRubrica.Desconto, EstrategiaRubrica.ValorInformado, agora);
+            TipoRubrica.Desconto, EstrategiaRubrica.ValorInformado, BaseCalculo.Nenhuma, agora);
 
         var adiantamento = new Rubrica(
             prisma.Id, "ADT", "Adiantamento salarial",
-            TipoRubrica.Desconto, EstrategiaRubrica.ValorInformado, agora);
+            TipoRubrica.Desconto, EstrategiaRubrica.ValorInformado, BaseCalculo.Nenhuma, agora);
 
         contexto.Rubricas.AddRange(salario, comissao, valeTransporte, adiantamento);
         await contexto.SaveChangesAsync(ct);

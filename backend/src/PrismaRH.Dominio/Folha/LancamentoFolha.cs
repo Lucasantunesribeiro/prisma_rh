@@ -49,6 +49,7 @@ public sealed class LancamentoFolha
         CodigoRubrica = rubrica.Codigo;
         NomeRubrica = rubrica.Nome;
         Tipo = rubrica.Tipo;
+        BasesIncidentes = rubrica.BasesIncidentes;
         Origem = origem;
         Valor = Dinheiro.Arredondar(valor);
         Referencia = string.IsNullOrWhiteSpace(referencia)
@@ -69,6 +70,15 @@ public sealed class LancamentoFolha
     public string NomeRubrica { get; private set; } = string.Empty;
 
     public TipoRubrica Tipo { get; private set; }
+
+    /// <summary>
+    /// Bases que a rubrica compunha no momento do calculo. Congelado de
+    /// proposito, como o codigo e o nome: se a lei mudar e o vale-transporte
+    /// passar a compor a base de FGTS, a folha de agosto ja fechada tem que
+    /// continuar dizendo qual base ELA usou.
+    /// </summary>
+    public BaseCalculo BasesIncidentes { get; private set; }
+
     public OrigemLancamento Origem { get; private set; }
     public decimal Valor { get; private set; }
 
@@ -86,6 +96,25 @@ public sealed class LancamentoFolha
         TipoRubrica.Desconto => -Valor,
         _ => 0m,
     };
+
+    /// <summary>
+    /// Quanto este lancamento soma nas bases em que incide.
+    ///
+    /// Desconto vale zero mesmo que alguem consiga marca-lo: a invariante em
+    /// Rubrica ja recusa isso na entrada, e aqui e a segunda tranca. Um
+    /// desconto somando na base faria o INSS incidir sobre o vale-transporte.
+    /// </summary>
+    public decimal EfeitoNaBase => Tipo == TipoRubrica.Desconto ? 0m : Valor;
+
+    /// <summary>
+    /// Se este lancamento entra na base indicada.
+    ///
+    /// O teste explicito contra Nenhuma existe porque HasFlag(Nenhuma) devolve
+    /// true para qualquer valor - zero esta contido em tudo. Sem ele, "quais
+    /// lancamentos compoem a base Nenhuma" devolveria o holerite inteiro.
+    /// </summary>
+    public bool Compoe(BaseCalculo baseCalculo) =>
+        baseCalculo != BaseCalculo.Nenhuma && BasesIncidentes.HasFlag(baseCalculo);
 
     internal void DefinirOrdem(int ordem) => Ordem = ordem;
 

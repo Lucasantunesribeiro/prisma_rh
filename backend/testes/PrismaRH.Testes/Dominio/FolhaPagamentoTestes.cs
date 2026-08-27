@@ -19,14 +19,19 @@ public class FolhaPagamentoTestes
 
     private static readonly Competencia Agosto = new(2026, 8);
 
-    private static Rubrica Salario() =>
-        new(Org, "SAL", "Salario base", TipoRubrica.Provento, EstrategiaRubrica.SalarioBaseProporcional, Agora);
+    private const BaseCalculo IntegraTudo = BaseCalculo.Inss | BaseCalculo.Fgts | BaseCalculo.Irrf;
 
-    private static Rubrica Comissao() =>
-        new(Org, "COM", "Comissao", TipoRubrica.Provento, EstrategiaRubrica.ValorInformado, Agora);
+    private static Rubrica Salario(BaseCalculo bases = IntegraTudo) =>
+        new(Org, "SAL", "Salario base",
+            TipoRubrica.Provento, EstrategiaRubrica.SalarioBaseProporcional, bases, Agora);
+
+    private static Rubrica Comissao(BaseCalculo bases = IntegraTudo) =>
+        new(Org, "COM", "Comissao",
+            TipoRubrica.Provento, EstrategiaRubrica.ValorInformado, bases, Agora);
 
     private static Rubrica ValeTransporte() =>
-        new(Org, "VT", "Vale-transporte", TipoRubrica.Desconto, EstrategiaRubrica.ValorInformado, Agora);
+        new(Org, "VT", "Vale-transporte",
+            TipoRubrica.Desconto, EstrategiaRubrica.ValorInformado, BaseCalculo.Nenhuma, Agora);
 
     private static ContratoTrabalho Contrato(
         string matricula, decimal salario = 3000m, DateOnly? admissao = null, Guid? empresa = null) =>

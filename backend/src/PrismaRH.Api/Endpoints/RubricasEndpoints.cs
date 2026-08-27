@@ -9,15 +9,32 @@ using PrismaRH.Infraestrutura.Persistencia;
 namespace PrismaRH.Api.Endpoints;
 
 public sealed record CriarRubricaRequisicao(
-    string Codigo, string Nome, TipoRubrica Tipo, EstrategiaRubrica Estrategia);
+    string Codigo,
+    string Nome,
+    TipoRubrica Tipo,
+    EstrategiaRubrica Estrategia,
+    BaseCalculo BasesIncidentes = BaseCalculo.Nenhuma);
 
 public sealed record RenomearRubricaRequisicao(string Nome);
 
+/// <summary>
+/// Alterar incidencia e requisicao propria, e nao um campo em Renomear: sao
+/// duas coisas com consequencias diferentes. Renomear nao muda calculo algum;
+/// mudar incidencia muda o proximo calculo de toda folha aberta.
+/// </summary>
+public sealed record AlterarIncidenciasRequisicao(BaseCalculo BasesIncidentes);
+
 public sealed record RubricaResposta(
-    Guid Id, string Codigo, string Nome, TipoRubrica Tipo, EstrategiaRubrica Estrategia, bool Ativa)
+    Guid Id,
+    string Codigo,
+    string Nome,
+    TipoRubrica Tipo,
+    EstrategiaRubrica Estrategia,
+    BaseCalculo BasesIncidentes,
+    bool Ativa)
 {
     public static RubricaResposta De(Rubrica r) =>
-        new(r.Id, r.Codigo, r.Nome, r.Tipo, r.Estrategia, r.Ativa);
+        new(r.Id, r.Codigo, r.Nome, r.Tipo, r.Estrategia, r.BasesIncidentes, r.Ativa);
 }
 
 /// <summary>
@@ -37,6 +54,9 @@ public static class RubricasEndpoints
             .RequireAuthorization(PoliticasAutorizacao.AdministrarEmpresas);
 
         grupo.MapPut("/{id:guid}", RenomearAsync)
+            .RequireAuthorization(PoliticasAutorizacao.AdministrarEmpresas);
+
+        grupo.MapPut("/{id:guid}/incidencias", AlterarIncidenciasAsync)
             .RequireAuthorization(PoliticasAutorizacao.AdministrarEmpresas);
 
         grupo.MapDelete("/{id:guid}", InativarAsync)
@@ -93,7 +113,7 @@ public static class RubricasEndpoints
         {
             rubrica = new Rubrica(
                 usuario.IdOrganizacao, codigo, requisicao.Nome,
-                requisicao.Tipo, requisicao.Estrategia, relogio.Agora);
+                requisicao.Tipo, requisicao.Estrategia, requisicao.BasesIncidentes, relogio.Agora);
         }
         catch (ArgumentException erro)
         {
@@ -122,6 +142,39 @@ public static class RubricasEndpoints
         try
         {
             rubrica.Renomear(requisicao.Nome);
+        }
+        catch (ArgumentException erro)
+        {
+            return RespostasValidacao.De(erro);
+        }
+
+        await db.SaveChangesAsync(ct);
+
+        return Results.Ok(RubricaResposta.De(rubrica));
+    }
+
+    /// <summary>
+    /// Altera em quais bases a rubrica incide.
+    ///
+    /// Nao mexe em folha ja calculada: o lancamento congelou a incidencia que
+    /// valia no calculo. Quem quiser a regra nova numa folha aberta recalcula.
+    /// </summary>
+    private static async Task<IResult> AlterarIncidenciasAsync(
+        Guid id,
+        [FromBody] AlterarIncidenciasRequisicao requisicao,
+        PrismaRhDbContext db,
+        CancellationToken ct)
+    {
+        var rubrica = await db.Rubricas.FirstOrDefaultAsync(r => r.Id == id, ct);
+
+        if (rubrica is null)
+        {
+            return Results.NotFound();
+        }
+
+        try
+        {
+            rubrica.AlterarIncidencias(requisicao.BasesIncidentes);
         }
         catch (ArgumentException erro)
         {

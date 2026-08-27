@@ -11,6 +11,7 @@ namespace PrismaRH.Dominio.Folha;
 public sealed class FolhaFuncionario
 {
     private readonly List<LancamentoFolha> _lancamentos = [];
+    private readonly List<BaseApurada> _bases = [];
 
     private FolhaFuncionario()
     {
@@ -24,6 +25,15 @@ public sealed class FolhaFuncionario
         IdContrato = idContrato;
         IdFuncionario = idFuncionario;
         Divisor = MotorCalculoFolha.DivisorMensal;
+
+        // As tres bases nascem com o holerite, zeradas. Cria-las so quando
+        // alguem calcula deixaria um holerite recem-aberto sem base alguma, e
+        // a tela teria que distinguir "base zero" de "base ausente" - duas
+        // coisas que significam o mesmo para quem le.
+        foreach (var baseCalculo in BasesDeCalculo.Individuais)
+        {
+            _bases.Add(new BaseApurada(idOrganizacao, Id, baseCalculo));
+        }
     }
 
     public Guid Id { get; private set; }
@@ -58,6 +68,16 @@ public sealed class FolhaFuncionario
     /// </summary>
     public IReadOnlyList<LancamentoFolha> Lancamentos =>
         [.. _lancamentos.OrderBy(l => l.Ordem).ThenBy(l => l.Id)];
+
+    /// <summary>
+    /// As bases de calculo do holerite: INSS, FGTS e IRRF. Sempre as tres,
+    /// mesmo zeradas.
+    /// </summary>
+    public IReadOnlyList<BaseApurada> Bases => [.. _bases.OrderBy(b => b.Base)];
+
+    /// <summary>Quanto vale a base indicada. Zero se ela nunca foi apurada.</summary>
+    public decimal BaseDe(BaseCalculo baseCalculo) =>
+        _bases.SingleOrDefault(b => b.Base == baseCalculo)?.Valor ?? 0m;
 
     /// <summary>
     /// Aplica o resultado do motor.
@@ -176,5 +196,40 @@ public sealed class FolhaFuncionario
         TotalProventos = _lancamentos.Where(l => l.Tipo == TipoRubrica.Provento).Sum(l => l.Valor);
         TotalDescontos = _lancamentos.Where(l => l.Tipo == TipoRubrica.Desconto).Sum(l => l.Valor);
         Liquido = TotalProventos - TotalDescontos;
+
+        ApurarBases();
+    }
+
+    /// <summary>
+    /// Soma, para cada base, os lancamentos que a compoem.
+    ///
+    /// Le a incidencia CONGELADA no lancamento, nunca a rubrica atual: e o que
+    /// garante que alterar a incidencia de uma rubrica nao mexa em holerite ja
+    /// calculado.
+    ///
+    /// Atualiza a linha existente em vez de limpar e repovoar a lista. Mesmo
+    /// motivo de Reordenar, explicado em Lancamentos: remontar a colecao
+    /// rastreada faria o EF Core emitir DELETE e INSERT das tres bases a cada
+    /// calculo, e o holerite tem tres bases exatamente porque elas sao fixas.
+    /// </summary>
+    private void ApurarBases()
+    {
+        foreach (var baseCalculo in BasesDeCalculo.Individuais)
+        {
+            var valor = _lancamentos
+                .Where(l => l.Compoe(baseCalculo))
+                .Sum(l => l.EfeitoNaBase);
+
+            var linha = _bases.SingleOrDefault(b => b.Base == baseCalculo);
+
+            if (linha is null)
+            {
+                // Holerite gravado antes desta base existir. Nasce agora.
+                linha = new BaseApurada(IdOrganizacao, Id, baseCalculo);
+                _bases.Add(linha);
+            }
+
+            linha.DefinirValor(valor);
+        }
     }
 }
