@@ -19,6 +19,7 @@ import {
   inativarRubrica,
   juntarBases,
   listarRubricas,
+  ORIGEM_DO_VALOR,
   ROTULO_BASE,
   ROTULO_TIPO_RUBRICA,
   separarBases,
@@ -139,9 +140,7 @@ export default function Rubricas() {
                     <TableCell className="font-medium">{rubrica.nome}</TableCell>
                     <TableCell>{ROTULO_TIPO_RUBRICA[rubrica.tipo]}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">
-                      {rubrica.estrategia === 'SalarioBaseProporcional'
-                        ? 'calculado pelo sistema'
-                        : 'digitado no lançamento'}
+                      {ORIGEM_DO_VALOR[rubrica.estrategia]}
                     </TableCell>
                     <TableCell>
                       {separarBases(rubrica.basesIncidentes).length === 0 ? (

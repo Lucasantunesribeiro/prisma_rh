@@ -296,10 +296,18 @@ public static class SemeadorDesenvolvimento
             prisma.Id, "ADT", "Adiantamento salarial",
             TipoRubrica.Desconto, EstrategiaRubrica.ValorInformado, BaseCalculo.Nenhuma, agora);
 
-        Rubrica[] catalogo = [salario, comissao, valeTransporte, adiantamento];
+        // Fase 4B: a rubrica que recebe o desconto calculado. Nao declara
+        // incidencia - e desconto, e desconto nao compoe base.
+        var inss = new Rubrica(
+            prisma.Id, "INSS", "INSS sobre a folha",
+            TipoRubrica.Desconto, EstrategiaRubrica.InssProgressivo, BaseCalculo.Nenhuma, agora);
+
+        Rubrica[] catalogo = [salario, comissao, valeTransporte, adiantamento, inss];
 
         contexto.Rubricas.AddRange(catalogo);
         await contexto.SaveChangesAsync(ct);
+
+        var tabelasInss = await contexto.TabelasInss.Include(x => x.Faixas).ToListAsync(ct);
 
         var contratos = await contexto.ContratosTrabalho.IgnoreQueryFilters()
             .Include(c => c.Vigencias)
@@ -312,33 +320,38 @@ public static class SemeadorDesenvolvimento
         var atual = Competencia.De(DateOnly.FromDateTime(agora.Date));
         var anterior = atual.Anterior();
 
+        // Uma por competencia: cada folha usa a tabela que valia NA SUA data,
+        // e nao a mais recente cadastrada.
+        var inssAnterior = ParametrosInss.Montar(inss, tabelasInss, anterior);
+        var inssAtual = ParametrosInss.Montar(inss, tabelasInss, atual);
+
         // A folha do mes passado nasce FECHADA, para a demo ter um fato
         // historico: alterar contrato depois disso nao muda mais nada nela.
         var fechada = new FolhaPagamento(prisma.Id, empresa.Id, anterior, agora);
-        fechada.Calcular(contratos, salario, catalogo, agora);
+        fechada.Calcular(contratos, salario, catalogo, inssAnterior, agora);
 
         foreach (var holerite in fechada.Funcionarios.Take(2))
         {
-            fechada.AdicionarLancamentoManual(holerite.Id, valeTransporte, 180m, "22 dias");
+            fechada.AdicionarLancamentoManual(holerite.Id, valeTransporte, 180m, "22 dias", inssAnterior);
         }
 
         if (fechada.Funcionarios.Count > 0)
         {
-            fechada.AdicionarLancamentoManual(fechada.Funcionarios[0].Id, comissao, 450m, null);
+            fechada.AdicionarLancamentoManual(fechada.Funcionarios[0].Id, comissao, 450m, null, inssAnterior);
         }
 
         // Recalcula ANTES de fechar, de proposito: e o cenario que prova que
         // reprocessar preserva o que foi lancado a mao.
-        fechada.Calcular(contratos, salario, catalogo, agora);
+        fechada.Calcular(contratos, salario, catalogo, inssAnterior, agora);
         fechada.Fechar(agora);
 
         // A do mes corrente fica calculada e aberta, para dar o que operar.
         var aberta = new FolhaPagamento(prisma.Id, empresa.Id, atual, agora);
-        aberta.Calcular(contratos, salario, catalogo, agora);
+        aberta.Calcular(contratos, salario, catalogo, inssAtual, agora);
 
         if (aberta.Funcionarios.Count > 0)
         {
-            aberta.AdicionarLancamentoManual(aberta.Funcionarios[0].Id, adiantamento, 600m, null);
+            aberta.AdicionarLancamentoManual(aberta.Funcionarios[0].Id, adiantamento, 600m, null, inssAtual);
         }
 
         contexto.Folhas.AddRange(fechada, aberta);

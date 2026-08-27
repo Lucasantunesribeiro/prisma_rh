@@ -1,4 +1,4 @@
-namespace PrismaRH.Dominio.Folha;
+﻿namespace PrismaRH.Dominio.Folha;
 
 /// <summary>
 /// Como o valor da rubrica aparece na folha.
@@ -23,4 +23,13 @@ public enum EstrategiaRubrica
     /// classifica e soma.
     /// </summary>
     ValorInformado = 2,
+
+    /// <summary>
+    /// O sistema calcula: contribuicao progressiva do segurado sobre a base de
+    /// INSS, pela tabela vigente na competencia da folha (Fase 4B).
+    ///
+    /// Nenhum numero legal mora aqui nem no motor: faixas, aliquotas e teto
+    /// vem de TabelaInss, que exige fonte oficial registrada.
+    /// </summary>
+    InssProgressivo = 3,
 }

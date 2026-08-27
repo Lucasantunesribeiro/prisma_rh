@@ -32,7 +32,10 @@ public sealed class LancamentoFolhaConfiguracao : IEntityTypeConfiguration<Lanca
             .IsRequired();
 
         builder.Property(l => l.Tipo).HasColumnName("tipo").HasConversion<int>().IsRequired();
-        // Congelada no calculo, como codigo, nome e tipo acima.
+        builder.Property(l => l.Estrategia)
+            .HasColumnName("estrategia").HasConversion<int>().IsRequired();
+
+        // Congeladas no calculo, como codigo, nome e tipo acima.
         builder.Property(l => l.BasesIncidentes)
             .HasColumnName("bases_incidentes").HasConversion<int>().IsRequired();
 

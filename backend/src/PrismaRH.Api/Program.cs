@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
@@ -96,6 +96,7 @@ app.MapearFuncionarios();
 app.MapearContratos();
 app.MapearRubricas();
 app.MapearFolhas();
+app.MapearTabelasInss();
 
 app.Run();
 

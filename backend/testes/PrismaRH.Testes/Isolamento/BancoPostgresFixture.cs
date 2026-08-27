@@ -1,8 +1,9 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using PrismaRH.Aplicacao.Identidade;
 using PrismaRH.Dominio.Empresas;
 using PrismaRH.Dominio.Identidade;
+using PrismaRH.Dominio.Parametros;
 using PrismaRH.Infraestrutura.Identidade;
 using PrismaRH.Infraestrutura.Persistencia;
 using Testcontainers.PostgreSql;
@@ -71,6 +72,10 @@ public sealed class BancoPostgresFixture : IAsyncLifetime
     public Guid IdOrganizacaoB { get; private set; }
     public Guid IdEmpresaB { get; private set; }
 
+    public Guid IdOrganizacaoC { get; private set; }
+    public Guid IdEmpresaC { get; private set; }
+    public Guid IdEstabelecimentoC { get; private set; }
+
     public const string Senha = "SenhaDeTeste#2026";
 
     public const string EmailAdminA = "admin@a.teste";
@@ -79,6 +84,18 @@ public sealed class BancoPostgresFixture : IAsyncLifetime
     public const string EmailAuditorA = "auditor@a.teste";
     public const string EmailPlataformaA = "plataforma@a.teste";
     public const string EmailAdminB = "admin@b.teste";
+
+    /// <summary>
+    /// Organizacao C existe so para os testes de INSS.
+    ///
+    /// Configurar INSS e um fato da ORGANIZACAO: a partir do momento em que
+    /// existe rubrica de INSS ativa, toda folha dela passa a descontar. Se os
+    /// testes de INSS criassem essa rubrica na organizacao A, os testes das
+    /// Fases 3 e 4A - que somam liquido sem encargo - passariam ou falhariam
+    /// conforme a ORDEM de execucao. Separar por dados e o que torna os dois
+    /// conjuntos deterministicos.
+    /// </summary>
+    public const string EmailAdminC = "admin@c.teste";
 
     /// <summary>
     /// CPF valido e unico por semente. Os testes desta colecao compartilham o
@@ -135,7 +152,8 @@ public sealed class BancoPostgresFixture : IAsyncLifetime
 
         var orgA = new Organizacao("Organizacao A", agora);
         var orgB = new Organizacao("Organizacao B", agora);
-        db.Organizacoes.AddRange(orgA, orgB);
+        var orgC = new Organizacao("Organizacao C", agora);
+        db.Organizacoes.AddRange(orgA, orgB, orgC);
 
         db.Usuarios.AddRange(
             new Usuario(orgA.Id, "Admin A", EmailAdminA, hash, Perfil.AdministradorEmpresa, agora),
@@ -143,14 +161,31 @@ public sealed class BancoPostgresFixture : IAsyncLifetime
             new Usuario(orgA.Id, "Visualizador A", EmailVisualizadorA, hash, Perfil.Visualizador, agora),
             new Usuario(orgA.Id, "Auditor A", EmailAuditorA, hash, Perfil.Auditor, agora),
             new Usuario(orgA.Id, "Plataforma A", EmailPlataformaA, hash, Perfil.AdministradorPlataforma, agora),
-            new Usuario(orgB.Id, "Admin B", EmailAdminB, hash, Perfil.AdministradorEmpresa, agora));
+            new Usuario(orgB.Id, "Admin B", EmailAdminB, hash, Perfil.AdministradorEmpresa, agora),
+            new Usuario(orgC.Id, "Admin C", EmailAdminC, hash, Perfil.AdministradorEmpresa, agora));
 
         var empresaA = new Empresa(orgA.Id, "Empresa da A", Cnpj.Criar("11222333000181"), agora);
         var empresaB = new Empresa(orgB.Id, "Empresa da B", Cnpj.Criar("11444777000161"), agora);
-        db.Empresas.AddRange(empresaA, empresaB);
+        var empresaC = new Empresa(orgC.Id, "Empresa da C", Cnpj.Criar("34028316000103"), agora);
+        db.Empresas.AddRange(empresaA, empresaB, empresaC);
 
         var estabA = new Estabelecimento(orgA.Id, empresaA.Id, "001", "Matriz A", agora);
-        db.Estabelecimentos.Add(estabA);
+        var estabC = new Estabelecimento(orgC.Id, empresaC.Id, "001", "Matriz C", agora);
+        db.Estabelecimentos.AddRange(estabA, estabC);
+
+        // Parametro legal FEDERAL: nao pertence a organizacao alguma, entao
+        // entra uma vez so e vale para as duas. Mesma tabela da semeadura de
+        // desenvolvimento - os testes de INSS conferem os valores reais.
+        db.TabelasInss.Add(new TabelaInss(
+            new DateOnly(2026, 1, 1),
+            "Portaria Interministerial MPS/MF n. 13, de 09/01/2026, Anexo II",
+            [
+                (1621.00m, 0.075m),
+                (2902.84m, 0.09m),
+                (4354.27m, 0.12m),
+                (8475.55m, 0.14m),
+            ],
+            agora));
 
         await db.SaveChangesAsync();
 
@@ -159,6 +194,9 @@ public sealed class BancoPostgresFixture : IAsyncLifetime
         IdEmpresaA = empresaA.Id;
         IdEmpresaB = empresaB.Id;
         IdEstabelecimentoA = estabA.Id;
+        IdOrganizacaoC = orgC.Id;
+        IdEmpresaC = empresaC.Id;
+        IdEstabelecimentoC = estabC.Id;
     }
 
     /// <summary>

@@ -50,5 +50,13 @@ public sealed class RubricaConfiguracao : IEntityTypeConfiguration<Rubrica>
             .HasDatabaseName("ux_rubricas_salario_base_ativa")
             .IsUnique()
             .HasFilter($"estrategia = {(int)EstrategiaRubrica.SalarioBaseProporcional} AND ativa");
+
+        // Mesma razao para o INSS: duas rubricas de INSS ativas fariam a folha
+        // descontar a contribuicao duas vezes, e o liquido sairia menor sem
+        // que nenhuma linha parecesse errada isoladamente.
+        builder.HasIndex(r => r.IdOrganizacao)
+            .HasDatabaseName("ux_rubricas_inss_ativa")
+            .IsUnique()
+            .HasFilter($"estrategia = {(int)EstrategiaRubrica.InssProgressivo} AND ativa");
     }
 }

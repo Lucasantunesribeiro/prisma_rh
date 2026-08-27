@@ -4,6 +4,7 @@ using PrismaRH.Api.Identidade;
 using PrismaRH.Aplicacao.Comum;
 using PrismaRH.Aplicacao.Identidade;
 using PrismaRH.Dominio.Folha;
+using PrismaRH.Dominio.Parametros;
 using PrismaRH.Infraestrutura.Persistencia;
 
 namespace PrismaRH.Api.Endpoints;
@@ -317,7 +318,10 @@ public static class FolhasEndpoints
 
         try
         {
-            folha.Calcular(contratos, rubricaSalario, catalogo, relogio.Agora);
+            folha.Calcular(
+                contratos, rubricaSalario, catalogo,
+                await ParametrosInssAsync(db, folha.Competencia, ct),
+                relogio.Agora);
         }
         catch (InvalidOperationException erro)
         {
@@ -381,7 +385,9 @@ public static class FolhasEndpoints
 
         try
         {
-            folha.AdicionarLancamentoManual(idHolerite, rubrica, requisicao.Valor, requisicao.Referencia);
+            folha.AdicionarLancamentoManual(
+                idHolerite, rubrica, requisicao.Valor, requisicao.Referencia,
+                await ParametrosInssAsync(db, folha.Competencia, ct));
         }
         catch (InvalidOperationException erro)
         {
@@ -411,7 +417,9 @@ public static class FolhasEndpoints
 
         try
         {
-            removeu = folha.RemoverLancamento(idHolerite, idLancamento);
+            removeu = folha.RemoverLancamento(
+                idHolerite, idLancamento,
+                await ParametrosInssAsync(db, folha.Competencia, ct));
         }
         catch (InvalidOperationException erro)
         {
@@ -439,6 +447,32 @@ public static class FolhasEndpoints
     /// quando um lancamento calculado e removido, e trazer todas as linhas de
     /// uma empresa inteira so para descartar seria desperdicio.
     /// </summary>
+    /// <summary>
+    /// Monta os parametros de INSS para a competencia da folha.
+    ///
+    /// Devolve null quando a organizacao ainda nao tem rubrica de INSS ativa,
+    /// ou quando nenhuma tabela comecou ate aquela competencia. Nos dois casos
+    /// a folha calcula sem o desconto - e o comportamento da Fase 3, que
+    /// continua valido para quem nao configurou encargo.
+    /// </summary>
+    private static async Task<ParametrosInss?> ParametrosInssAsync(
+        PrismaRhDbContext db, Competencia competencia, CancellationToken ct)
+    {
+        var rubrica = await db.Rubricas.FirstOrDefaultAsync(
+            r => r.Ativa && r.Estrategia == EstrategiaRubrica.InssProgressivo, ct);
+
+        if (rubrica is null)
+        {
+            return null;
+        }
+
+        // As faixas vem juntas: o motor nao acessa banco durante o calculo
+        // (CLAUDE.md secao 10).
+        var tabelas = await db.TabelasInss.AsNoTracking().Include(t => t.Faixas).ToListAsync(ct);
+
+        return ParametrosInss.Montar(rubrica, tabelas, competencia);
+    }
+
     private static Task<FolhaPagamento?> CarregarParaEscritaAsync(
         PrismaRhDbContext db, Guid id, CancellationToken ct) =>
         db.Folhas

@@ -1,4 +1,4 @@
-using PrismaRH.Dominio.Contratos;
+﻿using PrismaRH.Dominio.Contratos;
 
 namespace PrismaRH.Dominio.Folha;
 
@@ -31,6 +31,14 @@ public sealed class Rubrica
         if (idOrganizacao == Guid.Empty)
         {
             throw new ArgumentException("Rubrica precisa pertencer a uma organizacao.", nameof(idOrganizacao));
+        }
+
+        if (estrategia == EstrategiaRubrica.InssProgressivo && tipo != TipoRubrica.Desconto)
+        {
+            // INSS que soma no liquido nao existe. Se passasse, a folha
+            // pagaria a contribuicao ao funcionario em vez de reter.
+            throw new ArgumentException(
+                "A rubrica de INSS precisa ser um desconto.", nameof(tipo));
         }
 
         if (estrategia == EstrategiaRubrica.SalarioBaseProporcional && tipo != TipoRubrica.Provento)

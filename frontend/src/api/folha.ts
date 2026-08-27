@@ -4,7 +4,14 @@ import type { Perfil } from './autenticacao'
 // ---------------------------------------------------------------- rubricas
 
 export type TipoRubrica = 'Provento' | 'Desconto' | 'Informativo'
-export type EstrategiaRubrica = 'SalarioBaseProporcional' | 'ValorInformado'
+export type EstrategiaRubrica = 'SalarioBaseProporcional' | 'ValorInformado' | 'InssProgressivo'
+
+/** De onde sai o valor da rubrica, para a coluna da listagem. */
+export const ORIGEM_DO_VALOR: Record<EstrategiaRubrica, string> = {
+  SalarioBaseProporcional: 'calculado pelo sistema',
+  InssProgressivo: 'calculado pelo sistema',
+  ValorInformado: 'digitado no lançamento',
+}
 export type BaseCalculo = 'Inss' | 'Fgts' | 'Irrf'
 
 /** As tres bases, na ordem em que o backend as devolve. */

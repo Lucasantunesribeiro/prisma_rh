@@ -1,3 +1,5 @@
+﻿using PrismaRH.Dominio.Parametros;
+
 namespace PrismaRH.Dominio.Folha;
 
 /// <summary>
@@ -12,6 +14,7 @@ public sealed class FolhaFuncionario
 {
     private readonly List<LancamentoFolha> _lancamentos = [];
     private readonly List<BaseApurada> _bases = [];
+
 
     private FolhaFuncionario()
     {
@@ -86,7 +89,8 @@ public sealed class FolhaFuncionario
     /// recalculo - se nao sobrevivessem, o analista perderia tudo que digitou
     /// a cada clique em "calcular", e a folha viraria um trabalho de Sisifo.
     /// </summary>
-    internal void AplicarCalculo(ApuracaoSalarioBase apuracao, Rubrica rubricaSalario)
+    internal void AplicarCalculo(
+        ApuracaoSalarioBase apuracao, Rubrica rubricaSalario, ParametrosInss? inss)
     {
         ArgumentNullException.ThrowIfNull(apuracao);
         ArgumentNullException.ThrowIfNull(rubricaSalario);
@@ -113,6 +117,59 @@ public sealed class FolhaFuncionario
 
         Reordenar();
         RecalcularTotais();
+        ApurarInss(inss);
+    }
+
+    /// <summary>
+    /// Recalcula o desconto de INSS sobre a base ja apurada.
+    ///
+    /// Roda DEPOIS de RecalcularTotais, porque depende da base de INSS, que so
+    /// existe depois que os lancamentos foram somados. E nao gera laco: o
+    /// lancamento de INSS e desconto e nao compoe base alguma (a invariante da
+    /// Fase 4A garante), entao apura-lo nao muda a base que o originou.
+    ///
+    /// Sem parametros - organizacao sem INSS configurado, ou competencia
+    /// anterior a qualquer tabela - o lancamento anterior e removido e nada
+    /// entra no lugar. Deixar um valor velho ali seria pior que nao ter.
+    /// </summary>
+    private void ApurarInss(ParametrosInss? inss)
+    {
+        // Identifica pela estrategia CONGELADA no lancamento, e nao por
+        // estado em memoria: o holerite vem do banco sem memoria nenhuma, e um
+        // INSS velho sobrevivendo ali deixaria o liquido errado.
+        var removidos = _lancamentos.RemoveAll(l => l.Estrategia == EstrategiaRubrica.InssProgressivo);
+
+        if (inss is null)
+        {
+            if (removidos > 0)
+            {
+                Reordenar();
+                RecalcularTotais();
+            }
+
+            return;
+        }
+
+        var apuracao = CalculadoraInss.Apurar(BaseDe(BaseCalculo.Inss), inss.Tabela);
+
+        var lancamento = new LancamentoFolha(
+            IdOrganizacao,
+            Id,
+            inss.Rubrica,
+            OrigemLancamento.Calculado,
+            apuracao.Valor,
+            referencia: null,
+            ordem: _lancamentos.Count + 1);
+
+        lancamento.RegistrarMemoria(apuracao.Passos);
+
+        _lancamentos.Add(lancamento);
+
+        Reordenar();
+
+        // Os descontos mudaram: refaz os totais. As bases NAO mudam, porque o
+        // INSS e desconto e desconto nao compoe base.
+        RecalcularTotais();
     }
 
     /// <summary>
@@ -135,7 +192,8 @@ public sealed class FolhaFuncionario
         }
     }
 
-    internal LancamentoFolha AdicionarManual(Rubrica rubrica, decimal valor, string? referencia)
+    internal LancamentoFolha AdicionarManual(
+        Rubrica rubrica, decimal valor, string? referencia, ParametrosInss? inss)
     {
         ArgumentNullException.ThrowIfNull(rubrica);
 
@@ -146,9 +204,9 @@ public sealed class FolhaFuncionario
 
         if (rubrica.Estrategia != EstrategiaRubrica.ValorInformado)
         {
-            // Deixar alguem digitar o salario-base a mao criaria duas linhas
-            // de salario no holerite: a digitada e a que o proximo calculo
-            // produz. O total dobraria sem ninguem entender por que.
+            // Vale para salario-base e para INSS. Digitar a mao criaria uma
+            // segunda linha alem da que o sistema calcula, e o total dobraria
+            // sem ninguem entender por que.
             throw new InvalidOperationException(
                 $"A rubrica {rubrica.Codigo} e calculada pelo sistema e nao aceita valor digitado.");
         }
@@ -164,11 +222,12 @@ public sealed class FolhaFuncionario
 
         Reordenar();
         RecalcularTotais();
+        ApurarInss(inss);
 
         return lancamento;
     }
 
-    internal bool RemoverLancamento(Guid idLancamento)
+    internal bool RemoverLancamento(Guid idLancamento, ParametrosInss? inss)
     {
         var alvo = _lancamentos.SingleOrDefault(l => l.Id == idLancamento);
 
@@ -187,6 +246,7 @@ public sealed class FolhaFuncionario
 
         Reordenar();
         RecalcularTotais();
+        ApurarInss(inss);
 
         return true;
     }

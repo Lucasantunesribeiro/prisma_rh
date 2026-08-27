@@ -1,4 +1,4 @@
-using PrismaRH.Dominio.Contratos;
+﻿using PrismaRH.Dominio.Contratos;
 
 namespace PrismaRH.Dominio.Folha;
 
@@ -49,6 +49,7 @@ public sealed class LancamentoFolha
         CodigoRubrica = rubrica.Codigo;
         NomeRubrica = rubrica.Nome;
         Tipo = rubrica.Tipo;
+        Estrategia = rubrica.Estrategia;
         BasesIncidentes = rubrica.BasesIncidentes;
         Origem = origem;
         Valor = Dinheiro.Arredondar(valor);
@@ -70,6 +71,13 @@ public sealed class LancamentoFolha
     public string NomeRubrica { get; private set; } = string.Empty;
 
     public TipoRubrica Tipo { get; private set; }
+
+    /// <summary>
+    /// Como a rubrica produziu este valor, congelado no calculo. Serve para
+    /// saber, ao reprocessar, qual linha o sistema gerou e precisa refazer -
+    /// sem depender de estado em memoria, que nao sobrevive a leitura do banco.
+    /// </summary>
+    public EstrategiaRubrica Estrategia { get; private set; }
 
     /// <summary>
     /// Bases que a rubrica compunha no momento do calculo. Congelado de
