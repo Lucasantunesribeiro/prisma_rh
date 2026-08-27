@@ -2,14 +2,14 @@
 
 Plataforma B2B de gestão, cálculo, conferência e auditoria de folha de pagamento brasileira.
 
-> **Estado atual: Fase 4A concluída — Incidências e bases de cálculo.**
+> **Estado atual: Fase 4B concluída — INSS progressivo.**
 >
 > Existe login com JWT, cinco perfis, organizações isoladas entre si, o cadastro de
 > funcionários, contratos e histórico contratual por vigência, e a **primeira folha
 > mensal calculada e armazenada pelo próprio Prisma RH**, com memória de cálculo,
 > reprocessamento e fechamento.
-> As bases de INSS, FGTS e IRRF já são apuradas por holerite, mas
-> **nenhum encargo é calculado ainda** — alíquotas e tabelas são a Fase 4B em diante.
+> As bases de INSS, FGTS e IRRF são apuradas por holerite, e o **INSS do segurado já é
+> descontado** pela tabela progressiva vigente. FGTS e IRRF são as Fases 4C e 4D.
 > Consulte o [ROADMAP.md](ROADMAP.md) para as fases seguintes e o
 > [CLAUDE.md](CLAUDE.md) para as regras do projeto.
 
@@ -81,14 +81,36 @@ frontend React + TypeScript + Vite + Tailwind + shadcn/ui.
 - A incidência é **congelada no lançamento**, como código, nome e tipo já eram. Mudar a
   incidência de uma rubrica não mexe em holerite já calculado; vale a partir do próximo.
 
+**INSS progressivo (Fase 4B)**
+
+- **Tabela por vigência**, com a fonte oficial como campo obrigatório: a construção é
+  recusada sem ela (`CLAUDE.md §29`). Cadastrar 2027 é um `POST` com a vigência nova —
+  **o algoritmo não muda**.
+- **Cálculo progressivo de verdade**: cada trecho da base paga a alíquota da sua faixa.
+  Quem ganha R$ 5.000 não paga 14% sobre tudo. Existe teste exigindo que o resultado
+  **não** seja o da conta errada.
+- **Teto**: base acima do limite não aumenta a contribuição, e o corte aparece na memória.
+- **Memória faixa a faixa**: base, cada trecho com sua alíquota e o valor exato, e o total.
+- A tabela é escolhida pelo **primeiro dia da competência** — folha histórica usa os
+  parâmetros da própria competência, não a mais recente.
+- O desconto é reapurado ao calcular, ao **lançar** e ao **remover**: adicionar uma
+  comissão não deixa a contribuição parada no valor antigo.
+- `tabelas_inss` é a **única tabela sem organização** do sistema, porque INSS é lei
+  federal. Todos leem; só o Administrador da Plataforma escreve.
+
+> ⚠️ **Pendência legal registrada:** nenhuma fonte oficial alcançada declara em **qual
+> etapa** o INSS é arredondado. Adotou-se o critério do projeto — arredondar uma vez, no
+> valor final da rubrica — explicitamente como escolha de engenharia, não como afirmação
+> jurídica. Detalhes e o impacto numérico estão na Fase 4B do [ROADMAP.md](ROADMAP.md).
+
 ## O que ainda NÃO existe
 
-Dependentes, INSS, FGTS, IRRF, férias, 13º, rescisão, importações, motor de análises,
+Dependentes, FGTS, IRRF, férias, 13º, rescisão, importações, motor de análises,
 integrações, recursos AWS e CI/CD. Tudo isso pertence às fases seguintes do roadmap.
 
-A folha **não** calcula nenhum encargo legal: cada um exige fonte oficial registrada e
-parâmetro versionado (`CLAUDE.md §29`). A Fase 4A criou as bases; aplicar alíquota sobre
-elas é a 4B (INSS), 4C (FGTS) e 4D (IRRF).
+Cada encargo exige fonte oficial registrada e parâmetro versionado (`CLAUDE.md §29`). A
+Fase 4A criou as bases e a 4B aplicou a primeira alíquota; **FGTS (4C) e IRRF (4D)
+continuam fora**.
 
 ### Camada de IA — planejada, não implementada
 
@@ -272,6 +294,8 @@ Todos usam a senha de `PRISMARH_SEED_SENHA`.
 | `GET /api/rubricas` | todos os 5 | Catálogo de rubricas |
 | `POST`/`PUT`/`DELETE /api/rubricas` | Adm. Plataforma, Adm. Empresa | Parametrização |
 | `PUT /api/rubricas/{id}/incidencias` | Adm. Plataforma, Adm. Empresa | Em quais bases a rubrica entra |
+| `GET /api/tabelas-inss` | todos os 5 | Tabelas de INSS por vigência, com as faixas |
+| `POST /api/tabelas-inss` | **só Adm. Plataforma** | Cadastra a vigência de um ano novo |
 | `GET /api/folhas` | todos os 5 | Lista, com filtro por empresa e competência |
 | `GET /api/folhas/{id}` | todos os 5 | Folha com os holerites |
 | `GET /api/folhas/{id}/funcionarios/{idHolerite}` | todos os 5 | Holerite, memória de cálculo e bases |

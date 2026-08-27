@@ -936,6 +936,90 @@ Implementar INSS de acordo com regras oficiais vigentes.
 - testes de limite;
 - testes de mudança de vigência.
 
+> **Fonte oficial registrada em 27/08/2026.**
+>
+> **Portaria Interministerial MPS/MF nº 13, de 09/01/2026, Anexo II** — tabela de
+> contribuição dos segurados empregado, empregado doméstico e trabalhador avulso.
+> Aplicação a partir de 1º de janeiro de 2026.
+>
+> Fornecida pelo responsável pelo projeto e **conferida de forma independente** na página
+> oficial do INSS em `gov.br` (tabela de contribuição mensal): faixas e teto batem dígito
+> a dígito.
+>
+> Os números vivem em `tabelas_inss` / `faixas_inss`, **nunca na fórmula**. A fonte é
+> campo obrigatório do agregado: `TabelaInss` recusa construção sem ela, porque daqui a um
+> ano ninguém saberia se aquele 14% saiu de portaria ou de chute (`CLAUDE.md §29`).
+
+> **Decisão registrada em 27/08/2026 — vigência tem início e não tem fim.**
+>
+> Vale a tabela de maior `VigenciaInicio` menor ou igual à data. Guardar também um fim
+> abriria espaço para **buraco** entre duas vigências — e buraco aqui é folha que não
+> calcula, ou pior, que calcula com a tabela errada. Índice único em `vigencia_inicio`:
+> duas tabelas começando no mesmo dia tornariam ambígua a pergunta *"qual valia em
+> 01/01/2026?"*, e a resposta dependeria da ordem que o banco devolvesse.
+>
+> Pela mesma razão a faixa guarda só o **limite superior**: o inferior é o superior da
+> anterior, e a primeira começa em zero. E o **teto é derivado** da última faixa — guardar
+> os dois permitiria que discordassem.
+>
+> A tabela é escolhida pelo **primeiro dia da competência**. Folha histórica usa os
+> parâmetros da própria competência, não a tabela mais recente. Tabela que passe a valer
+> no meio do mês **não é modelada**: exigiria regra própria e fonte oficial, e nenhuma
+> das duas existe.
+>
+> Cadastrar 2027 é `POST /api/tabelas-inss` com a vigência nova. **O algoritmo não muda.**
+
+> **Decisão registrada em 27/08/2026 — alíquota é fração, não percentual.**
+>
+> 7,5% é `0.075`, e o construtor de `FaixaInss` **recusa** `7.5`. É a trava contra o erro
+> que descontaria o salário inteiro do funcionário.
+
+> ### ⚠️ PENDÊNCIA LEGAL — em qual etapa o INSS é arredondado
+>
+> Registrada em 27/08/2026. **Nenhuma fonte oficial alcançada declara a etapa do
+> arredondamento.** Foram consultadas, sem sucesso:
+>
+> - a página da tabela de contribuição mensal do INSS (`gov.br`) — não menciona
+>   arredondamento, casas decimais, método, nem se aplica por faixa ou no total;
+> - a Portaria 13/2026 — traz os valores, não o procedimento;
+> - a Nota Orientativa eSocial 2018.008 — trata de casas decimais do **leiaute**, não do
+>   cálculo.
+>
+> A escolha é material. Na base do teto (8.475,55) as parcelas exatas somam **988,0914**:
+>
+> | Regra | Contribuição |
+> |---|---|
+> | arredondar **uma vez**, no total | **988,09** ← adotado |
+> | arredondar cada faixa e somar | 988,10 |
+> | truncar cada faixa e somar | 988,07 |
+>
+> **Nenhuma das três é detectável olhando o holerite** — todas fecham.
+>
+> Enquanto não houver fonte, adota-se o critério já registrado do projeto
+> (`CLAUDE.md §28`, Fase 3): arredonda-se **uma vez, no valor final da rubrica**, com
+> `MidpointRounding.AwayFromZero`. Isso **não** é afirmação de que essa é a regra
+> jurídica — é a escolha de engenharia enquanto a jurídica não é conhecida.
+>
+> **Para trocar:** altere apenas `CalculadoraInss.ArredondarContribuicao`. O teste
+> `Arredondamento_AplicadoUmaVezNoTotal` trava a regra vigente e falha de propósito,
+> apontando o que revisar.
+
+### Security Gate — Fase 4B
+
+| # | Ponto | Resposta |
+|---|---|---|
+| 1 | Ameaças introduzidas | Tabela legal errada ou adulterada muda o desconto de **todas as organizações** de uma vez, e o holerite continua fechando. Duas rubricas de INSS ativas descontariam duas vezes. Base desatualizada produzindo contribuição stale após lançamento manual. |
+| 2 | Controles | Fonte oficial **obrigatória** no construtor. Alíquota em fração, com recusa de percentual. Limites estritamente crescentes. Índice único por vigência e índice único parcial de uma rubrica de INSS ativa por organização. INSS reapurado ao calcular, ao lançar e ao remover. Rubrica de INSS recusa valor digitado. |
+| 3 | Testes de segurança | Administrador de Empresa recebe **403** ao tentar cadastrar tabela. Tabela sem fonte devolve 400. Rubrica de INSS como provento devolve 400. |
+| 4 | Impacto multiempresa | `tabelas_inss` é a **única tabela do sistema sem `id_organizacao`** e sem filtro global. INSS é lei federal: a mesma vale para todos, e não há dado de ninguém ali — só número publicado em portaria. Dar uma cópia por organização permitiria que uma delas descontasse errado. A contrapartida é a escrita restrita à plataforma. |
+| 5 | Exposição de dados | Nenhum dado pessoal novo. A tabela é pública por natureza. O valor do desconto herda a classificação do holerite. |
+| 6 | Permissões | Leitura para os cinco perfis — o analista precisa conferir a conta. Escrita **só** para Administrador da Plataforma. |
+| 7 | Logging e auditoria | Cadastrar ou alterar tabela legal é dos eventos mais sensíveis do produto: **candidato prioritário** à trilha formal da Fase 7 (`CLAUDE.md §24.17` já o lista). |
+| 8 | Dependências | Nenhuma nova. Nenhuma biblioteca de cálculo de terceiro — importar tabela legal de pacote não auditado seria terceirizar a corretude. |
+| 9 | Secrets | Não se aplica. |
+| 10 | Superfície pública | Nenhuma rota anônima nova. |
+| 11 | Risco de custo/abuso | `GET /api/tabelas-inss` devolve poucas linhas por natureza (uma por ano). Sem paginação por ora; se o volume crescer, entra no teto geral da Fase 10. |
+
 ---
 
 ## FASE 4C — FGTS
