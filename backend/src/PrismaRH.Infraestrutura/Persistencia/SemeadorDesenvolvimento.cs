@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using PrismaRH.Aplicacao.Comum;
@@ -253,7 +253,9 @@ public static class SemeadorDesenvolvimento
             prisma.Id, "ADT", "Adiantamento salarial",
             TipoRubrica.Desconto, EstrategiaRubrica.ValorInformado, BaseCalculo.Nenhuma, agora);
 
-        contexto.Rubricas.AddRange(salario, comissao, valeTransporte, adiantamento);
+        Rubrica[] catalogo = [salario, comissao, valeTransporte, adiantamento];
+
+        contexto.Rubricas.AddRange(catalogo);
         await contexto.SaveChangesAsync(ct);
 
         var contratos = await contexto.ContratosTrabalho.IgnoreQueryFilters()
@@ -270,7 +272,7 @@ public static class SemeadorDesenvolvimento
         // A folha do mes passado nasce FECHADA, para a demo ter um fato
         // historico: alterar contrato depois disso nao muda mais nada nela.
         var fechada = new FolhaPagamento(prisma.Id, empresa.Id, anterior, agora);
-        fechada.Calcular(contratos, salario, agora);
+        fechada.Calcular(contratos, salario, catalogo, agora);
 
         foreach (var holerite in fechada.Funcionarios.Take(2))
         {
@@ -284,12 +286,12 @@ public static class SemeadorDesenvolvimento
 
         // Recalcula ANTES de fechar, de proposito: e o cenario que prova que
         // reprocessar preserva o que foi lancado a mao.
-        fechada.Calcular(contratos, salario, agora);
+        fechada.Calcular(contratos, salario, catalogo, agora);
         fechada.Fechar(agora);
 
         // A do mes corrente fica calculada e aberta, para dar o que operar.
         var aberta = new FolhaPagamento(prisma.Id, empresa.Id, atual, agora);
-        aberta.Calcular(contratos, salario, agora);
+        aberta.Calcular(contratos, salario, catalogo, agora);
 
         if (aberta.Funcionarios.Count > 0)
         {

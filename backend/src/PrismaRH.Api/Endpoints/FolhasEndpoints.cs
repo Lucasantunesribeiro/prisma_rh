@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PrismaRH.Api.Identidade;
 using PrismaRH.Aplicacao.Comum;
@@ -310,9 +310,14 @@ public static class FolhasEndpoints
             .Where(c => c.IdEmpresa == folha.IdEmpresa)
             .ToListAsync(ct);
 
+        // O catalogo inteiro, para reaplicar a incidencia atual nos
+        // lancamentos manuais. Sem paginacao de proposito: e o catalogo da
+        // organizacao, e o motor precisa dele completo em memoria.
+        var catalogo = await db.Rubricas.ToListAsync(ct);
+
         try
         {
-            folha.Calcular(contratos, rubricaSalario, relogio.Agora);
+            folha.Calcular(contratos, rubricaSalario, catalogo, relogio.Agora);
         }
         catch (InvalidOperationException erro)
         {

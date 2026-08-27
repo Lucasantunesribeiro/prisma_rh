@@ -1,4 +1,4 @@
-using PrismaRH.Dominio.Contratos;
+﻿using PrismaRH.Dominio.Contratos;
 using PrismaRH.Dominio.Folha;
 
 namespace PrismaRH.Testes.Dominio;
@@ -50,7 +50,7 @@ public class FolhaPagamentoTestes
         var folha = Nova();
         var contratos = new[] { Contrato("001"), Contrato("002", 5000m) };
 
-        folha.Calcular(contratos, Salario(), Agora);
+        folha.Calcular(contratos, Salario(), [], Agora);
 
         Assert.Equal(2, folha.Funcionarios.Count);
         Assert.Equal(8000m, folha.TotalProventos);
@@ -66,7 +66,7 @@ public class FolhaPagamentoTestes
     {
         var folha = Nova();
 
-        folha.Calcular([Contrato("001"), Contrato("999", empresa: OutraEmpresa)], Salario(), Agora);
+        folha.Calcular([Contrato("001"), Contrato("999", empresa: OutraEmpresa)], Salario(), [], Agora);
 
         var holerite = Assert.Single(folha.Funcionarios);
         Assert.Equal(3000m, holerite.TotalProventos);
@@ -77,7 +77,7 @@ public class FolhaPagamentoTestes
     {
         var folha = Nova();
 
-        folha.Calcular([Contrato("002", admissao: new DateOnly(2026, 10, 1))], Salario(), Agora);
+        folha.Calcular([Contrato("002", admissao: new DateOnly(2026, 10, 1))], Salario(), [], Agora);
 
         Assert.Empty(folha.Funcionarios);
         Assert.Equal(0m, folha.TotalLiquido);
@@ -89,7 +89,7 @@ public class FolhaPagamentoTestes
         var folha = Nova();
 
         var erro = Assert.Throws<ArgumentException>(
-            () => folha.Calcular([Contrato("001")], Comissao(), Agora));
+            () => folha.Calcular([Contrato("001")], Comissao(), [], Agora));
 
         Assert.Contains("nao e a rubrica de salario-base", erro.Message);
     }
@@ -98,7 +98,7 @@ public class FolhaPagamentoTestes
     public void Calcular_GravaAMemoriaDoLancamento()
     {
         var folha = Nova();
-        folha.Calcular([Contrato("001")], Salario(), Agora);
+        folha.Calcular([Contrato("001")], Salario(), [], Agora);
 
         var lancamento = Assert.Single(folha.Funcionarios[0].Lancamentos);
 
@@ -124,10 +124,10 @@ public class FolhaPagamentoTestes
         var folha = Nova();
         var contratos = new[] { Contrato("001") };
 
-        folha.Calcular(contratos, Salario(), Agora);
+        folha.Calcular(contratos, Salario(), [], Agora);
         folha.AdicionarLancamentoManual(folha.Funcionarios[0].Id, Comissao(), 450m, null);
 
-        folha.Calcular(contratos, Salario(), Agora.AddHours(1));
+        folha.Calcular(contratos, Salario(), [], Agora.AddHours(1));
 
         var holerite = Assert.Single(folha.Funcionarios);
         Assert.Equal(2, holerite.Lancamentos.Count);
@@ -143,14 +143,14 @@ public class FolhaPagamentoTestes
         var folha = Nova();
         var contrato = Contrato("001");
 
-        folha.Calcular([contrato], Salario(), Agora);
+        folha.Calcular([contrato], Salario(), [], Agora);
         Assert.Equal(3000m, folha.TotalLiquido);
 
         contrato.RegistrarAlteracao(
             new DateOnly(2026, 8, 15), 3600m, CargoUm, Matriz, 220,
             MotivoVigencia.AlteracaoSalarial, Agora);
 
-        folha.Calcular([contrato], Salario(), Agora);
+        folha.Calcular([contrato], Salario(), [], Agora);
 
         Assert.Equal(3320m, folha.TotalLiquido);
     }
@@ -163,11 +163,11 @@ public class FolhaPagamentoTestes
         var folha = Nova();
         var contrato = Contrato("001");
 
-        folha.Calcular([contrato], Salario(), Agora);
+        folha.Calcular([contrato], Salario(), [], Agora);
         Assert.Single(folha.Funcionarios);
 
         contrato.Desligar(new DateOnly(2026, 7, 20));
-        folha.Calcular([contrato], Salario(), Agora);
+        folha.Calcular([contrato], Salario(), [], Agora);
 
         Assert.Empty(folha.Funcionarios);
         Assert.Equal(0m, folha.TotalLiquido);
@@ -181,7 +181,7 @@ public class FolhaPagamentoTestes
     public void Desconto_DiminuiOLiquido_SemVirarValorNegativo()
     {
         var folha = Nova();
-        folha.Calcular([Contrato("001")], Salario(), Agora);
+        folha.Calcular([Contrato("001")], Salario(), [], Agora);
 
         var lancamento = folha.AdicionarLancamentoManual(
             folha.Funcionarios[0].Id, ValeTransporte(), 180m, null);
@@ -197,7 +197,7 @@ public class FolhaPagamentoTestes
     public void LancamentoManual_ComValorNegativo_Recusado()
     {
         var folha = Nova();
-        folha.Calcular([Contrato("001")], Salario(), Agora);
+        folha.Calcular([Contrato("001")], Salario(), [], Agora);
 
         Assert.Throws<ArgumentException>(
             () => folha.AdicionarLancamentoManual(folha.Funcionarios[0].Id, Comissao(), -50m, null));
@@ -207,7 +207,7 @@ public class FolhaPagamentoTestes
     public void LancamentoManual_NaRubricaDeSalario_Recusado()
     {
         var folha = Nova();
-        folha.Calcular([Contrato("001")], Salario(), Agora);
+        folha.Calcular([Contrato("001")], Salario(), [], Agora);
 
         var erro = Assert.Throws<InvalidOperationException>(
             () => folha.AdicionarLancamentoManual(folha.Funcionarios[0].Id, Salario(), 9999m, null));
@@ -219,7 +219,7 @@ public class FolhaPagamentoTestes
     public void LancamentoManual_EmRubricaInativa_Recusado()
     {
         var folha = Nova();
-        folha.Calcular([Contrato("001")], Salario(), Agora);
+        folha.Calcular([Contrato("001")], Salario(), [], Agora);
 
         var rubrica = Comissao();
         rubrica.Inativar();
@@ -232,7 +232,7 @@ public class FolhaPagamentoTestes
     public void Remover_ApagaOManual_MasNaoOCalculado()
     {
         var folha = Nova();
-        folha.Calcular([Contrato("001")], Salario(), Agora);
+        folha.Calcular([Contrato("001")], Salario(), [], Agora);
 
         var holerite = folha.Funcionarios[0];
         var manual = folha.AdicionarLancamentoManual(holerite.Id, Comissao(), 450m, null);
@@ -253,9 +253,9 @@ public class FolhaPagamentoTestes
         var folha = Nova();
         var contratos = new[] { Contrato("001") };
 
-        folha.Calcular(contratos, Salario(), Agora);
+        folha.Calcular(contratos, Salario(), [], Agora);
         folha.AdicionarLancamentoManual(folha.Funcionarios[0].Id, Comissao(), 450m, null);
-        folha.Calcular(contratos, Salario(), Agora);
+        folha.Calcular(contratos, Salario(), [], Agora);
 
         Assert.Equal("SAL", folha.Funcionarios[0].Lancamentos[0].CodigoRubrica);
         Assert.Equal("COM", folha.Funcionarios[0].Lancamentos[1].CodigoRubrica);
@@ -279,7 +279,7 @@ public class FolhaPagamentoTestes
     public void Fechar_RecusaFolhaVazia()
     {
         var folha = Nova();
-        folha.Calcular([], Salario(), Agora);
+        folha.Calcular([], Salario(), [], Agora);
 
         Assert.Throws<InvalidOperationException>(() => folha.Fechar(Agora));
     }
@@ -290,14 +290,14 @@ public class FolhaPagamentoTestes
         var folha = Nova();
         var contratos = new[] { Contrato("001") };
 
-        folha.Calcular(contratos, Salario(), Agora);
+        folha.Calcular(contratos, Salario(), [], Agora);
         folha.Fechar(Agora);
 
         Assert.True(folha.EstaFechada);
         Assert.Equal(Agora, folha.FechadaEm);
 
         // Os tres caminhos que poderiam reescrever um fato historico.
-        Assert.Throws<InvalidOperationException>(() => folha.Calcular(contratos, Salario(), Agora));
+        Assert.Throws<InvalidOperationException>(() => folha.Calcular(contratos, Salario(), [], Agora));
         Assert.Throws<InvalidOperationException>(
             () => folha.AdicionarLancamentoManual(folha.Funcionarios[0].Id, Comissao(), 10m, null));
         Assert.Throws<InvalidOperationException>(() => folha.Fechar(Agora));
@@ -311,7 +311,7 @@ public class FolhaPagamentoTestes
         var folha = Nova();
         var contrato = Contrato("001");
 
-        folha.Calcular([contrato], Salario(), Agora);
+        folha.Calcular([contrato], Salario(), [], Agora);
         folha.Fechar(Agora);
 
         contrato.RegistrarAlteracao(

@@ -884,6 +884,24 @@ Criar estrutura adequada para bases e incidências.
 > `CLAUDE.md §4.2` continua satisfeito: a explicação é integralmente reconstruível a
 > partir do que está persistido, e a API devolve, por base, quais rubricas a compuseram.
 
+> **Decisão registrada em 27/08/2026 — recalcular reaplica a incidência atual.**
+>
+> Encontrada na verificação ponta a ponta, não no projeto: `Calcular` só refazia os
+> lançamentos **calculados**, então um lançamento **manual** carregava sua incidência
+> congelada para sempre — nem recalcular a folha aberta a atualizava.
+>
+> A consequência era ruim: corrigir uma rubrica mal parametrizada não consertaria
+> nenhuma folha aberta. Seria preciso apagar e relançar cada lançamento manual, um a um.
+>
+> `Calcular` passou a receber o **catálogo de rubricas** e a reaplicar a incidência atual
+> nos lançamentos manuais. **Isso não contradiz o congelamento**: o congelamento protege
+> o passado, e folha fechada recusa recálculo antes de chegar aqui. Numa folha aberta,
+> "recalcular" significa "aplicar as regras de agora" — e incidência é regra do catálogo.
+> O que é do analista são a **rubrica e o valor**, que continuam intocados.
+>
+> Rubrica que saiu do catálogo mantém o que tinha: apagar a incidência de um lançamento
+> cuja rubrica foi removida zeraria a base sem ninguém ter pedido.
+
 ### Security Gate — Fase 4A
 
 | # | Ponto | Resposta |

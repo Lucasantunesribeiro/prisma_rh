@@ -115,6 +115,26 @@ public sealed class FolhaFuncionario
         RecalcularTotais();
     }
 
+    /// <summary>
+    /// Reaplica nos lancamentos manuais a incidencia atual de cada rubrica.
+    ///
+    /// Rubrica que nao esta mais no catalogo mantem o que tinha - apagar a
+    /// incidencia de um lancamento cuja rubrica foi removida zeraria a base
+    /// sem que ninguem tivesse pedido isso.
+    /// </summary>
+    internal void AtualizarIncidenciasManuais(IReadOnlyDictionary<Guid, Rubrica> catalogo)
+    {
+        ArgumentNullException.ThrowIfNull(catalogo);
+
+        foreach (var lancamento in _lancamentos.Where(l => l.Origem == OrigemLancamento.Manual))
+        {
+            if (catalogo.TryGetValue(lancamento.IdRubrica, out var rubrica))
+            {
+                lancamento.AtualizarIncidencias(rubrica.BasesIncidentes);
+            }
+        }
+    }
+
     internal LancamentoFolha AdicionarManual(Rubrica rubrica, decimal valor, string? referencia)
     {
         ArgumentNullException.ThrowIfNull(rubrica);

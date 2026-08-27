@@ -1,4 +1,4 @@
-using PrismaRH.Dominio.Contratos;
+﻿using PrismaRH.Dominio.Contratos;
 
 namespace PrismaRH.Dominio.Folha;
 
@@ -68,11 +68,22 @@ public sealed class FolhaPagamento
     ///
     /// Chamar de novo reprocessa. Os lancamentos manuais permanecem; os
     /// calculados sao refeitos do zero.
+    ///
+    /// O catalogo serve para reaplicar a incidencia ATUAL nos lancamentos
+    /// manuais. Numa folha aberta, recalcular significa aplicar as regras de
+    /// agora, e incidencia e regra do catalogo - o que e do analista sao a
+    /// rubrica e o valor, que continuam intocados. Folha fechada nao chega
+    /// aqui: GarantirAberta recusa antes.
     /// </summary>
-    public void Calcular(IEnumerable<ContratoTrabalho> contratosDaEmpresa, Rubrica rubricaSalario, DateTimeOffset agora)
+    public void Calcular(
+        IEnumerable<ContratoTrabalho> contratosDaEmpresa,
+        Rubrica rubricaSalario,
+        IEnumerable<Rubrica> catalogoRubricas,
+        DateTimeOffset agora)
     {
         ArgumentNullException.ThrowIfNull(contratosDaEmpresa);
         ArgumentNullException.ThrowIfNull(rubricaSalario);
+        ArgumentNullException.ThrowIfNull(catalogoRubricas);
 
         GarantirAberta("calcular");
 
@@ -81,6 +92,8 @@ public sealed class FolhaPagamento
             throw new ArgumentException(
                 $"A rubrica {rubricaSalario.Codigo} nao e a rubrica de salario-base.", nameof(rubricaSalario));
         }
+
+        var catalogo = catalogoRubricas.ToDictionary(r => r.Id);
 
         var elegiveis = contratosDaEmpresa
             .Where(c => c.IdEmpresa == IdEmpresa && MotorCalculoFolha.Elegivel(c, Competencia))
@@ -105,6 +118,7 @@ public sealed class FolhaPagamento
                 ?? throw new InvalidOperationException(
                     $"Contrato {contrato.Matricula} passou na elegibilidade mas nao apurou: estado inconsistente.");
 
+            holerite.AtualizarIncidenciasManuais(catalogo);
             holerite.AplicarCalculo(apuracao, rubricaSalario);
         }
 

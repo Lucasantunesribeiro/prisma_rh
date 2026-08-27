@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Net.Http.Json;
 
 namespace PrismaRH.Testes.Isolamento;
@@ -71,6 +71,15 @@ public class BasesDeCalculoIntegracaoTestes(BancoPostgresFixture banco) : IDispo
         List<Lancamento> Lancamentos,
         List<BaseApurada> Bases);
 
+    /// <summary>
+    /// As competencias sao fixas e EXCLUSIVAS desta classe: 06/2027 a 10/2027.
+    ///
+    /// A folha e unica por (empresa, competencia), e esta classe compartilha a
+    /// fixture do Testcontainers e a empresa A com FolhaMensalTestes, que ja
+    /// ocupa 07/2026 a 03/2027. Reaproveitar uma competencia de la faz o
+    /// POST /api/folhas devolver 409 e o teste falhar por colisao, nao por
+    /// defeito. A proxima subfase comeca em 11/2027.
+    /// </summary>
     private static int _sufixo;
 
     private static string Sufixo() => Interlocked.Increment(ref _sufixo).ToString("D4");
@@ -244,7 +253,7 @@ public class BasesDeCalculoIntegracaoTestes(BancoPostgresFixture banco) : IDispo
             admin, banco.IdEmpresaA, banco.IdEstabelecimentoA,
             BancoPostgresFixture.CpfDeTeste(4100 + int.Parse(sufixo)), sufixo, 3000m, "2025-03-01");
 
-        var detalhe = await AbrirECalcularAsync(admin, banco.IdEmpresaA, "01/2027");
+        var detalhe = await AbrirECalcularAsync(admin, banco.IdEmpresaA, "06/2027");
         var meu = detalhe.Funcionarios.Single(f => f.Matricula == $"B{sufixo}");
 
         var holerite = (await HoleriteAsync(admin, detalhe.Folha.Id, meu.Id))!;
@@ -272,7 +281,7 @@ public class BasesDeCalculoIntegracaoTestes(BancoPostgresFixture banco) : IDispo
             admin, banco.IdEmpresaA, banco.IdEstabelecimentoA,
             BancoPostgresFixture.CpfDeTeste(4200 + int.Parse(sufixo)), sufixo, 3000m, "2025-03-01");
 
-        var detalhe = await AbrirECalcularAsync(admin, banco.IdEmpresaA, "02/2027");
+        var detalhe = await AbrirECalcularAsync(admin, banco.IdEmpresaA, "07/2027");
         var meu = detalhe.Funcionarios.Single(f => f.Matricula == $"B{sufixo}");
 
         using var lancamentoComissao = await admin.PostAsJsonAsync(
@@ -309,7 +318,7 @@ public class BasesDeCalculoIntegracaoTestes(BancoPostgresFixture banco) : IDispo
             admin, banco.IdEmpresaA, banco.IdEstabelecimentoA,
             BancoPostgresFixture.CpfDeTeste(4300 + int.Parse(sufixo)), sufixo, 3000m, "2025-03-01");
 
-        var detalhe = await AbrirECalcularAsync(admin, banco.IdEmpresaA, "03/2027");
+        var detalhe = await AbrirECalcularAsync(admin, banco.IdEmpresaA, "08/2027");
         var meu = detalhe.Funcionarios.Single(f => f.Matricula == $"B{sufixo}");
 
         using var segundo = await admin.PostAsync($"/api/folhas/{detalhe.Folha.Id}/calcular", null);
@@ -337,7 +346,7 @@ public class BasesDeCalculoIntegracaoTestes(BancoPostgresFixture banco) : IDispo
             admin, banco.IdEmpresaA, banco.IdEstabelecimentoA,
             BancoPostgresFixture.CpfDeTeste(4400 + int.Parse(sufixo)), sufixo, 3000m, "2025-03-01");
 
-        var detalhe = await AbrirECalcularAsync(admin, banco.IdEmpresaA, "04/2027");
+        var detalhe = await AbrirECalcularAsync(admin, banco.IdEmpresaA, "09/2027");
         var meu = detalhe.Funcionarios.Single(f => f.Matricula == $"B{sufixo}");
 
         using var lancamento = await admin.PostAsJsonAsync(
@@ -374,7 +383,7 @@ public class BasesDeCalculoIntegracaoTestes(BancoPostgresFixture banco) : IDispo
             admin, banco.IdEmpresaA, banco.IdEstabelecimentoA,
             BancoPostgresFixture.CpfDeTeste(4500 + int.Parse(sufixo)), sufixo, 3000m, "2025-03-01");
 
-        var detalhe = await AbrirECalcularAsync(admin, banco.IdEmpresaA, "05/2027");
+        var detalhe = await AbrirECalcularAsync(admin, banco.IdEmpresaA, "10/2027");
         var meu = detalhe.Funcionarios.Single(f => f.Matricula == $"B{sufixo}");
 
         // 404, nao 403: um 403 confirmaria que este holerite existe.

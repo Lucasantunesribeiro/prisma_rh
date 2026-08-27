@@ -1,4 +1,4 @@
-using PrismaRH.Dominio.Contratos;
+﻿using PrismaRH.Dominio.Contratos;
 using PrismaRH.Dominio.Folha;
 
 namespace PrismaRH.Testes.Dominio;
@@ -35,11 +35,24 @@ public class BasesDeCalculoTestes
         new(Org, Guid.CreateVersion7(), Empresa, "1001",
             new DateOnly(2025, 3, 1), salario, Cargo, Matriz, 220, Agora);
 
-    private static FolhaPagamento FolhaCalculada(Rubrica salario, decimal valorSalario = 3000m)
+    private static FolhaPagamento FolhaCalculada(Rubrica salario, decimal valorSalario = 3000m) =>
+        FolhaComContrato(salario, valorSalario).Folha;
+
+    /// <summary>
+    /// Devolve a folha E o contrato usado.
+    ///
+    /// Recalcular com um contrato NOVO (outro Id) faz o holerite anterior
+    /// deixar de ser elegivel e ser removido - junto com os lancamentos
+    /// manuais. Quem testa recalculo precisa do mesmo contrato nas duas
+    /// chamadas.
+    /// </summary>
+    private static (FolhaPagamento Folha, ContratoTrabalho Contrato) FolhaComContrato(
+        Rubrica salario, decimal valorSalario = 3000m)
     {
         var folha = new FolhaPagamento(Org, Empresa, Agosto, Agora);
-        folha.Calcular([Contrato(valorSalario)], salario, Agora);
-        return folha;
+        var contrato = Contrato(valorSalario);
+        folha.Calcular([contrato], salario, [salario], Agora);
+        return (folha, contrato);
     }
 
     // ---------------------------------------------------------------- enum
@@ -269,22 +282,64 @@ public class BasesDeCalculoTestes
     public void DepoisDeRecalcular_AIncidenciaNovaVale()
     {
         var salario = Salario(BaseCalculo.Inss);
-        var folha = FolhaCalculada(salario);
+        var (folha, contrato) = FolhaComContrato(salario);
 
         salario.AlterarIncidencias(BaseCalculo.Inss | BaseCalculo.Fgts);
-        folha.Calcular([Contrato()], salario, Agora);
+        folha.Calcular([contrato], salario, [salario], Agora);
 
         Assert.Equal(3000m, folha.Funcionarios[0].BaseDe(BaseCalculo.Fgts));
+    }
+
+    [Fact]
+    public void Recalcular_ReaplicaAIncidenciaAtualNoLancamentoManual()
+    {
+        // O lancamento manual e do analista quanto a rubrica e ao valor; a
+        // incidencia e do catalogo. Sem isto, corrigir uma rubrica mal
+        // parametrizada nao consertaria nenhuma folha aberta.
+        var salario = Salario();
+        var premio = Provento("PRE", BaseCalculo.Inss);
+        var (folha, contrato) = FolhaComContrato(salario);
+        var holerite = folha.Funcionarios[0];
+
+        folha.AdicionarLancamentoManual(holerite.Id, premio, 200m, null);
+
+        Assert.Equal(3200m, holerite.BaseDe(BaseCalculo.Inss));
+        Assert.Equal(3000m, holerite.BaseDe(BaseCalculo.Fgts));
+
+        premio.AlterarIncidencias(BaseCalculo.Inss | BaseCalculo.Fgts);
+        folha.Calcular([contrato], salario, [salario, premio], Agora);
+
+        Assert.Equal(3200m, holerite.BaseDe(BaseCalculo.Fgts));
+
+        // E o que era do analista continua intocado.
+        var lancamento = holerite.Lancamentos.Single(l => l.CodigoRubrica == "PRE");
+        Assert.Equal(200m, lancamento.Valor);
+        Assert.Equal(OrigemLancamento.Manual, lancamento.Origem);
+    }
+
+    [Fact]
+    public void Recalcular_SemOCatalogo_NaoMexeNoLancamentoManual()
+    {
+        // Rubrica que sumiu do catalogo mantem o que tinha: apagar a
+        // incidencia zeraria a base sem ninguem ter pedido.
+        var salario = Salario();
+        var premio = Provento("PRE", BaseCalculo.Inss);
+        var (folha, contrato) = FolhaComContrato(salario);
+
+        folha.AdicionarLancamentoManual(folha.Funcionarios[0].Id, premio, 200m, null);
+        folha.Calcular([contrato], salario, [salario], Agora);
+
+        Assert.Equal(3200m, folha.Funcionarios[0].BaseDe(BaseCalculo.Inss));
     }
 
     [Fact]
     public void Recalcular_NaoDuplicaAsBases()
     {
         var salario = Salario();
-        var folha = FolhaCalculada(salario);
+        var (folha, contrato) = FolhaComContrato(salario);
 
-        folha.Calcular([Contrato()], salario, Agora);
-        folha.Calcular([Contrato()], salario, Agora);
+        folha.Calcular([contrato], salario, [salario], Agora);
+        folha.Calcular([contrato], salario, [salario], Agora);
 
         var holerite = folha.Funcionarios[0];
 

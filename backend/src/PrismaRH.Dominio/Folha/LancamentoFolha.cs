@@ -116,6 +116,22 @@ public sealed class LancamentoFolha
     public bool Compoe(BaseCalculo baseCalculo) =>
         baseCalculo != BaseCalculo.Nenhuma && BasesIncidentes.HasFlag(baseCalculo);
 
+    /// <summary>
+    /// Reaplica a incidencia atual da rubrica. Chamado APENAS no recalculo de
+    /// folha aberta.
+    ///
+    /// Nao contradiz o congelamento: o congelamento protege o passado, e folha
+    /// fechada recusa recalculo. Numa folha aberta, "recalcular" significa
+    /// "aplicar as regras de agora" - e a incidencia e regra do catalogo, nao
+    /// dado que o analista digitou. Dele sao a rubrica e o valor, que este
+    /// metodo nao toca.
+    ///
+    /// Sem isto, corrigir uma rubrica mal parametrizada nao consertaria
+    /// nenhuma folha aberta: seria preciso apagar e relancar cada lancamento
+    /// manual, um a um.
+    /// </summary>
+    internal void AtualizarIncidencias(BaseCalculo bases) => BasesIncidentes = bases;
+
     internal void DefinirOrdem(int ordem) => Ordem = ordem;
 
     internal void RegistrarMemoria(IEnumerable<PassoCalculo> passos)
