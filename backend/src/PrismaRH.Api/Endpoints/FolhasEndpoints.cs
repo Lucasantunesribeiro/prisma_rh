@@ -53,13 +53,30 @@ public sealed record LancamentoResposta(
     string? Referencia,
     decimal Valor,
     int Ordem,
+    BaseCalculo BasesIncidentes,
     IReadOnlyList<LinhaMemoriaResposta> Memoria);
+
+/// <summary>
+/// Uma base de calculo do holerite, com os codigos das rubricas que a
+/// formaram.
+///
+/// A composicao e DERIVADA, nao gravada: cada lancamento ja carrega a
+/// incidencia congelada, entao dizer quais entraram na base e filtrar o que
+/// ja veio. Gravar os passos duplicaria dado que esta na mesma tela - ao
+/// contrario do salario proporcional, cujos passos usam valores que nao
+/// sobrevivem em lugar nenhum.
+/// </summary>
+public sealed record BaseApuradaResposta(
+    BaseCalculo Base,
+    decimal Valor,
+    IReadOnlyList<string> Composta);
 
 public sealed record HoleriteResposta(
     HoleriteResumoResposta Resumo,
     string Competencia,
     SituacaoFolha SituacaoFolha,
-    IReadOnlyList<LancamentoResposta> Lancamentos);
+    IReadOnlyList<LancamentoResposta> Lancamentos,
+    IReadOnlyList<BaseApuradaResposta> Bases);
 
 /// <summary>
 /// A folha mensal. Os endpoints sao finos de proposito: abrir, calcular,
@@ -191,14 +208,34 @@ public static class FolhasEndpoints
                 l.Referencia,
                 l.Valor,
                 l.Ordem,
+                l.BasesIncidentes,
                 l.Memoria
                     .OrderBy(m => m.Ordem)
                     .Select(m => new LinhaMemoriaResposta(m.Ordem, m.Descricao, m.Expressao, m.Valor))
                     .ToList()))
             .ToListAsync(ct);
 
+        var bases = await db.BasesApuradas
+            .AsNoTracking()
+            .Where(b => b.IdFolhaFuncionario == idHolerite)
+            .OrderBy(b => b.Base)
+            .Select(b => new { b.Base, b.Valor })
+            .ToListAsync(ct);
+
+        // A composicao e montada em memoria, sobre os lancamentos ja lidos
+        // acima: o teste de bit nao traduz para SQL, e uma segunda ida ao
+        // banco por base seria tres consultas para dizer o que ja esta aqui.
+        var basesResposta = bases
+            .Select(b => new BaseApuradaResposta(
+                b.Base,
+                b.Valor,
+                [.. lancamentos
+                    .Where(l => l.BasesIncidentes.HasFlag(b.Base) && l.Tipo != TipoRubrica.Desconto)
+                    .Select(l => l.CodigoRubrica)]))
+            .ToList();
+
         return Results.Ok(new HoleriteResposta(
-            resumo, folha.Competencia.ToString(), folha.Situacao, lancamentos));
+            resumo, folha.Competencia.ToString(), folha.Situacao, lancamentos, basesResposta));
     }
 
     // -----------------------------------------------------------------------
@@ -402,6 +439,12 @@ public static class FolhasEndpoints
         db.Folhas
             .Include(f => f.Funcionarios)
             .ThenInclude(ff => ff.Lancamentos)
+            // Sem carregar as bases, ApurarBases nao encontraria as linhas
+            // existentes e criaria tres novas a cada recalculo. O indice unico
+            // ux_bases_apuradas_holerite_base recusaria - com uma violacao de
+            // constraint no lugar de um erro compreensivel.
+            .Include(f => f.Funcionarios)
+            .ThenInclude(ff => ff.Bases)
             .FirstOrDefaultAsync(f => f.Id == id, ct);
 
     private static Task<FolhaResumoResposta?> ResumoAsync(
