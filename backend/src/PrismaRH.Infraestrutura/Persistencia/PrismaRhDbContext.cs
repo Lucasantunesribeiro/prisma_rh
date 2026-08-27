@@ -35,6 +35,7 @@ public sealed class PrismaRhDbContext(
     public DbSet<Empresa> Empresas => Set<Empresa>();
     public DbSet<Estabelecimento> Estabelecimentos => Set<Estabelecimento>();
     public DbSet<Funcionario> Funcionarios => Set<Funcionario>();
+    public DbSet<Dependente> Dependentes => Set<Dependente>();
     public DbSet<Cargo> Cargos => Set<Cargo>();
     public DbSet<ContratoTrabalho> ContratosTrabalho => Set<ContratoTrabalho>();
     public DbSet<VigenciaContrato> VigenciasContrato => Set<VigenciaContrato>();
@@ -79,6 +80,7 @@ public sealed class PrismaRhDbContext(
         construtor.Entity<Empresa>().HasQueryFilter(e => e.IdOrganizacao == IdOrganizacaoAtual);
         construtor.Entity<Estabelecimento>().HasQueryFilter(e => e.IdOrganizacao == IdOrganizacaoAtual);
         construtor.Entity<Funcionario>().HasQueryFilter(f => f.IdOrganizacao == IdOrganizacaoAtual);
+        construtor.Entity<Dependente>().HasQueryFilter(d => d.IdOrganizacao == IdOrganizacaoAtual);
         construtor.Entity<Cargo>().HasQueryFilter(c => c.IdOrganizacao == IdOrganizacaoAtual);
         construtor.Entity<ContratoTrabalho>().HasQueryFilter(c => c.IdOrganizacao == IdOrganizacaoAtual);
         construtor.Entity<VigenciaContrato>().HasQueryFilter(v => v.IdOrganizacao == IdOrganizacaoAtual);

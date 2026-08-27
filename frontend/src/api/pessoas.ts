@@ -1,4 +1,4 @@
-import { enviar, obter } from './cliente'
+import { enviar, obter, remover } from './cliente'
 
 // ---------------------------------------------------------------- cargos
 
@@ -135,6 +135,73 @@ export const registrarAlteracao = (
 
 export const desligar = (idContrato: string, dataDesligamento: string): Promise<Contrato> =>
   enviar(`/api/contratos/${idContrato}/desligamento`, { dataDesligamento })
+
+// -------------------------------------------------------------- dependentes
+
+export type RelacaoDependente =
+  | 'Conjuge'
+  | 'Companheiro'
+  | 'Filho'
+  | 'Enteado'
+  | 'Irmao'
+  | 'Neto'
+  | 'Pai'
+  | 'Mae'
+  | 'Avo'
+  | 'Tutelado'
+  | 'Outro'
+
+export const ROTULO_RELACAO: Record<RelacaoDependente, string> = {
+  Conjuge: 'Cônjuge',
+  Companheiro: 'Companheiro(a)',
+  Filho: 'Filho(a)',
+  Enteado: 'Enteado(a)',
+  Irmao: 'Irmão(ã)',
+  Neto: 'Neto(a)',
+  Pai: 'Pai',
+  Mae: 'Mãe',
+  Avo: 'Avô/Avó',
+  Tutelado: 'Tutelado(a)',
+  Outro: 'Outro',
+}
+
+export interface Dependente {
+  id: string
+  idFuncionario: string
+  nome: string
+  dataNascimento: string
+  relacao: RelacaoDependente
+  /** Derivado do período: sem início, não abate IRRF. */
+  dedutivelIrrf: boolean
+  inicioDeducaoIrrf: string | null
+  fimDeducaoIrrf: string | null
+}
+
+export interface DadosDependente {
+  nome: string
+  dataNascimento: string
+  relacao: RelacaoDependente
+  inicioDeducaoIrrf: string | null
+  fimDeducaoIrrf: string | null
+}
+
+export const listarDependentes = (idFuncionario: string): Promise<Dependente[]> =>
+  obter(`/api/funcionarios/${idFuncionario}/dependentes`)
+
+export const criarDependente = (
+  idFuncionario: string,
+  dados: DadosDependente,
+): Promise<Dependente> => enviar(`/api/funcionarios/${idFuncionario}/dependentes`, dados)
+
+export const atualizarDependente = (
+  idFuncionario: string,
+  id: string,
+  dados: DadosDependente,
+): Promise<Dependente> =>
+  enviar(`/api/funcionarios/${idFuncionario}/dependentes/${id}`, dados, 'PUT')
+
+export const removerDependente = (idFuncionario: string, id: string): Promise<void> =>
+  remover(`/api/funcionarios/${idFuncionario}/dependentes/${id}`)
 
 // ---------------------------------------------------------------- formatação
 

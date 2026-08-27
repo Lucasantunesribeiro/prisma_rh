@@ -94,6 +94,7 @@ app.MapearEstabelecimentos();
 app.MapearCargos();
 app.MapearFuncionarios();
 app.MapearContratos();
+app.MapearDependentes();
 app.MapearRubricas();
 app.MapearFolhas();
 app.MapearTabelasInss();

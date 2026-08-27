@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import FuncionarioDetalhe from './FuncionarioDetalhe'
@@ -57,7 +57,36 @@ const VIGENCIAS = [
 
 const CARGOS = [{ id: 'cg1', codigo: 'AN', nome: 'Analista', ativo: true }]
 
-function rotear(url: string) {
+const DEPENDENTES = [
+  {
+    id: 'd1',
+    idFuncionario: 'f1',
+    nome: 'Helena Souza Prado',
+    dataNascimento: '2018-03-22',
+    relacao: 'Filho',
+    dedutivelIrrf: true,
+    inicioDeducaoIrrf: '2026-01-01',
+    fimDeducaoIrrf: null,
+  },
+  {
+    id: 'd2',
+    idFuncionario: 'f1',
+    nome: 'Marta Souza Prado',
+    dataNascimento: '1962-07-04',
+    relacao: 'Mae',
+    dedutivelIrrf: false,
+    inicioDeducaoIrrf: null,
+    fimDeducaoIrrf: null,
+  },
+]
+
+/**
+ * A ordem importa: `/dependentes` precisa vir ANTES de `/api/funcionarios/`,
+ * senao a rota do dependente cai no ramo do funcionario e a secao recebe um
+ * objeto no lugar da lista - o teste passaria sem exercitar nada.
+ */
+function rotear(url: string, dependentes: unknown = DEPENDENTES) {
+  if (url.includes('/dependentes')) return responder(dependentes)
   if (url.includes('/vigencias')) return responder(VIGENCIAS)
   if (url.includes('/contratos')) return responder([CONTRATO])
   if (url.includes('/api/cargos')) return responder(CARGOS)
@@ -149,5 +178,49 @@ describe('FuncionarioDetalhe', () => {
     // new Date('2026-01-15') seria interpretado como UTC e, no Brasil,
     // exibiria 14/01. A formatacao nao passa por Date de proposito.
     expect(await screen.findByText(/Admissão em 15\/01\/2026/)).toBeInTheDocument()
+  })
+
+  it('mostra os dependentes, separando quem abate IRRF de quem nao abate', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => Promise.resolve(rotear(String(url)))))
+
+    renderizar('AdministradorEmpresa')
+
+    expect(await screen.findByText('Helena Souza Prado')).toBeInTheDocument()
+    expect(screen.getByText('Marta Souza Prado')).toBeInTheDocument()
+
+    // A distincao que a tela existe para deixar obvia: cadastrar dependente
+    // nao faz o imposto cair. So abate quem tem periodo declarado.
+    const helena = screen.getByText('Helena Souza Prado').closest('tr')!
+    const marta = screen.getByText('Marta Souza Prado').closest('tr')!
+
+    expect(within(helena).getByText('Sim')).toBeInTheDocument()
+    expect(within(helena).getByText(/01\/01\/2026.*em diante/)).toBeInTheDocument()
+    expect(within(marta).getByText('Não')).toBeInTheDocument()
+  })
+
+  it('visualizador nao vê acao de cadastrar nem de remover dependente', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => Promise.resolve(rotear(String(url)))))
+
+    renderizar('Visualizador')
+
+    expect(await screen.findByText('Helena Souza Prado')).toBeInTheDocument()
+
+    // Esconder botao nao e mecanismo de seguranca - o backend recusa de
+    // qualquer jeito. A tela so evita propor uma acao que daria 403.
+    expect(screen.queryByRole('button', { name: /novo dependente/i })).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: /remover Helena Souza Prado/i }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('sem dependentes, explica o efeito no IRRF', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((url: string) => Promise.resolve(rotear(String(url), []))),
+    )
+
+    renderizar('AdministradorEmpresa')
+
+    expect(await screen.findByText('Nenhum dependente')).toBeInTheDocument()
   })
 })

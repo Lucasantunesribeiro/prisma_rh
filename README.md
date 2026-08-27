@@ -2,7 +2,7 @@
 
 Plataforma B2B de gestão, cálculo, conferência e auditoria de folha de pagamento brasileira.
 
-> **Estado atual: Fase 4C concluída — FGTS.**
+> **Estado atual: Fase 4D, etapa 1 concluída — dependentes.**
 >
 > Existe login com JWT, cinco perfis, organizações isoladas entre si, o cadastro de
 > funcionários, contratos e histórico contratual por vigência, e a **primeira folha
@@ -10,7 +10,9 @@ Plataforma B2B de gestão, cálculo, conferência e auditoria de folha de pagame
 > reprocessamento e fechamento.
 > As bases de INSS, FGTS e IRRF são apuradas por holerite, o **INSS do segurado é
 > descontado** pela tabela progressiva vigente e o **FGTS do empregador é depositado**
-> a 8% sobre a base — como linha informativa, que não reduz o líquido. IRRF é a Fase 4D.
+> a 8% sobre a base — como linha informativa, que não reduz o líquido.
+> Existe também o **cadastro de dependentes**, que o IRRF vai usar. O **cálculo** do IRRF
+> ainda não existe: ele aguarda a tabela oficial vigente.
 > Consulte o [ROADMAP.md](ROADMAP.md) para as fases seguintes e o
 > [CLAUDE.md](CLAUDE.md) para as regras do projeto.
 
@@ -131,14 +133,32 @@ obrigatório da tabela.
 > escopo da subfase. A **multa rescisória de 40%** e o FGTS sobre 13º e férias pertencem
 > às Fases 4E, 4F e 4G, que introduzem essas verbas.
 
+**Dependentes (Fase 4D, etapa 1)**
+
+- Pertencem à **pessoa**, não ao contrato: um filho continua sendo filho se ela for
+  readmitida com contrato novo.
+- **Cadastrar não faz o imposto cair.** Só abate IRRF quem tem **período declarado**, e a
+  tela mostra isso numa coluna própria.
+- A dedutibilidade é **declarada, não derivada da idade**. A regra legal — 21 anos, 24 se
+  estudante — não está codificada, porque exige fonte oficial que o projeto ainda não tem
+  (`CLAUDE.md §29`). Derivar produziria um número que parece autoritativo e não é.
+- A dedução vale pelo **mês inteiro**: quem passa a contar no dia 20 conta o mês todo.
+- Rotas **aninhadas** no funcionário — o dependente é resolvido pelo pai, que já passa pelo
+  filtro global. É o que fecha o IDOR sem depender de conferência manual.
+- **Sem CPF do dependente**: o cálculo mensal não precisa dele, e guardar documento de
+  terceiro sem uso seria coletar por precaução (`CLAUDE.md §25`).
+- Teto de **30 por funcionário** — limite de recurso, não regra legal.
+
 ## O que ainda NÃO existe
 
-Dependentes, IRRF, férias, 13º, rescisão, importações, motor de análises, integrações,
+O **cálculo do IRRF**, férias, 13º, rescisão, importações, motor de análises, integrações,
 recursos AWS e CI/CD. Tudo isso pertence às fases seguintes do roadmap.
 
 Cada encargo exige fonte oficial registrada e parâmetro versionado (`CLAUDE.md §29`). A
-Fase 4A criou as bases, a 4B aplicou a primeira alíquota e a 4C acrescentou o depósito do
-empregador; **IRRF (4D) continua fora**.
+Fase 4A criou as bases, a 4B aplicou a primeira alíquota, a 4C acrescentou o depósito do
+empregador e a 4D já tem os dependentes — mas **a conta do IRRF está bloqueada** até a
+tabela oficial vigente ser confirmada, junto com a dedução por dependente e a ordem das
+deduções.
 
 ### Camada de IA — planejada, não implementada
 
@@ -326,6 +346,10 @@ Todos usam a senha de `PRISMARH_SEED_SENHA`.
 | `POST /api/tabelas-inss` | **só Adm. Plataforma** | Cadastra a vigência de um ano novo |
 | `GET /api/tabelas-fgts` | todos os 5 | Alíquotas de FGTS por vigência |
 | `POST /api/tabelas-fgts` | **só Adm. Plataforma** | Cadastra uma vigência nova de alíquota |
+| `GET /api/funcionarios/{id}/dependentes` | todos os 5 | Dependentes da pessoa |
+| `POST /api/funcionarios/{id}/dependentes` | Adm. Empresa, Analista | Cadastra dependente |
+| `PUT /api/funcionarios/{id}/dependentes/{idDep}` | Adm. Empresa, Analista | Altera dados e período de dedução |
+| `DELETE /api/funcionarios/{id}/dependentes/{idDep}` | Adm. Empresa, Analista | Remove dependente |
 | `GET /api/folhas` | todos os 5 | Lista, com filtro por empresa e competência |
 | `GET /api/folhas/{id}` | todos os 5 | Folha com os holerites |
 | `GET /api/folhas/{id}/funcionarios/{idHolerite}` | todos os 5 | Holerite, memória de cálculo e bases |

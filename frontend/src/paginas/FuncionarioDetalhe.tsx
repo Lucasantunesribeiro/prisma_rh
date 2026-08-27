@@ -7,12 +7,14 @@ import {
   formatarSalario,
   listarCargos,
   listarContratos,
+  listarDependentes,
   listarVigencias,
   obterFuncionario,
   registrarAlteracao,
   ROTULO_MOTIVO,
   type Cargo,
   type Contrato,
+  type Dependente,
   type Funcionario,
   type MotivoVigencia,
   type Vigencia,
@@ -33,6 +35,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { usePagina } from '@/layout/usePagina'
 import { cn } from '@/lib/utils'
+import { SecaoDependentes } from './SecaoDependentes'
 
 export default function FuncionarioDetalhe() {
   const { id } = useParams<{ id: string }>()
@@ -42,6 +45,7 @@ export default function FuncionarioDetalhe() {
   const [funcionario, definirFuncionario] = useState<Funcionario | null>(null)
   const [contratos, definirContratos] = useState<Contrato[]>([])
   const [cargos, definirCargos] = useState<Cargo[]>([])
+  const [dependentes, definirDependentes] = useState<Dependente[]>([])
   const [carregando, definirCarregando] = useState(true)
   const [erro, definirErro] = useState<string | null>(null)
 
@@ -57,15 +61,17 @@ export default function FuncionarioDetalhe() {
     definirErro(null)
 
     try {
-      const [pessoa, vinculos, catalogo] = await Promise.all([
+      const [pessoa, vinculos, catalogo, familia] = await Promise.all([
         obterFuncionario(id),
         listarContratos(id),
         listarCargos(),
+        listarDependentes(id),
       ])
 
       definirFuncionario(pessoa)
       definirContratos(vinculos)
       definirCargos(catalogo)
+      definirDependentes(familia)
     } catch (falha) {
       definirErro(
         falha instanceof Error ? falha.message : 'Não foi possível carregar o funcionário.',
@@ -126,6 +132,17 @@ export default function FuncionarioDetalhe() {
             aoMudar={carregar}
           />
         ))}
+
+        {/*
+         * Depois dos contratos: dependente pertence à PESSOA, não ao vínculo.
+         * Um filho continua sendo filho se ela for readmitida.
+         */}
+        <SecaoDependentes
+          idFuncionario={funcionario.id}
+          dependentes={dependentes}
+          administra={administra}
+          aoMudar={carregar}
+        />
       </div>
     </>
   )

@@ -1040,6 +1040,24 @@ Implementar INSS de acordo com regras oficiais vigentes.
 
 ---
 
+### Security Gate — Fase 4D, etapa 1 (dependentes)
+
+| # | Ponto | Resposta |
+|---|---|---|
+| 1 | Ameaças introduzidas | Tabela nova com **dado pessoal de terceiro** — pessoas que não usam o sistema e não consentiram. IDOR pelo id do dependente. Overposting de `idOrganizacao` no corpo. Inflar um funcionário com milhares de dependentes. Coletar mais dado do que o cálculo exige. |
+| 2 | Controles | Filtro global em `dependentes`. Rota **aninhada** no funcionário: o dependente é resolvido pelo pai, nunca por id solto. Records de entrada próprios, sem `Id` nem `IdOrganizacao`. Teto de 30 por funcionário. Nome limitado a 200. Enum fechado para a relação. *Check constraint* no banco garantindo o período, além do C#. |
+| 3 | Testes de segurança | 16 testes de integração contra PostgreSQL real: dependente de outra organização devolve **404** (não 403); PUT e DELETE com id da organização vizinha por baixo de um funcionário próprio devolvem **404** e o registro original fica intacto; `idOrganizacao` no corpo é ignorado; Visualizador lê mas recebe **403** ao cadastrar; Auditor recebe **403** ao remover; anônimo recebe **401**; teto devolve **409**; relação desconhecida não vira dado. |
+| 4 | Impacto multiempresa | `dependentes` é tabela de tenant: filtro global **e** teste de isolamento contra PostgreSQL real, incluindo o caminho de IDOR. É o item que não podia ser pulado. |
+| 5 | Exposição de dados | Dado pessoal de **terceiro**, classe Confidencial (`CLAUDE.md §24.13`). Minimização aplicada de forma deliberada: nome, nascimento, relação e período — **sem CPF**, que a obrigação acessória usa mas o cálculo mensal não. A API devolve o que a tela precisa, nada além. |
+| 6 | Permissões | Leitura com `LerDadosEmpresariais` — o analista precisa conferir o que abate imposto. Escrita com `AdministrarPessoas`, a mesma do cadastro funcional: quem mantém a pessoa mantém os dependentes dela. Auditor e Visualizador não escrevem. |
+| 7 | Logging e auditoria | Alterar o período de dedução muda o imposto dos cálculos seguintes: **candidato à trilha formal da Fase 7**, junto com alteração salarial e parâmetro legal. Nenhum dado de dependente é registrado em log. |
+| 8 | Dependências | Nenhuma nova. |
+| 9 | Secrets | Não se aplica: nenhum segredo envolvido. |
+| 10 | Superfície pública | Nenhuma rota anônima nova. As quatro rotas exigem autenticação e política declarada. |
+| 11 | Risco de custo/abuso | Listagem sem paginação **porque o teto de 30 já limita** — paginar 30 linhas seria cerimônia sem ganho. Nenhuma consulta cara: filtro por `id_funcionario`, com índice. |
+
+---
+
 ## FASE 4C — FGTS
 
 > **Status: concluída em 27/08/2026.**
@@ -1151,6 +1169,9 @@ correto para folha mensal.
 
 ## FASE 4D — IRRF
 
+> **Status: etapa 1 concluída em 27/08/2026 — dependentes.**
+> **Etapa 2 — o cálculo — BLOQUEADA aguardando a tabela oficial vigente.**
+
 ### Objetivo
 
 Implementar IRRF quando o domínio já possuir os dados necessários.
@@ -1162,6 +1183,109 @@ Implementar IRRF quando o domínio já possuir os dados necessários.
 - deduções;
 - memória;
 - testes.
+
+### Por que esta subfase é dividida em duas etapas
+
+O IRRF é o único encargo da Fase 4 que precisa de uma **entidade nova** antes de
+qualquer conta: dependentes, que a Fase 2 adiou explicitamente para cá.
+
+A etapa 1 entrega o cadastro, e ela **não depende de nenhum número legal** — é
+estrutura pura, testável e verificável sozinha. A etapa 2 aplica a tabela e as
+deduções, e não pode começar sem fonte oficial registrada (`CLAUDE.md §29`), pela
+mesma disciplina que a 4B seguiu.
+
+Dividir foi a alternativa a duas piores: parar tudo à espera da tabela, ou inventar
+números para "adiantar" e depois corrigir.
+
+---
+
+### Etapa 1 — Dependentes (concluída)
+
+#### Decisões registradas
+
+##### 1. Dependente pertence à PESSOA, não ao contrato
+
+`id_funcionario`, nunca `id_contrato`. Um filho continua sendo filho se a pessoa for
+readmitida com contrato novo, e a dedução do IRRF é da pessoa física.
+
+##### 2. Dedutibilidade é **declarada**, não derivada da idade
+
+A decisão mais importante da etapa, e a que impede o produto de mentir.
+
+A regra legal — 21 anos, 24 se estudante, condições diferentes por categoria — **não
+está codificada**, porque cada um desses limites precisa de fonte oficial registrada
+(`CLAUDE.md §29`), e o projeto ainda não a tem. Derivar automaticamente produziria um
+número que parece autoritativo e não é.
+
+Em vez disso, `Dependente` guarda `InicioDeducaoIrrf` e `FimDeducaoIrrf`, declarados
+por quem cadastra. Quem declara é o analista, e a declaração fica auditável.
+
+Consequência direta na interface: a coluna **"Abate IRRF"** existe e o formulário pede
+a data em vez de assumir "a partir de hoje". Cadastrar dependente não faz imposto cair
+sozinho, e a tela diz isso.
+
+##### 3. `DedutivelIrrf` é derivado, não coluna
+
+`InicioDeducaoIrrf is not null`. Uma flag persistida ao lado do período criaria duas
+fontes de verdade que podem discordar — e a que apareceria na tela não seria
+necessariamente a que o cálculo usaria.
+
+##### 4. A dedução é do **mês inteiro**, não proporcional aos dias
+
+`DedutivelEm(competencia)` devolve verdadeiro quando o período **toca** a competência.
+Quem passa a contar no dia 20 conta o mês todo, e o mesmo vale para quem deixa de
+contar. A dedução do IRRF é mensal; proporcionalizar por dia seria invenção.
+
+##### 5. Rotas **aninhadas** no funcionário
+
+`/api/funcionarios/{idFuncionario}/dependentes/{id}`. O dependente é resolvido pelo
+**pai**, que já passa pelo filtro global — então um id de dependente de outra
+organização não encontra caminho, e a defesa contra IDOR não depende de alguém lembrar
+de conferir a organização à mão (`CLAUDE.md §24.6`).
+
+##### 6. Sem CPF do dependente
+
+Ele existe na obrigação acessória real, mas o cálculo mensal não precisa dele.
+Guardar documento de terceiro sem uso seria coletar por precaução — exatamente o que a
+minimização proíbe (`CLAUDE.md §25`). Entra quando houver a fase que o exija.
+
+##### 7. Exclusão de verdade, e cascade a partir do funcionário
+
+Sem soft delete. São dados pessoais de **terceiros** — pessoas que não usam o sistema e
+não consentiram com nada; retê-los sem finalidade contraria a minimização. A folha já
+calculada não depende dessa linha: ela guardará a quantidade que valeu no seu próprio
+cálculo.
+
+##### 8. Teto de 30 dependentes por funcionário
+
+Não é regra legal, é limite de recurso (`CLAUDE.md §24.18`). Sem ele, uma organização
+poderia inflar uma pessoa com milhares de linhas e tornar o cálculo dela caro para
+todas as outras. É também o motivo de a listagem não paginar: o teto já existe.
+
+#### Pendência encontrada durante a etapa
+
+Entrada malformada devolve **500 em vez de 400** em toda a API — conferido contra
+`POST /api/contratos/{id}/vigencias`, da Fase 2. Não é defeito desta rota e não há
+vazamento nem furo de autorização. Registrada em `CLAUDE.md §24.19, item 4`, para a
+Fase 10, porque a correção mexe no tratamento de erro de todas as rotas.
+
+---
+
+### Etapa 2 — Cálculo do IRRF (bloqueada)
+
+**Não iniciar sem a fonte oficial.** O que falta confirmar, com a mesma disciplina da
+4B:
+
+1. **tabela progressiva mensal vigente** — faixas, alíquotas e parcela a deduzir;
+2. **dedução mensal por dependente** — valor e norma;
+3. **desconto simplificado** — se o produto vai oferecê-lo, e qual o valor;
+4. **ordem das deduções** — o INSS abate a base antes dos dependentes, e isso precisa
+   estar apoiado em norma, não em senso comum;
+5. **arredondamento** — mesma pergunta que a 4B deixou registrada como pendência.
+
+Estrutura que já existe e será reusada: base de IRRF apurada por holerite (4A),
+parâmetro versionado por vigência com fonte obrigatória (4B), memória de cálculo passo
+a passo (Fase 3) e dependentes (etapa 1).
 
 ---
 

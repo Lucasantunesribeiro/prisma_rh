@@ -1384,6 +1384,25 @@ lançamentos devolvem tudo. Empresas e funcionários já têm teto de 100 por p�
 
 **Resolver na Fase 10.** Sem impacto em `localhost`; com volume real, é vetor de exaustão.
 
+### 4. Entrada malformada devolve 500 em vez de 400
+
+Registrada em **27/08/2026**, durante a Fase 4D.
+
+Um enum com valor desconhecido no corpo da requisição — `"relacao": "Papagaio"` —
+devolve **500 Internal Server Error**. O mesmo vale para JSON malformado. Não é defeito de
+uma rota: foi conferido contra `POST /api/contratos/{id}/vigencias`, da Fase 2, e a API
+inteira se comporta assim. A causa é o `UseExceptionHandler` tratando a falha de binding
+como erro do servidor.
+
+**Não há vazamento nem furo de autorização**: o valor inválido é rejeitado e nunca chega
+ao domínio, e o `ProblemDetails` não expõe stack trace. O problema é de contrato e de
+diagnóstico — o cliente não consegue distinguir "eu mandei errado" de "o servidor caiu", e
+um 500 recorrente mascara falha real no monitoramento.
+
+A correção mexe no tratamento de erro de **todas** as rotas, e por isso não foi feita
+dentro da subfase que a encontrou. **Resolver na Fase 10**, junto com os demais itens de
+robustez da API, mapeando `BadHttpRequestException` para 400.
+
 ## 24.20 Headers, CORS e navegador
 
 **Headers** a planejar e validar contra o frontend real na Fase 10:
