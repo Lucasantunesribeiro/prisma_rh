@@ -2,13 +2,15 @@
 
 Plataforma B2B de gestão, cálculo, conferência e auditoria de folha de pagamento brasileira.
 
-> **Estado atual: Fase 2 — Cadastro funcional de RH.**
+> **Estado atual: Fase 3 concluída — Núcleo da folha mensal.**
 >
-> Existe login com JWT, cinco perfis, organizações isoladas entre si, e o cadastro
-> de funcionários, contratos e histórico contratual por vigência.
-> **Nenhum cálculo de folha foi implementado ainda.** Consulte o
-> [ROADMAP.md](ROADMAP.md) para as fases seguintes e o [CLAUDE.md](CLAUDE.md) para
-> as regras do projeto.
+> Existe login com JWT, cinco perfis, organizações isoladas entre si, o cadastro de
+> funcionários, contratos e histórico contratual por vigência, e a **primeira folha
+> mensal calculada e armazenada pelo próprio Prisma RH**, com memória de cálculo,
+> reprocessamento e fechamento.
+> **Nenhum encargo legal é calculado ainda** — INSS, FGTS e IRRF são a Fase 4.
+> Consulte o [ROADMAP.md](ROADMAP.md) para as fases seguintes e o
+> [CLAUDE.md](CLAUDE.md) para as regras do projeto.
 
 ---
 
@@ -70,6 +72,20 @@ integrações, recursos AWS e CI/CD. Tudo isso pertence às fases seguintes do r
 
 A folha desta fase **não** calcula nenhum encargo legal: cada um exige fonte oficial
 registrada e parâmetro versionado (`CLAUDE.md §29`), e isso é a Fase 4.
+
+### Camada de IA — planejada, não implementada
+
+Está previsto um **assistente inteligente** para a **Fase 11** do roadmap: explicar
+inconsistências em linguagem simples, resumir uma folha já processada e converter
+perguntas em português em consultas controladas pela aplicação.
+
+**Nada disso existe hoje.** Não há SDK, endpoint, chave de provedor nem chamada a
+modelo no repositório — e o provedor sequer foi escolhido.
+
+Quando existir, a IA será uma camada **complementar e de leitura**: o motor de cálculo
+continuará 100% determinístico em C#, e nenhum valor financeiro ou obrigação legal terá
+origem num modelo de linguagem. O escopo, as restrições e os critérios de aceite estão
+na Fase 11 do [ROADMAP.md](ROADMAP.md); as regras permanentes, no `CLAUDE.md §37`.
 
 ---
 
@@ -344,7 +360,38 @@ versionadas de propósito, e isso é uma escolha, não um descuido:
 A senha dos usuários de demonstração **não** está no repositório: vem de
 `PRISMARH_SEED_SENHA`, e sem ela a semeadura não roda.
 
-### Limite conhecido
+### Segurança é requisito de todas as fases
+
+Desde 27/08/2026, **toda fase do roadmap tem um Security Gate obrigatório** — ameaças
+introduzidas, controles, testes, impacto multiempresa, exposição de dados, permissões,
+auditoria, dependências, secrets, superfície pública e risco de abuso. A fase de
+Hardening continua existindo como **auditoria final e pentest controlado**, não como o
+momento em que segurança começa.
+
+O modelo completo está em [`CLAUDE.md §24`](CLAUDE.md); os gates por fase, em
+[`ROADMAP.md`](ROADMAP.md).
+
+Este projeto **não afirma ser "100% seguro"** — nenhum sistema pode. O objetivo é reduzir
+superfície de ataque, eliminar vulnerabilidades de classes conhecidas, detectar
+comportamento anormal, dificultar exploração e permitir recuperação.
+
+### Limitações conhecidas
+
+Registradas de propósito, porque limitação conhecida e datada vale mais que falsa
+completude.
+
+**Não existe rate limiting.** O login já é constante no tempo e não enumera usuários,
+mas nada impede tentativas em massa. Aceitável em `localhost`; **bloqueante antes do
+primeiro deploy público** (requisito de saída da Fase 10).
+
+**O cookie `SameSite=Lax` não sobrevive à topologia planejada de produção.** Frontend na
+Vercel e API no API Gateway são domínios diferentes; o navegador não enviará o cookie, e
+a sessão morre ao recarregar. A correção óbvia (`SameSite=None`) reabre o CSRF que o
+`Lax` fechava de graça — por isso a decisão precede o deploy, e está descrita no Security
+Gate da Fase 10.
+
+**Nem toda listagem tem paginação.** Empresas e funcionários têm teto de 100 por página;
+folhas, rubricas, cargos, estabelecimentos, holerites e lançamentos ainda devolvem tudo.
 
 A validação de CNPJ cobre apenas o formato **numérico**. A transição para CNPJ
 alfanumérico da Receita Federal **não** foi implementada: exige fonte oficial

@@ -63,3 +63,6 @@ Desktop.ini
 # ---------------------------------------------------------------------------
 dados-locais/
 *.log
+
+# agent skills config (local, seeded from ~/.agents/mattpocock-config)
+docs/agents/

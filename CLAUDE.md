@@ -106,7 +106,8 @@ Porém, durante o desenvolvimento e enquanto não houver validação jurídica/f
 - não afirmar conformidade legal absoluta;
 - não afirmar que substitui oficialmente um sistema comercial de folha;
 - não enviar obrigações oficiais para órgãos públicos sem uma fase específica aprovada;
-- não utilizar dados reais de funcionários em ambientes de demonstração.
+- não utilizar dados reais de funcionários em ambientes de demonstração;
+- não anunciar recursos de IA como existentes: são planejados para a Fase 11 (§37).
 
 A meta técnica é reproduzir os cálculos e fluxos brasileiros com o máximo de fidelidade possível.
 
@@ -330,6 +331,7 @@ Os módulos previstos são:
 22. Integrações externas
 23. Processamento assíncrono
 24. Infraestrutura de produção
+25. Assistente inteligente (camada de IA, a partir da Fase 11 — ver §37)
 
 A existência desta lista **não autoriza implementar todos os módulos agora**.
 
@@ -958,22 +960,531 @@ Regras:
 
 ---
 
-# 24. SEGURANÇA
+# 24. MODELO DE SEGURANÇA
 
-Requisitos progressivos:
+> Seção reescrita em **27/08/2026**. Antes era uma lista de doze requisitos progressivos.
+> Todos eles continuam valendo e estão distribuídos abaixo, agora com o **porquê** de cada
+> um e com as decisões já implementadas registradas como permanentes.
+>
+> **Segurança não é uma fase.** Toda fase do roadmap tem um **Security Gate**
+> obrigatório, definido em `ROADMAP.md §4.1`. A fase de Hardening continua existindo como
+> auditoria final e fortalecimento — não como o momento em que segurança começa.
 
-- senhas nunca em texto puro;
-- JWT de curta duração;
-- refresh token com rotação quando implementado;
-- autorização no backend;
-- isolamento multiempresa;
-- validação de input;
-- proteção de upload;
-- rate limiting em endpoints sensíveis quando chegar à fase adequada;
-- CORS restritivo em produção;
-- secrets fora do repositório;
-- logs sem dados sensíveis desnecessários;
-- auditoria de operações relevantes.
+## 24.1 O que este documento promete, e o que não promete
+
+**O Prisma RH nunca afirma ser "100% seguro" nem invulnerável.** Nenhum sistema pode
+garantir isso, e prometer é enganar quem lê.
+
+O objetivo é mensurável e honesto:
+
+1. reduzir a superfície de ataque;
+2. eliminar vulnerabilidades de classes conhecidas;
+3. detectar comportamento anormal;
+4. dificultar exploração, para que um erro isolado não baste;
+5. permitir resposta e recuperação quando algo der errado.
+
+## 24.2 Princípios permanentes
+
+**Secure by default** — o padrão de qualquer coisa nova é o mais restrito. Endpoint nasce
+autenticado, arquivo nasce privado, permissão nasce negada. Abrir exige decisão registrada.
+
+**Least privilege** — cada perfil, credencial de pipeline, papel IAM e usuário de banco
+recebe o mínimo. "Admin porque é mais fácil" não é justificativa.
+
+**Defense in depth** — nenhum controle é o único. Errar um não deve vazar.
+
+**Fail closed** — na dúvida, negar. Sem usuário autenticado o `IdOrganizacao` é
+`Guid.Empty`, que não casa com nada.
+
+**Zero trust nas fronteiras** — navegador→API, API→banco, API→provedor externo, job→dados,
+IA→dados. Cada fronteira valida por conta própria. Nada é confiável por "vir de dentro".
+
+**Rastreabilidade · Segregação multiempresa · Minimização de dados · Proteção contra abuso
+· Recuperação segura · Supply chain · Segurança contínua** — detalhados adiante e no gate
+do `ROADMAP.md §4.1`.
+
+## 24.3 Identidade
+
+### Decisões implementadas — permanentes
+
+Estas já existem no código e **não devem ser trocadas para "modernizar"**. Cada uma
+resolve um problema concreto:
+
+| Decisão | Por quê |
+|---|---|
+| Senha com `PasswordHasher` do ASP.NET Core (PBKDF2) | Hash lento e salgado, nunca criptografia reversível. |
+| Access token JWT de 15 minutos | Janela curta limita o dano de um token capturado. |
+| Access token **só em memória** no React, nunca em `localStorage` | Um XSS não rouba a sessão. |
+| Refresh token **opaco** em cookie `httpOnly`, `Secure` fora de Development, com `Path` restrito ao endpoint de renovação | O JavaScript não lê o cookie; o cookie não trafega para rotas que não precisam dele. |
+| Refresh guardado no banco como **hash**, nunca em texto puro | Vazamento do banco não entrega sessões ativas. |
+| **Rotação** do refresh a cada renovação | Reduz a janela de reúso. |
+| **Detecção de reúso**: token já usado que reaparece derruba **todas** as sessões do usuário | Reúso é sinal de roubo. A resposta certa é encerrar tudo, não ignorar. |
+| `ClockSkew = TimeSpan.Zero` | O padrão de 5 minutos faria um token de 15 viver 20. |
+| Resposta **única** `CredencialInvalida` para e-mail malformado, inexistente e senha errada | Não enumera usuários. |
+| Hash falso conferido quando o usuário **não existe** | O **tempo de resposta** também não enumera usuários. Defesa contra canal lateral de temporização. |
+
+### Requisitos futuros
+
+- **Rate limiting e bloqueio progressivo** no login, na renovação e na recuperação de
+  senha — ver a pendência em 24.19. Requisito de saída da **Fase 10**.
+- **Recuperação de conta**, quando existir: token de uso único, curta validade, invalidado
+  após o uso, e resposta idêntica para e-mail existente e inexistente.
+- **MFA para perfis críticos** (Administrador da Plataforma e da Empresa), a avaliar
+  quando houver operação real que justifique. Não implementar por estética.
+
+## 24.4 Autorização e least privilege
+
+- **O backend é a autoridade.** Sempre.
+- **O frontend nunca é mecanismo de segurança.** Esconder botão é conforto visual. Um
+  botão oculto cuja rota responde 200 é uma falha, não uma proteção.
+- **Negar por padrão.** Rota sem política declarada é erro de implementação, não rota
+  liberada.
+- **Cada endpoint tem política explícita**, nomeada e revisável.
+- **Cada perfil recebe só o necessário** — por isso `AdministrarPessoas` é separada de
+  `AdministrarEmpresas`, e `ProcessarFolha` é separada das duas: o Analista de RH mantém
+  cadastro e calcula folha, mas não administra empresas nem muda o catálogo de rubricas.
+- **Operações administrativas exigem privilégio específico**, não "perfil alto".
+- **Ações sensíveis poderão exigir autenticação recente** — reautenticar antes de trocar
+  senha, alterar permissão ou mudar parâmetro legal. A avaliar quando essas operações
+  existirem.
+
+### Matriz de autorização
+
+Manter documentada, e conferida contra o código, uma matriz:
+
+```text
+Recurso × Operação × Perfil
+```
+
+Perfis: Administrador da Plataforma · Administrador da Empresa · Analista de RH ·
+Auditor · Visualizador.
+
+A matriz é **derivada do código**, não o contrário: se documento e código divergirem, o
+código é o fato e o documento é o defeito. A auditoria dessa matriz é item do gate da
+Fase 12.
+
+## 24.5 Segurança multiempresa
+
+**Nenhum vazamento entre organizações é aceitável.** É o requisito mais crítico do
+produto: um erro aqui expõe folha de pagamento de empresa alheia.
+
+### Decisões implementadas — permanentes
+
+- `IdOrganizacao` é derivado **do usuário autenticado**, nunca do corpo, da query string
+  ou de header. Enviar `idOrganizacao` numa requisição não tem efeito, e existe teste
+  provando.
+- **Filtro global** no `PrismaRhDbContext`: toda consulta nasce restrita. Não depende de
+  alguém lembrar de escrever `where`.
+- **Fail closed**: sem usuário, `Guid.Empty`, que não casa com nada.
+- Atravessar a fronteira exige `IgnoreQueryFilters()` **explícito** — visível em revisão.
+- Recurso de outra organização devolve **404, não 403**. Um 403 confirmaria que aquele id
+  existe e permitiria mapear os dados do vizinho um id por vez.
+
+### Onde o filtro global não alcança
+
+Esta é a parte que exige atenção deliberada, porque o filtro protege consultas dentro de
+uma requisição HTTP e **mais nada**:
+
+| Caminho | O que garante o isolamento |
+|---|---|
+| Consultas e comandos | Filtro global. Já resolvido. |
+| **Joins e projeções** | O filtro se aplica à raiz; conferir que navegações e `Include` não escapam. |
+| **Relatórios e agregações** | Agregação sobre entidade filtrada; nunca SQL montado à parte. |
+| **Exports** | Herdam a autorização do dado exportado, mais registro de quem exportou. |
+| **Arquivos** | Chave com prefixo por organização, acesso autorizado, nunca URL pública adivinhável. |
+| **Jobs assíncronos** | ⚠️ O job **não tem requisição**. A mensagem carrega `IdOrganizacao` explícito e o worker abre o contexto a partir dela. Conferir contra o objeto processado. |
+| **Filas** | Mensagem é dado não confiável: validar esquema e tenant. |
+| **Caches futuros** | Chave de cache **inclui a organização**. Cache sem tenant na chave é vazamento com desempenho. |
+| **Logs** | Registrar a organização; nunca misturar dado de tenants numa mesma entrada. |
+| **Auditoria** | Sempre com organização. |
+| **Integrações** | Credencial e destino pertencem ao tenant; o parceiro de A nunca recebe dado de B. |
+| **IA** | Uma chamada, um tenant. A consulta gerada roda sob o filtro global — o isolamento não depende do modelo se comportar. |
+
+**Regra obrigatória:** toda funcionalidade nova que manipule dado de tenant entra
+acompanhada de **teste de isolamento**. Contra PostgreSQL real, via Testcontainers —
+filtro global testado em banco falso não prova nada, porque o EF InMemory não gera SQL.
+
+## 24.6 IDOR / BOLA
+
+*Broken Object Level Authorization* é a falha nº 1 do OWASP API Security, e é a mais
+provável neste produto.
+
+**Saber que `/api/funcionarios/{id}` existe não é vulnerabilidade. Devolver o funcionário
+de outra organização é.**
+
+Todo endpoint que recebe identificador **confirma o acesso daquele usuário àquele
+recurso**. Na prática: resolver o recurso **através** do filtro de organização, nunca por
+id direto seguido de conferência manual — a conferência manual é a que se esquece.
+
+Recursos que exigem essa verificação: Empresa, Estabelecimento, Funcionário, Contrato,
+Vigência, Folha, Holerite, Lançamento, Rubrica, Inconsistência, Evidência, Arquivo,
+Integração e Execução assíncrona.
+
+Recurso aninhado é resolvido **pelo pai**: holerite é encontrado dentro da folha, que está
+sob o filtro. Assim um `idHolerite` de outra empresa não encontra caminho.
+
+## 24.7 Validação de entrada
+
+**Toda entrada externa é não confiável** — corpo, query string, header, cookie, nome de
+arquivo, conteúdo de arquivo, resposta de parceiro e saída de modelo de IA.
+
+- **validação estrutural** — forma e tipo antes de qualquer uso;
+- **validação de domínio** — a entidade protege suas invariantes; CPF e CNPJ validam
+  dígito verificador;
+- **limites de tamanho** em todo texto;
+- **limites de quantidade** em toda coleção;
+- **allowlist** onde o conjunto de valores válidos é conhecido; enum fechado, nunca texto
+  livre para decisão de negócio;
+- **tipos fortes** — nada de `dynamic` ou `object` para contornar modelagem;
+- **payload inesperado é rejeitado**, não ignorado em silêncio;
+- **paginação com teto** em toda listagem;
+- **proteção contra mass assignment e overposting** — requisições usam records de entrada
+  próprios, que **não contêm** `Id`, `IdOrganizacao` nem campo calculado. Nunca vincular o
+  corpo direto na entidade.
+
+**O backend nunca confia na validação do React.** O frontend valida para dar boa
+experiência; o backend valida porque é a autoridade. Toda regra de segurança e de negócio
+é repetida no servidor.
+
+## 24.8 Injeção
+
+- **SQL Injection** — o EF Core gera consultas parametrizadas. **Proibido concatenar
+  input do usuário em SQL.** `FromSqlRaw`/`ExecuteSqlRaw`, quando inevitáveis, usam
+  parâmetros e passam por revisão explícita. Hoje o projeto **não usa SQL bruto em lugar
+  nenhum**, e sair disso é decisão consciente, não conveniência.
+- **Command Injection** — a aplicação não executa processo do sistema operacional com
+  entrada de usuário. Se algum dia precisar, argumentos vão como lista, nunca como linha
+  de comando montada por concatenação.
+- **Path traversal** — nome de arquivo enviado pelo usuário **nunca** vira caminho. O
+  identificador de armazenamento é gerado pelo sistema.
+- **Template / expression injection** — nenhuma funcionalidade interpreta expressão
+  fornecida pelo usuário. Por isso rubrica tem estratégia por enum e não fórmula em texto,
+  e por isso o motor de análises tem parâmetro configurável e não regra escrita pelo
+  usuário. Parametrização **nunca** executa código.
+- **LDAP injection** — não se aplica hoje. Se um dia houver diretório corporativo, entra
+  com allowlist e escape próprios.
+
+## 24.9 XSS
+
+**Stored XSS** é o risco real deste produto, porque a Fase 7 traz comentário,
+justificativa e evidência — texto de um usuário lido por outro. Campos expostos: nomes,
+descrições, comentários, justificativas, nomes de evidência, dados importados de planilha
+e, futuramente, **conteúdo gerado por IA**.
+
+- O React **escapa por padrão**. Texto de usuário é renderizado como texto.
+- **`dangerouslySetInnerHTML` é proibido** sem necessidade documentada e revisão
+  explícita. Nenhum caso conhecido do produto justifica.
+- Não renderizar HTML arbitrário vindo do banco, de import ou de modelo.
+- **Reflected XSS**: mensagem de erro nunca ecoa entrada do usuário como HTML.
+- **DOM XSS**: nada de `innerHTML`, `eval` ou construção de nó a partir de string de
+  usuário.
+- Saída de IA é **texto**, exibido como texto. Nunca markup executável.
+
+## 24.10 CSRF
+
+O risco depende do fluxo real, e o fluxo atual já o mitiga — **não adicionar solução
+genérica sem analisar**:
+
+- o **access token** vai em header `Authorization`. Não é enviado automaticamente pelo
+  navegador, portanto os endpoints que dependem dele **não são vulneráveis a CSRF**;
+- o **refresh token** é cookie, e cookie o navegador envia sozinho. Os endpoints
+  expostos são `renovar` e `sair`;
+- hoje o cookie usa **`SameSite=Lax`**, que **não** acompanha `POST` de outro site. Com
+  os dois endpoints sendo `POST`, o CSRF está fechado sem código adicional;
+- `HttpOnly` impede leitura por script; `Secure` fora de Development impede trânsito em
+  claro; `Path` restrito reduz onde ele trafega;
+- **CORS com allowlist explícita** e `AllowCredentials`, com a lista vazia por padrão no
+  `appsettings.json` base — falha fechada.
+
+⚠️ **Essa análise muda em produção.** Ver 24.19: com frontend e API em domínios
+diferentes, `SameSite=Lax` deixa de enviar o cookie, e a correção reabre o CSRF. A decisão
+precede o deploy.
+
+## 24.11 SSRF
+
+Vale a partir da fase de integrações e para **qualquer** funcionalidade que faça
+requisição externa, IA inclusa.
+
+- **allowlist de destinos** — host e esquema declarados em configuração, nunca digitados
+  livremente pelo usuário;
+- validar a URL **após resolver o DNS**, bloqueando `localhost`, `127.0.0.0/8`, `::1`,
+  faixas privadas (`10/8`, `172.16/12`, `192.168/16`) e **link-local `169.254/16`** —
+  esta última cobre o *metadata service* da nuvem, cujo alcance entrega credencial de
+  instância;
+- **revalidar a cada redirect** e limitar o número deles. Validar só a primeira URL não
+  protege;
+- **DNS rebinding**: quando relevante, resolver uma vez e conectar ao IP validado;
+- **timeout obrigatório** e limite de tamanho de resposta;
+- a resposta do parceiro é **dado não confiável**: validada por esquema antes de tocar o
+  domínio.
+
+## 24.12 Upload de arquivos
+
+Regras obrigatórias, detalhadas no Security Gate da Fase 5 do `ROADMAP.md`:
+
+tamanho máximo · número máximo de registros · validação de MIME e de conteúdo real ·
+**nunca confiar na extensão** · renomear internamente · impedir path traversal · não
+executar macro · proteção contra zip bomb e arquivo malformado · limite de memória ·
+timeout · armazenamento isolado por organização · acesso autorizado ao arquivo ·
+retenção e expiração · malware scanning a avaliar.
+
+**Arquivo nunca é publicamente acessível por padrão.**
+
+Ao **exportar** CSV, prefixar célula que comece com `=`, `+`, `-` ou `@`: sem isso o
+arquivo vira fórmula executável na máquina de quem abre (*CSV injection*).
+
+## 24.13 Proteção de dados e classificação
+
+| Classe | O que é | Exemplos no Prisma RH |
+|---|---|---|
+| **Público** | Pode ser publicado | Nome do produto, documentação de arquitetura |
+| **Interno** | Da organização, sem dado pessoal | Catálogo de cargos, catálogo de rubricas, parâmetros de regra |
+| **Confidencial** | Dado pessoal identificável | Nome, e-mail, data de nascimento, cargo, lotação |
+| **Altamente sensível** | Dano direto se vazar | **CPF**, **salário**, folha e holerite, descontos, benefícios, dependentes, pensão, dados bancários futuros, **credenciais**, **tokens**, justificativas de inconsistência |
+
+Regras por classe:
+
+- **Minimização** — não coletar, não trafegar, não logar, não exportar o que a função não
+  exige;
+- **Mascaramento** — CPF aparece mascarado na listagem (`111.***.**7-35`) e completo só no
+  detalhe. Busca por CPF exige o documento **completo e válido**: busca parcial viraria
+  forma de descobrir documentos por tentativa;
+- **Exposição só quando necessária** — a API devolve o que a tela precisa, não a entidade
+  inteira;
+- **Retenção e exclusão** — definir por classe; dado altamente sensível não fica
+  indefinidamente em fila, DLQ, log ou arquivo temporário;
+- **Backups e exportações** herdam a classificação do conteúdo;
+- **Logs sem conteúdo sensível** — ver 24.16.
+
+## 24.14 Criptografia
+
+- **Em trânsito**: produção usa HTTPS/TLS, com HTTP redirecionado e HSTS. Conexão ao
+  banco com TLS quando o provedor suportar.
+- **Em repouso**: usar a criptografia oferecida pelos provedores (Neon, S3) quando
+  aplicável.
+- **Senhas**: hashing seguro, lento e salgado. **Nunca** criptografia reversível, nunca
+  MD5 ou SHA simples.
+- **Tokens**: o refresh é guardado como **hash**, e a forma bruta existe só no cookie do
+  usuário — decisão já implementada, a preservar.
+- **Proibido criar algoritmo criptográfico próprio.** Usar o que o framework oferece.
+
+## 24.15 Secrets
+
+Secret **nunca** pode: entrar no Git · aparecer no frontend ou no bundle · ser enviado ao
+navegador · aparecer em log, nem truncado · entrar em documentação · ser hardcoded.
+
+Ver também §33.
+
+**Estratégia por destino:**
+
+| Onde | Como |
+|---|---|
+| **GitHub Actions** | GitHub Secrets, com ambientes separados. Pull request de fora do repositório não recebe secret. Preferir **OIDC com papel assumido** a chave de longa duração. |
+| **AWS** | Papel IAM para Lambda — **não** chave de acesso. Parameter Store/Secrets Manager se o custo couber no teto. |
+| **Vercel** | Variáveis de ambiente do projeto. Atenção: variável com prefixo público **vai para o bundle**. Nenhum segredo com prefixo público. |
+| **Neon** | String de conexão via variável de ambiente, nunca em `appsettings` versionado. |
+| **Integrações** | Uma credencial por parceiro, rotacionável sem redeploy. |
+| **IA** | Chave só no backend. A chamada ao provedor **sai do servidor** — chave de IA no navegador é chave publicada. |
+
+**Rotação.** Todo segredo tem procedimento de rotação escrito antes de entrar em uso, e
+rotação é passo obrigatório da resposta a incidente. Em vazamento: **avisar sem mostrar o
+valor**, nem truncado, e rotacionar — apagar do arquivo **não** remove do histórico do
+Git.
+
+## 24.16 Logging seguro
+
+Log **não** registra: senha · access token · refresh token · cookie · secret · CPF
+completo sem necessidade · folha ou holerite completo · dados bancários · payload
+sensível integral.
+
+Registrar o suficiente para diagnosticar: identificador da requisição, `correlation id`,
+rota, resultado, duração, id da organização e do usuário — **identificadores, não
+conteúdo**.
+
+**O log precisa permitir diagnóstico sem virar um banco paralelo de dados pessoais.** Ele
+costuma ter retenção diferente, acesso mais amplo e menos proteção que o banco — o que
+entra nele sai do regime de proteção do dado original.
+
+## 24.17 Auditoria de negócio
+
+**Log técnico não substitui auditoria de negócio** (§26). O técnico é rotativo e
+descartável; a auditoria é registro do produto.
+
+Todo evento sensível registra: **usuário · organização · ação · entidade · identificador ·
+data · resultado · contexto relevante**.
+
+Eventos a auditar: alteração salarial · alteração contratual · criação, reprocessamento e
+fechamento de folha · alteração de rubrica · **alteração de parâmetro legal** ·
+tratamento de inconsistência · administração de usuários · alteração de permissão ·
+configuração de integração · participação de sugestão de IA numa decisão.
+
+**Registro de auditoria não é alterável por usuário comum** — de nenhum perfil. Não
+existe endpoint de edição nem de exclusão de auditoria. É tabela somente-inserção.
+
+## 24.18 Rate limiting, abuso e negação de serviço
+
+### Rate limiting
+
+Alvos: login · renovação · recuperação de senha · endpoints anônimos · uploads · chamadas
+a API externa · **IA** · relatórios caros · buscas.
+
+Dimensões a combinar: **IP · usuário · organização · endpoint**. Só por IP não protege
+contra credential stuffing distribuído; só por usuário não protege contra tentativa
+espalhada por muitos e-mails.
+
+**Nenhuma organização pode causar custo ou indisponibilidade para outra.** Num sistema
+multiempresa com recursos compartilhados, abuso de um tenant é problema de todos.
+
+### Negação de serviço e exaustão de recursos
+
+- **paginação obrigatória**, com página máxima;
+- limite de filtros e de complexidade de busca;
+- limite de upload, de registros e de profundidade;
+- **timeout** em toda operação de I/O;
+- **`CancellationToken`** propagado — requisição abandonada pelo usuário não continua
+  consumindo banco;
+- limite de concorrência;
+- trabalho pesado vira job (Fase 9);
+- endpoints caros protegidos por limite específico;
+- **consulta sem limite é proibida** onde houver volume relevante.
+
+## 24.19 ⚠️ Pendências de segurança conhecidas
+
+Registradas em **27/08/2026**, após auditoria do código existente. Ambas são aceitáveis
+enquanto o sistema roda só em `localhost`, e **bloqueantes antes do primeiro deploy
+público**.
+
+### 1. Não existe rate limiting em nenhum endpoint
+
+O login já é constante no tempo e não enumera usuários — as duas defesas difíceis estão
+feitas. Mas nada impede milhares de tentativas por minuto contra
+`POST /api/autenticacao/entrar`. Força bruta e credential stuffing estão abertos.
+
+**Resolver na Fase 10**, como requisito de saída. Não esperar a Fase 12.
+
+### 2. `SameSite=Lax` não sobrevive à topologia de produção
+
+Em produção o frontend fica na Vercel e a API no API Gateway — **domínios registráveis
+diferentes, portanto cross-site**. Com `SameSite=Lax` o navegador **não envia o cookie**,
+e a sessão não sobrevive a um recarregamento.
+
+O problema não é só funcional: a correção óbvia é `SameSite=None; Secure`, e **isso
+reabre o CSRF que o `Lax` fechava de graça**. Trocar por reflexo na pressa do deploy
+substituiria uma falha visível por uma silenciosa.
+
+Duas saídas, **decisão do responsável antes de publicar**: (a) servir API e frontend sob o
+mesmo domínio registrável, mantendo `Lax`; ou (b) `SameSite=None; Secure` com defesa CSRF
+explícita — *double submit cookie* ou token anti-CSRF, mais validação de `Origin` na
+renovação. Detalhes no Security Gate da Fase 10 do `ROADMAP.md`.
+
+### 3. Listagens sem paginação
+
+`GET /api/folhas`, `/api/rubricas`, `/api/cargos`, os estabelecimentos, os holerites e os
+lançamentos devolvem tudo. Empresas e funcionários já têm teto de 100 por página.
+
+**Resolver na Fase 10.** Sem impacto em `localhost`; com volume real, é vetor de exaustão.
+
+## 24.20 Headers, CORS e navegador
+
+**Headers** a planejar e validar contra o frontend real na Fase 10:
+`Content-Security-Policy` · `HSTS` · `X-Content-Type-Options: nosniff` ·
+`Referrer-Policy` · `Permissions-Policy` · `frame-ancestors` contra clickjacking.
+
+**Não inserir configuração aleatória.** Uma CSP copiada de exemplo quebra o frontend ou
+vira `unsafe-inline`, que não protege. A política é construída a partir do que a
+aplicação realmente carrega.
+
+**CORS**: produção usa **allowlist explícita**. **Jamais `*` com credenciais** — a
+combinação é rejeitada pelos navegadores e, se contornada, anula a proteção de origem.
+Development e Production têm configuração separada, e o `appsettings.json` base traz lista
+**vazia**, para falhar fechado.
+
+## 24.21 Banco de dados
+
+- usuário da aplicação com **privilégio mínimo**; a aplicação **não usa superuser**;
+- migration aplicada por credencial distinta da credencial de execução, quando o ambiente
+  permitir;
+- **constraints no banco** — a garantia final não é o C#. O histórico contratual é
+  protegido por *constraint* de exclusão que impede sobreposição de períodos mesmo sob
+  requisições simultâneas;
+- transações onde a operação exigir atomicidade;
+- backups do provedor, com **restore testado**;
+- string de conexão só por variável de ambiente;
+- **TLS** na conexão em produção quando suportado;
+- acesso administrativo restrito; banco **não** exposto publicamente sem necessidade.
+
+## 24.22 Infraestrutura AWS
+
+Princípios, a aplicar quando as fases correspondentes chegarem — **nada disso é
+implementado antes**:
+
+least privilege no IAM · **nenhuma chave root** · MFA na conta · root fora do dia a dia ·
+recursos **privados por padrão** · **S3 Block Public Access** · IAM **por função**, não
+por pessoa · políticas mínimas · CloudWatch com retenção definida · budgets com alerta ·
+tags de custo · **sem NAT Gateway sem autorização** · nenhum banco publicamente exposto
+sem necessidade.
+
+Cada recurso é avaliado **antes** de ser criado (§16).
+
+## 24.23 Backup e recuperação
+
+Disponibilidade é parte de segurança.
+
+Planejar backup, restauração, **RPO** e **RTO** conceituais, teste de restore, recuperação
+após migration problemática e recuperação de dado removido por acidente.
+
+**Estratégia proporcional ao custo** — não contratar serviço caro só para cumprir
+checklist. E **backup nunca testado é hipótese, não garantia**.
+
+## 24.24 Resposta a incidente
+
+```text
+Detectar → Conter → Investigar → Corrigir → Rotacionar credenciais →
+Restaurar → Documentar → Prevenir recorrência
+```
+
+Conter vem antes de investigar: parar o sangramento primeiro. Rotação é passo próprio
+porque é o mais esquecido. Detalhes e a tabela por tipo de incidente estão na Fase 12 do
+`ROADMAP.md`.
+
+## 24.25 Dependências e supply chain
+
+Versões controladas · lockfiles versionados · análise de vulnerabilidade em NuGet e npm ·
+Dependabot ou equivalente · revisão antes de major upgrade · GitHub Actions fixadas por
+versão · nenhuma action de origem desconhecida.
+
+**Evitar pacote abandonado. Evitar pacote desnecessário. Não instalar biblioteca para
+funcionalidade trivial** — cada dependência é superfície de ataque, e a maior parte dos
+incidentes de supply chain entra por pacote pequeno que ninguém revisa.
+
+## 24.26 Testes de segurança
+
+São **parte da implementação**, não etapa de auditoria. Categorias e detalhe na Fase 12 do
+`ROADMAP.md`: autenticação · autorização · **isolamento multiempresa** · IDOR · validação
+· uploads · limites · endpoints sensíveis · vulnerabilidade de dependências · SAST/DAST
+quando fizer sentido.
+
+Testes de intrusão **somente em ambientes sob controle do projeto**. Nunca contra serviço
+de terceiro.
+
+## 24.27 Threat modeling
+
+Antes de funcionalidade que crie superfície relevante nova — autenticação, upload,
+integração externa, processamento AWS, IA, endpoint anônimo — fazer um threat model curto:
+
+```text
+Ativo | Ameaça | Vetor | Impacto | Controle | Teste | Risco residual
+```
+
+Uma tabela, não um documento. Threat modeling que vira burocracia deixa de ser feito.
+
+## 24.28 Padrões de referência
+
+**OWASP Top 10** · **OWASP ASVS** · **OWASP API Security Top 10** · práticas de segurança
+da Microsoft para .NET/ASP.NET Core · práticas da AWS · práticas do PostgreSQL.
+
+**Referência conceitual, não checklist copiado.** Só entra controle aplicável ao
+Prisma RH.
 
 ## Dados pessoais
 
@@ -1237,6 +1748,11 @@ Exige aprovação:
 - adicionar novo provedor cloud;
 - alterar estratégia de autenticação;
 - alterar multi-tenancy;
+- **enfraquecer ou remover qualquer controle de segurança já implementado** — a lista
+  permanente está em §24.3 e §24.5. Se um deles tiver vulnerabilidade real, **documentar
+  o problema e informar o responsável antes de alterar**;
+- afrouxar CORS, cookie, política de autorização ou filtro global;
+- criar rota anônima nova;
 - alterar regra legal;
 - alterar regra de cálculo;
 - ampliar escopo;
@@ -1244,7 +1760,9 @@ Exige aprovação:
 - criar recurso AWS;
 - fazer deploy;
 - publicar código;
-- adicionar IA/LLM ao produto;
+- adicionar IA/LLM ao produto **antes da Fase 11**, ou fora do escopo definido no §37;
+- escolher o provedor de IA;
+- enviar dado do produto a um provedor de IA;
 - introduzir custo recorrente.
 
 ---
@@ -1264,14 +1782,150 @@ Não adicionar sem necessidade comprovada e autorização:
 - microserviços;
 - service mesh;
 - WebSockets;
-- IA generativa;
 - banco vetorial.
 
 O Prisma RH poderá usar algumas dessas tecnologias no futuro **somente se o produto criar uma necessidade real**.
 
+> **Alteração registrada em 27/08/2026 — IA saiu desta lista.**
+>
+> "IA generativa" constava aqui como tecnologia sem previsão de entrada. Ela agora tem
+> fase própria e aprovada no roadmap — **Fase 11 — Assistente Inteligente / Automação
+> com IA** — com escopo, restrições e critérios de aceite definidos no `ROADMAP.md`.
+>
+> A regra mudou de **"não entra"** para **"não entra antes da Fase 11"**. As regras
+> permanentes dessa camada estão no §37 abaixo.
+>
+> **Banco vetorial continua na lista.** É uma decisão separada, ainda sem fase.
+
 ---
 
-# 37. ROADMAP OBRIGATÓRIO
+# 37. INTELIGÊNCIA ARTIFICIAL NO PRISMA RH
+
+Decisão registrada em **27/08/2026**. A IA é uma tecnologia **futura oficialmente
+aprovada** para o produto, com fase própria no roadmap.
+
+## 37.1 Quando pode existir
+
+**Fase 11 — Assistente Inteligente / Automação com IA**, e não antes.
+
+Até lá, nenhum agente pode instalar SDK de IA, criar endpoint de IA, chamar provedor,
+adicionar chave de provedor ao ambiente ou criar abstração "para quando a IA chegar".
+Conhecer o destino não autoriza antecipá-lo.
+
+A Fase 11 depende das Fases 6 e 7: a IA trabalha sobre inconsistências e workflow já
+estruturados. Sem eles, não há o que explicar.
+
+## 37.2 Para que serve
+
+Auxiliar **análise e produtividade** do analista de RH:
+
+- explicar, em linguagem simples, uma inconsistência que o motor determinístico detectou;
+- resumir uma folha já processada e analisada;
+- transformar uma pergunta em português em filtro ou consulta controlada pela aplicação.
+
+A IA é **copiloto**, nunca autoridade do sistema.
+
+## 37.3 O que a IA nunca é
+
+**Cálculos financeiros e legais permanecem determinísticos, em C#.**
+
+A IA nunca é fonte oficial de INSS, FGTS, IRRF, salário, férias, 13º, rescisão,
+encargos, líquido da folha ou qualquer outro valor financeiro ou obrigação legal. Esses
+valores continuam vindo de regras versionadas, testáveis e apoiadas em fonte oficial
+(§29).
+
+O critério prático: **se o valor entra numa conta, num holerite ou numa obrigação, ele
+veio do C#.** Se é frase explicando um valor que o C# já produziu, pode ter vindo da IA —
+e precisa estar rotulada como tal na interface.
+
+## 37.4 O que a IA não faz
+
+Não altera salário. Não cria lançamentos. Não fecha nem reabre folha. Não resolve
+inconsistência. Não aprova cálculo. Não executa SQL arbitrário. Não muda regra legal.
+Não atualiza parâmetro automaticamente. Não toma decisão financeira. **Não modifica
+dado algum sem ação explícita e validada do usuário.**
+
+A camada de IA é de **leitura**. Nenhum caminho de código iniciado por resposta de
+modelo pode terminar em escrita no banco.
+
+## 37.5 Autorização, multiempresa, auditoria e segurança
+
+Qualquer ação proposta pela IA passa pelas mesmas portas de sempre:
+
+- **autorização por perfil** (§6), aplicada no backend;
+- **isolamento por organização** (§5): a consulta gerada continua sob o *global query
+  filter*. A IA não amplia o próprio alcance, e o isolamento não depende do bom
+  comportamento do modelo;
+- **auditoria de negócio** (§26): quando uma sugestão de IA participa de uma decisão,
+  isso fica registrado;
+- **nada de código arbitrário**: o modelo escolhe dentro de um vocabulário fechado de
+  campos e operadores declarado pela aplicação. O que estiver fora é recusado antes de
+  virar consulta.
+
+Texto vindo do modelo é **dado, nunca instrução** para a aplicação.
+
+## 37.6 Privacidade dos dados enviados ao modelo
+
+Enviar dado pessoal e trabalhista a um provedor externo é decisão de privacidade, não
+detalhe de implementação (§25).
+
+- **Minimização**: só os campos necessários àquela pergunta;
+- CPF, endereço, data de nascimento e dado bancário não saem quando o raciocínio não
+  depende deles;
+- demo pública usa apenas a base fictícia (§24);
+- chave do provedor em variável de ambiente ou gerenciador de segredos, **nunca** em
+  código, commit ou documentação (§33);
+- registrar **que** houve chamada, para qual finalidade e em qual organização — sem
+  despejar o conteúdo enviado no log;
+- verificar a política de retenção e treinamento do provedor antes de escolhê-lo.
+
+## 37.7 Custo
+
+**Nenhuma implementação de IA pode gerar custo recorrente sem análise e autorização
+explícitas.**
+
+A cobrança por token de um provedor externo **não** faz parte do orçamento AWS — vale a
+mesma regra do §14 para API de terceiro. O teto de **US$ 6,50/mês em AWS** do Prisma RH
+(§16) permanece inalterado, e qualquer recurso AWS usado pela IA entra nesse teto e
+segue o ritual de sempre: listar, justificar, estimar, buscar alternativa gratuita,
+pedir autorização.
+
+## 37.8 Provedor
+
+**Não escolhido**, de propósito. A avaliação acontece na Fase 11 e considerará
+qualidade em português, privacidade, custo por token, Free Tier/créditos e o teto de
+US$ 6,50/mês quando o serviço for AWS. AWS Bedrock, Google Gemini, Anthropic e OpenAI
+são candidatos, sem preferência estabelecida.
+
+A arquitetura deve permitir trocar de provedor **sem tocar no domínio**, pelo mesmo
+padrão de adaptador da Fase 8.
+
+## 37.9 Ameaças específicas da camada de IA
+
+A IA traz uma classe de ameaça que nenhuma outra parte do sistema tem: **um componente
+que aceita linguagem natural e produz algo que o sistema vai usar.** Validação comum não
+resolve, porque a entrada é legítima por definição.
+
+A IA **nunca** recebe credencial, secret ou token. Nunca executa SQL arbitrário nem
+comando. Nunca altera folha por conta própria. E o dado recuperado para ela respeita **as
+mesmas políticas de autorização** do resto do sistema, com o perfil de quem perguntou —
+nunca com um perfil de serviço privilegiado.
+
+| Ameaça | Defesa |
+|---|---|
+| **Prompt injection direto** | A saída é estruturada, com vocabulário fechado; o que estiver fora é recusado antes de virar consulta. Instrução do usuário não amplia o que o sistema permite. |
+| **Prompt injection indireto** | Instrução escondida em dado que o sistema já guarda — nome de funcionário, justificativa, célula de planilha, campo de integração. **Todo texto vindo do banco é dado, jamais instrução**, inclusive quando parece uma ordem. |
+| **Exfiltração de dados** | Minimização na entrada: o que não foi enviado não pode vazar na resposta. |
+| **Cross-tenant leakage** | Uma chamada, um tenant. A consulta roda sob o filtro global — o isolamento é arquitetural, não depende do modelo se comportar. |
+| **Tool abuse** | A camada de IA é de leitura. Nenhum caminho iniciado por resposta de modelo termina em escrita no banco. |
+| **Respostas não confiáveis e alucinação** | Nenhum valor financeiro tem origem no modelo. Toda saída é rotulada como gerada por IA e passível de erro. |
+| **Custo abusivo** | Cobrança por token torna o abuso lucrativo para quem ataca e caro para quem mantém. Teto de contexto, teto de chamadas por organização e por usuário, cache do resumo já gerado, alerta de gasto. |
+
+Detalhamento operacional no Security Gate da Fase 11 do `ROADMAP.md`.
+
+---
+
+# 38. ROADMAP OBRIGATÓRIO
 
 O roadmap é sequencial.
 
@@ -1504,7 +2158,28 @@ A aplicação deve permanecer demonstrável publicamente.
 
 ---
 
-# 38. DADOS DE DEMONSTRAÇÃO
+## FASE 11 — Assistente Inteligente / Automação com IA
+
+Primeira fase em que a IA pode existir no produto. Regras permanentes desta camada: §37.
+
+Entregas:
+
+- assistente de inconsistências: explica, resume e sugere o que conferir;
+- resumo executivo da folha já processada e analisada;
+- consulta em linguagem natural convertida em filtro controlado pela aplicação.
+
+O motor de cálculo permanece **100% determinístico**. A IA explica, não calcula.
+
+Depende das Fases 6 e 7 (dados estruturados de análise e workflow), reusa o padrão de
+integração externa da Fase 8 e vem antes do hardening, para ser auditada nele.
+
+Fora de escopo: IA calculando ou conferindo valor de folha, agente que executa ações
+sozinho, geração de regra de análise pelo modelo, *fine-tuning* com dado de cliente,
+banco vetorial/RAG.
+
+---
+
+# 39. DADOS DE DEMONSTRAÇÃO
 
 A demo deverá possuir dados 100% fictícios.
 
@@ -1530,7 +2205,7 @@ A demo deverá permitir que recrutadores entendam rapidamente:
 
 ---
 
-# 39. DEFINITION OF DONE
+# 40. DEFINITION OF DONE
 
 Uma tarefa só está concluída quando, dentro do escopo aplicável:
 
@@ -1547,11 +2222,36 @@ Uma tarefa só está concluída quando, dentro do escopo aplicável:
 - nenhuma fase futura foi implementada;
 - nenhuma credencial foi exposta;
 - não houve deploy sem autorização;
-- o agente consegue explicar objetivamente o que mudou.
+- o agente consegue explicar objetivamente o que mudou;
+- **a Definition of Done de segurança abaixo foi cumprida.**
+
+## 40.1 Definition of Done de segurança
+
+Vale para toda tarefa que toque endpoint, dado de tenant, autenticação, autorização,
+entrada externa, arquivo, segredo, dependência ou infraestrutura.
+
+**Uma tarefa relevante NÃO está concluída se:**
+
+- [ ] a **autorização** não foi analisada — quem pode fazer isso, e por quê;
+- [ ] a **multi-tenancy** não foi analisada — este caminho pode alcançar outra organização?
+- [ ] **entrada externa** não foi validada no backend;
+- [ ] **dado sensível foi exposto** além do necessário — em resposta, log, export ou erro;
+- [ ] um **secret** foi incluído em código, commit, log, bundle ou documentação;
+- [ ] um **endpoint novo** ficou sem política de acesso declarada;
+- [ ] um **upload** ficou sem limite de tamanho, de quantidade e validação de conteúdo;
+- [ ] uma **dependência com vulnerabilidade conhecida** foi introduzida;
+- [ ] **logs vazam** token, senha, cookie, CPF completo ou payload sensível;
+- [ ] **testes críticos de segurança falham** — isolamento e autorização inclusos;
+- [ ] uma **listagem nova** ficou sem paginação com teto;
+- [ ] um controle de segurança existente foi **enfraquecido** sem decisão registrada.
+
+Quando um item não se aplica, escrever **"não se aplica"** e o motivo. A resposta
+explícita é o registro de que a pergunta foi feita — e é ela que distingue "verifiquei"
+de "não pensei nisso".
 
 ---
 
-# 40. CHECKLIST ANTES DE ALTERAR CÓDIGO
+# 41. CHECKLIST ANTES DE ALTERAR CÓDIGO
 
 Antes de editar, responda internamente:
 
@@ -1566,12 +2266,18 @@ Antes de editar, responda internamente:
 - [ ] Existe impacto financeiro na AWS?
 - [ ] Estou adicionando tecnologia não aprovada?
 - [ ] Estou tentando resolver algo que não foi pedido?
+- [ ] **Li o Security Gate da fase atual** (`ROADMAP.md §4.1` e o gate da fase)?
+- [ ] **Esta tarefa cria superfície nova?** Endpoint, entrada externa, arquivo, chamada
+      para fora, rota anônima, segredo, dependência.
+- [ ] Se cria, **fiz o threat model curto** (§24.27) antes de escrever código?
+- [ ] **Este caminho toca dado de outra organização?**
+- [ ] Estou **enfraquecendo** algum controle de segurança já existente?
 
 Se qualquer resposta indicar risco ou conflito, interromper e pedir decisão.
 
 ---
 
-# 41. CHECKLIST APÓS ALTERAR CÓDIGO
+# 42. CHECKLIST APÓS ALTERAR CÓDIGO
 
 - [ ] Build backend executado quando aplicável.
 - [ ] Testes backend executados quando aplicável.
@@ -1584,10 +2290,18 @@ Se qualquer resposta indicar risco ou conflito, interromper e pedir decisão.
 - [ ] Nenhum deploy realizado sem autorização.
 - [ ] Alteração ficou restrita à tarefa.
 - [ ] Resultado final foi explicado ao responsável.
+- [ ] **Definition of Done de segurança (§40.1) percorrida**, com "não se aplica"
+      escrito onde não se aplica.
+- [ ] **Teste de isolamento** existe para toda funcionalidade nova que manipule dado de
+      tenant.
+- [ ] **Toda rota nova tem política de acesso** declarada.
+- [ ] **Toda listagem nova tem paginação com teto.**
+- [ ] Pendência de segurança encontrada foi **registrada e datada** no `CLAUDE.md §24.19`
+      ou no Security Gate da fase — pendência não registrada invalida o gate.
 
 ---
 
-# 42. FILOSOFIA DE IMPLEMENTAÇÃO
+# 43. FILOSOFIA DE IMPLEMENTAÇÃO
 
 O Prisma RH deve crescer assim:
 
@@ -1621,7 +2335,7 @@ tentativa de encontrar um problema para justificá-las
 
 ---
 
-# 43. OBJETIVO DE APRENDIZADO
+# 44. OBJETIVO DE APRENDIZADO
 
 Este projeto também existe para que seu autor domine o que construiu.
 
@@ -1638,7 +2352,7 @@ Quando houver duas soluções corretas, favorecer a que tornar o domínio mais c
 
 ---
 
-# 44. AUTORIDADE DESTE DOCUMENTO
+# 45. AUTORIDADE DESTE DOCUMENTO
 
 Este documento é a fonte de verdade permanente do projeto.
 
