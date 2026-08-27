@@ -57,6 +57,7 @@ const HOLERITE = {
       referencia: '30/30',
       valor: 3320,
       ordem: 1,
+      basesIncidentes: 'Inss, Fgts, Irrf',
       memoria: [
         { ordem: 1, descricao: 'Vigência de 01/08 a 14/08', expressao: '3.000,00 x 14/30', valor: 1400 },
         { ordem: 2, descricao: 'Vigência de 15/08 a 31/08', expressao: '3.600,00 x 16/30', valor: 1920 },
@@ -72,14 +73,20 @@ const HOLERITE = {
       referencia: null,
       valor: 180,
       ordem: 2,
+      basesIncidentes: 'Nenhuma',
       memoria: [{ ordem: 1, descricao: 'Valor informado no lançamento manual', expressao: 'Vale-transporte', valor: 180 }],
     },
+  ],
+  bases: [
+    { base: 'Inss', valor: 3320, composta: ['SAL'] },
+    { base: 'Fgts', valor: 3320, composta: ['SAL'] },
+    { base: 'Irrf', valor: 3320, composta: ['SAL'] },
   ],
 }
 
 const RUBRICAS = [
-  { id: 'r1', codigo: 'SAL', nome: 'Salário base', tipo: 'Provento', estrategia: 'SalarioBaseProporcional', ativa: true },
-  { id: 'r2', codigo: 'VT', nome: 'Vale-transporte', tipo: 'Desconto', estrategia: 'ValorInformado', ativa: true },
+  { id: 'r1', codigo: 'SAL', nome: 'Salário base', tipo: 'Provento', estrategia: 'SalarioBaseProporcional', basesIncidentes: 'Inss, Fgts, Irrf', ativa: true },
+  { id: 'r2', codigo: 'VT', nome: 'Vale-transporte', tipo: 'Desconto', estrategia: 'ValorInformado', basesIncidentes: 'Nenhuma', ativa: true },
 ]
 
 function renderizar(perfil: UsuarioAutenticado['perfil'], folha = FOLHA) {
@@ -171,5 +178,26 @@ describe('FolhaDetalhe', () => {
     expect(await screen.findByText('fechada')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /recalcular/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /fechar folha/i })).not.toBeInTheDocument()
+  })
+
+  it('mostra as bases de cálculo e quais rubricas as formaram', async () => {
+    renderizar('AdministradorEmpresa')
+
+    const linha = (await screen.findAllByText('Bruno Carvalho Lima'))[0].closest('tr')!
+    within(linha).getByRole('button', { name: 'Ver' }).click()
+
+    const titulo = await screen.findByText('Bases de cálculo')
+    const secao = titulo.closest('section')!
+
+    // As três bases, e a memória derivada de cada uma. Escopado à seção
+    // porque "SAL" também aparece na linha do lançamento acima.
+    expect(within(secao).getByText('INSS')).toBeInTheDocument()
+    expect(within(secao).getByText('FGTS')).toBeInTheDocument()
+    expect(within(secao).getByText('IRRF')).toBeInTheDocument()
+    expect(within(secao).getAllByText('SAL')).toHaveLength(3)
+
+    // O vale-transporte é desconto: não compõe base nenhuma.
+    expect(within(secao).queryByText(/VT/)).not.toBeInTheDocument()
+    expect(within(secao).getAllByText(/R\$\s*3\.320,00/)).toHaveLength(3)
   })
 })

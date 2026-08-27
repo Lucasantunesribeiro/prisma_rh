@@ -5,6 +5,16 @@ import type { Perfil } from './autenticacao'
 
 export type TipoRubrica = 'Provento' | 'Desconto' | 'Informativo'
 export type EstrategiaRubrica = 'SalarioBaseProporcional' | 'ValorInformado'
+export type BaseCalculo = 'Inss' | 'Fgts' | 'Irrf'
+
+/** As tres bases, na ordem em que o backend as devolve. */
+export const BASES: readonly BaseCalculo[] = ['Inss', 'Fgts', 'Irrf']
+
+export const ROTULO_BASE: Record<BaseCalculo, string> = {
+  Inss: 'INSS',
+  Fgts: 'FGTS',
+  Irrf: 'IRRF',
+}
 
 export interface Rubrica {
   id: string
@@ -12,6 +22,8 @@ export interface Rubrica {
   nome: string
   tipo: TipoRubrica
   estrategia: EstrategiaRubrica
+  /** Enum de bits do backend, serializado como texto: "Inss, Fgts" ou "Nenhuma". */
+  basesIncidentes: string
   ativa: boolean
 }
 
@@ -29,7 +41,27 @@ export const criarRubrica = (dados: {
   nome: string
   tipo: TipoRubrica
   estrategia: EstrategiaRubrica
+  basesIncidentes: string
 }): Promise<Rubrica> => enviar('/api/rubricas', dados)
+
+export const alterarIncidencias = (id: string, basesIncidentes: string): Promise<Rubrica> =>
+  enviar(`/api/rubricas/${id}/incidencias`, { basesIncidentes }, 'PUT')
+
+/**
+ * O backend manda "Inss, Fgts" ou "Nenhuma". Vira lista para a tela marcar as
+ * caixas; o caminho de volta e juntarBases.
+ */
+export function separarBases(texto: string | null | undefined): BaseCalculo[] {
+  if (!texto || texto === 'Nenhuma') return []
+
+  return texto
+    .split(',')
+    .map((parte) => parte.trim())
+    .filter((parte): parte is BaseCalculo => (BASES as readonly string[]).includes(parte))
+}
+
+export const juntarBases = (bases: BaseCalculo[]): string =>
+  bases.length === 0 ? 'Nenhuma' : BASES.filter((b) => bases.includes(b)).join(', ')
 
 export const inativarRubrica = (id: string): Promise<void> => remover(`/api/rubricas/${id}`)
 
@@ -93,7 +125,15 @@ export interface Lancamento {
   referencia: string | null
   valor: number
   ordem: number
+  basesIncidentes: string
   memoria: LinhaMemoria[]
+}
+
+export interface BaseApurada {
+  base: BaseCalculo
+  valor: number
+  /** Codigos das rubricas que formaram esta base. */
+  composta: string[]
 }
 
 export interface Holerite {
@@ -101,6 +141,7 @@ export interface Holerite {
   competencia: string
   situacaoFolha: SituacaoFolha
   lancamentos: Lancamento[]
+  bases: BaseApurada[]
 }
 
 export function listarFolhas(filtro: { idEmpresa?: string; competencia?: string } = {}): Promise<

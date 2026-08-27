@@ -28,6 +28,8 @@ import {
   type FolhaDetalhe as Detalhe,
   type Holerite,
   type Rubrica,
+  ROTULO_BASE,
+  type BaseApurada,
 } from '@/api/folha'
 import { formatarSalario } from '@/api/pessoas'
 import { useSessao } from '@/auth/useSessao'
@@ -455,8 +457,50 @@ function PainelHolerite({
           </span>
           <span className="font-semibold">Líquido {formatarSalario(holerite.resumo.liquido)}</span>
         </div>
+
+        <BasesDeCalculo bases={holerite.bases} />
       </CardContent>
     </Card>
+  )
+}
+
+/**
+ * As bases de calculo do holerite.
+ *
+ * A composicao vem do backend, mas nao esta gravada: cada lancamento carrega a
+ * incidencia congelada no calculo, e dizer quais formaram a base e filtrar o
+ * que ja veio. E a memoria de calculo da base - CLAUDE.md secao 4.2 pede que o
+ * numero seja explicavel, nao que os passos sejam duplicados no banco.
+ */
+function BasesDeCalculo({ bases }: { bases: BaseApurada[] }) {
+  // Tolera resposta sem o campo: uma seção ausente é ruim, uma tela em branco
+  // é pior.
+  if (!bases || bases.length === 0) return null
+
+  return (
+    <section className="mt-6 border-t border-border pt-4">
+      <h3 className="mb-1 text-sm font-medium">Bases de cálculo</h3>
+      <p className="mb-3 text-xs text-muted-foreground">
+        INSS, FGTS e IRRF não incidem sobre o total: cada um tem sua base. Nenhum imposto é
+        calculado nesta fase.
+      </p>
+
+      <dl className="grid gap-3 sm:grid-cols-3">
+        {bases.map((base) => (
+          <div key={base.base} className="rounded-md border border-border p-3">
+            <dt className="text-xs font-medium text-muted-foreground">{ROTULO_BASE[base.base]}</dt>
+            <dd className="mt-1 text-sm font-semibold">{formatarSalario(base.valor)}</dd>
+            <dd className="mt-1 text-xs text-muted-foreground">
+              {base.composta.length === 0 ? (
+                'nenhuma rubrica incide'
+              ) : (
+                <span className="font-mono">{base.composta.join(' + ')}</span>
+              )}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </section>
   )
 }
 

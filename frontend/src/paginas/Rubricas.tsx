@@ -14,10 +14,15 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import {
+  BASES,
   criarRubrica,
   inativarRubrica,
+  juntarBases,
   listarRubricas,
+  ROTULO_BASE,
   ROTULO_TIPO_RUBRICA,
+  separarBases,
+  type BaseCalculo,
   type Rubrica,
   type TipoRubrica,
 } from '@/api/folha'
@@ -62,7 +67,8 @@ export default function Rubricas() {
         <h1 className="text-xl font-semibold tracking-tight">Rubricas</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Os eventos que podem aparecer numa folha. O salário-base é calculado pelo sistema; o
-          resto é digitado no lançamento.
+          resto é digitado no lançamento. A incidência diz em quais bases a rubrica entra —
+          INSS, FGTS e IRRF não incidem sobre o total do holerite.
         </p>
       </header>
 
@@ -121,6 +127,7 @@ export default function Rubricas() {
                   <TableHead>Nome</TableHead>
                   <TableHead>Tipo</TableHead>
                   <TableHead>Origem do valor</TableHead>
+                  <TableHead>Compõe base de</TableHead>
                   <TableHead>Situação</TableHead>
                   {administra && <TableHead className="text-right">Ação</TableHead>}
                 </TableRow>
@@ -135,6 +142,21 @@ export default function Rubricas() {
                       {rubrica.estrategia === 'SalarioBaseProporcional'
                         ? 'calculado pelo sistema'
                         : 'digitado no lançamento'}
+                    </TableCell>
+                    <TableCell>
+                      {separarBases(rubrica.basesIncidentes).length === 0 ? (
+                        <span className="text-sm text-muted-foreground">
+                          {rubrica.tipo === 'Desconto' ? '—' : 'nenhuma'}
+                        </span>
+                      ) : (
+                        <span className="flex flex-wrap gap-1">
+                          {separarBases(rubrica.basesIncidentes).map((base) => (
+                            <Badge key={base} variant="outline">
+                              {ROTULO_BASE[base]}
+                            </Badge>
+                          ))}
+                        </span>
+                      )}
                     </TableCell>
                     <TableCell>
                       <Badge variant={rubrica.ativa ? 'default' : 'secondary'}>
@@ -177,9 +199,13 @@ function FormularioNovaRubrica({
   const [codigo, definirCodigo] = useState('')
   const [nome, definirNome] = useState('')
   const [tipo, definirTipo] = useState<TipoRubrica>('Provento')
+  const [bases, definirBases] = useState<BaseCalculo[]>([])
   const [salarioBase, definirSalarioBase] = useState(false)
   const [erro, definirErro] = useState<string | null>(null)
   const [enviando, definirEnviando] = useState(false)
+
+  // Salário-base é sempre provento; fora isso vale o que está no seletor.
+  const tipoAtual: TipoRubrica = salarioBase ? 'Provento' : tipo
 
   const aoEnviar = async (evento: FormEvent) => {
     evento.preventDefault()
@@ -187,14 +213,20 @@ function FormularioNovaRubrica({
     definirEnviando(true)
 
     try {
+      const tipoFinal = salarioBase ? 'Provento' : tipo
+
       await criarRubrica({
         codigo,
         nome,
-        tipo: salarioBase ? 'Provento' : tipo,
+        tipo: tipoFinal,
         estrategia: salarioBase ? 'SalarioBaseProporcional' : 'ValorInformado',
+        // Desconto nunca compõe base: o backend recusa, e mandar assim evita
+        // um 400 previsível quando alguém marca as caixas e depois troca o tipo.
+        basesIncidentes: tipoFinal === 'Desconto' ? 'Nenhuma' : juntarBases(bases),
       })
       definirCodigo('')
       definirNome('')
+      definirBases([])
       definirSalarioBase(false)
       await aoCriar()
     } catch (falha) {
@@ -263,6 +295,36 @@ function FormularioNovaRubrica({
               )}
             </Label>
           </div>
+
+          <fieldset className="sm:col-span-4" disabled={tipoAtual === 'Desconto'}>
+            <legend className="mb-2 text-sm font-medium">
+              Compõe base de
+              {tipoAtual === 'Desconto' && (
+                <span className="ml-2 text-xs font-normal text-muted-foreground">
+                  desconto não compõe base — o que reduz base é dedução, e isso é outro conceito
+                </span>
+              )}
+            </legend>
+
+            <div className="flex flex-wrap gap-4">
+              {BASES.map((base) => (
+                <div key={base} className="flex items-center gap-2">
+                  <input
+                    id={`base-${base}`}
+                    type="checkbox"
+                    className="size-4"
+                    checked={tipoAtual !== 'Desconto' && bases.includes(base)}
+                    onChange={(e) =>
+                      definirBases((atuais) =>
+                        e.target.checked ? [...atuais, base] : atuais.filter((b) => b !== base),
+                      )
+                    }
+                  />
+                  <Label htmlFor={`base-${base}`}>{ROTULO_BASE[base]}</Label>
+                </div>
+              ))}
+            </div>
+          </fieldset>
 
           {erro && (
             <div className="sm:col-span-4">
