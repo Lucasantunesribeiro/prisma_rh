@@ -1,5 +1,6 @@
 ﻿using PrismaRH.Dominio.Contratos;
 
+using PrismaRH.Dominio.Ferias;
 using PrismaRH.Dominio.Parametros;
 
 namespace PrismaRH.Dominio.Folha;
@@ -20,8 +21,18 @@ public sealed class FolhaPagamento
     {
     }
 
-    public FolhaPagamento(Guid idOrganizacao, Guid idEmpresa, Competencia competencia, DateTimeOffset criadoEm)
+    public FolhaPagamento(
+        Guid idOrganizacao,
+        Guid idEmpresa,
+        Competencia competencia,
+        DateTimeOffset criadoEm,
+        TipoFolha tipo = TipoFolha.Mensal)
     {
+        if (!Enum.IsDefined(tipo))
+        {
+            throw new ArgumentException("Tipo de folha desconhecido.", nameof(tipo));
+        }
+
         if (idOrganizacao == Guid.Empty)
         {
             throw new ArgumentException("Folha precisa pertencer a uma organizacao.", nameof(idOrganizacao));
@@ -36,6 +47,7 @@ public sealed class FolhaPagamento
         IdOrganizacao = idOrganizacao;
         IdEmpresa = idEmpresa;
         Competencia = competencia;
+        Tipo = tipo;
         Situacao = SituacaoFolha.Rascunho;
         CriadoEm = criadoEm;
     }
@@ -44,6 +56,12 @@ public sealed class FolhaPagamento
     public Guid IdOrganizacao { get; private set; }
     public Guid IdEmpresa { get; private set; }
     public Competencia Competencia { get; private set; }
+
+    /// <summary>
+    /// Que processamento esta folha representa. Imutavel: uma folha mensal
+    /// nao vira folha de ferias - abre-se outra.
+    /// </summary>
+    public TipoFolha Tipo { get; private set; }
     public SituacaoFolha Situacao { get; private set; }
 
     /// <summary>Quantas vezes esta folha foi calculada. Reprocessar e visivel, nao silencioso.</summary>
@@ -93,6 +111,12 @@ public sealed class FolhaPagamento
 
         GarantirAberta("calcular");
 
+        if (Tipo != TipoFolha.Mensal)
+        {
+            throw new InvalidOperationException(
+                "Esta folha nao e mensal: use o calculo do tipo dela.");
+        }
+
         if (rubricaSalario.Estrategia != EstrategiaRubrica.SalarioBaseProporcional)
         {
             throw new ArgumentException(
@@ -132,6 +156,94 @@ public sealed class FolhaPagamento
             dependentesPorFuncionario.TryGetValue(contrato.IdFuncionario, out var dependentes);
 
             holerite.AplicarCalculo(apuracao, rubricaSalario, encargos, dependentes);
+        }
+
+        VersaoCalculo++;
+        CalculadaEm = agora;
+        Situacao = SituacaoFolha.Calculada;
+
+        RecalcularTotais();
+    }
+
+    /// <summary>
+    /// Calcula a folha de FERIAS: paga as concessoes que comecam nesta
+    /// competencia.
+    ///
+    /// O criterio e a DATA DE INICIO DO GOZO, e nao o periodo aquisitivo: e
+    /// quando a pessoa sai de ferias que o pagamento e devido (CLT art. 145
+    /// manda pagar antes do inicio). Uma concessao que comeca em 02/01 e paga
+    /// na folha de ferias de janeiro, mesmo que o periodo aquisitivo seja de
+    /// dois anos atras.
+    ///
+    /// Quem nao tem concessao na competencia simplesmente nao entra: uma folha
+    /// de ferias so tem quem sai de ferias.
+    /// </summary>
+    public void CalcularFerias(
+        IEnumerable<ContratoTrabalho> contratosDaEmpresa,
+        IEnumerable<ConcessaoFerias> concessoes,
+        IReadOnlyDictionary<EstrategiaRubrica, Rubrica> rubricasDeFerias,
+        ParametrosEncargos encargos,
+        IReadOnlyDictionary<Guid, int> dependentesPorFuncionario,
+        DateTimeOffset agora)
+    {
+        ArgumentNullException.ThrowIfNull(contratosDaEmpresa);
+        ArgumentNullException.ThrowIfNull(concessoes);
+        ArgumentNullException.ThrowIfNull(rubricasDeFerias);
+        ArgumentNullException.ThrowIfNull(encargos);
+        ArgumentNullException.ThrowIfNull(dependentesPorFuncionario);
+
+        GarantirAberta("calcular");
+
+        if (Tipo != TipoFolha.Ferias)
+        {
+            throw new InvalidOperationException(
+                "Esta folha nao e de ferias: use o calculo do tipo dela.");
+        }
+
+        var contratos = contratosDaEmpresa
+            .Where(c => c.IdEmpresa == IdEmpresa)
+            .ToDictionary(c => c.Id);
+
+        // Agrupa por contrato as concessoes que COMECAM nesta competencia.
+        var porContrato = concessoes
+            .Where(c => contratos.ContainsKey(c.IdContrato) && Competencia.Contem(c.Inicio))
+            .GroupBy(c => c.IdContrato)
+            .ToDictionary(g => g.Key, g => g.OrderBy(c => c.Inicio).ToList());
+
+        // Quem nao sai mais de ferias sai da folha - mesmo motivo do
+        // recalculo da mensal: manter produziria pagamento indevido.
+        _funcionarios.RemoveAll(f => !porContrato.ContainsKey(f.IdContrato));
+
+        foreach (var (idContrato, doContrato) in porContrato)
+        {
+            var contrato = contratos[idContrato];
+
+            var holerite = _funcionarios.SingleOrDefault(f => f.IdContrato == idContrato);
+
+            if (holerite is null)
+            {
+                holerite = new FolhaFuncionario(IdOrganizacao, Id, idContrato, contrato.IdFuncionario);
+                _funcionarios.Add(holerite);
+            }
+
+            var apuracoes = doContrato
+                .Select(c =>
+                {
+                    // CLT art. 142: a remuneracao devida na DATA DA CONCESSAO.
+                    // Por isso a vigencia e procurada pela data de inicio do
+                    // gozo, e nao pela competencia da folha.
+                    var vigencia = contrato.VigenciaEm(c.Inicio) ?? contrato.VigenciaAtual;
+                    var salario = vigencia?.Salario ?? 0m;
+
+                    return (
+                        Apuracao: CalculadoraFerias.Apurar(salario, c.Dias, c.DiasAbonoPecuniario),
+                        Rubricas: rubricasDeFerias);
+                })
+                .ToList();
+
+            dependentesPorFuncionario.TryGetValue(contrato.IdFuncionario, out var dependentes);
+
+            holerite.AplicarCalculoFerias(apuracoes, encargos, dependentes);
         }
 
         VersaoCalculo++;

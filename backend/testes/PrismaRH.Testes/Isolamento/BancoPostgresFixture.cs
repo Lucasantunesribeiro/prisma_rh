@@ -84,6 +84,10 @@ public sealed class BancoPostgresFixture : IAsyncLifetime
     public Guid IdEmpresaE { get; private set; }
     public Guid IdEstabelecimentoE { get; private set; }
 
+    public Guid IdOrganizacaoF { get; private set; }
+    public Guid IdEmpresaF { get; private set; }
+    public Guid IdEstabelecimentoF { get; private set; }
+
     public const string Senha = "SenhaDeTeste#2026";
 
     public const string EmailAdminA = "admin@a.teste";
@@ -123,6 +127,13 @@ public sealed class BancoPostgresFixture : IAsyncLifetime
     /// Fases 3, 4A e 4C passariam a falhar conforme a ordem de execucao.
     /// </summary>
     public const string EmailAdminE = "admin@e.teste";
+
+    /// <summary>
+    /// Organizacao F existe so para a FOLHA DE FERIAS, pela mesma razao das
+    /// anteriores: as quatro rubricas de ferias sao da ORGANIZACAO, e liga-las
+    /// na A mudaria as folhas mensais dos testes das Fases 3 e 4.
+    /// </summary>
+    public const string EmailAdminF = "admin@f.teste";
 
     /// <summary>
     /// CPF valido e unico por semente. Os testes desta colecao compartilham o
@@ -182,7 +193,8 @@ public sealed class BancoPostgresFixture : IAsyncLifetime
         var orgC = new Organizacao("Organizacao C", agora);
         var orgD = new Organizacao("Organizacao D", agora);
         var orgE = new Organizacao("Organizacao E", agora);
-        db.Organizacoes.AddRange(orgA, orgB, orgC, orgD, orgE);
+        var orgF = new Organizacao("Organizacao F", agora);
+        db.Organizacoes.AddRange(orgA, orgB, orgC, orgD, orgE, orgF);
 
         db.Usuarios.AddRange(
             new Usuario(orgA.Id, "Admin A", EmailAdminA, hash, Perfil.AdministradorEmpresa, agora),
@@ -193,20 +205,23 @@ public sealed class BancoPostgresFixture : IAsyncLifetime
             new Usuario(orgB.Id, "Admin B", EmailAdminB, hash, Perfil.AdministradorEmpresa, agora),
             new Usuario(orgC.Id, "Admin C", EmailAdminC, hash, Perfil.AdministradorEmpresa, agora),
             new Usuario(orgD.Id, "Admin D", EmailAdminD, hash, Perfil.AdministradorEmpresa, agora),
-            new Usuario(orgE.Id, "Admin E", EmailAdminE, hash, Perfil.AdministradorEmpresa, agora));
+            new Usuario(orgE.Id, "Admin E", EmailAdminE, hash, Perfil.AdministradorEmpresa, agora),
+            new Usuario(orgF.Id, "Admin F", EmailAdminF, hash, Perfil.AdministradorEmpresa, agora));
 
         var empresaA = new Empresa(orgA.Id, "Empresa da A", Cnpj.Criar("11222333000181"), agora);
         var empresaB = new Empresa(orgB.Id, "Empresa da B", Cnpj.Criar("11444777000161"), agora);
         var empresaC = new Empresa(orgC.Id, "Empresa da C", Cnpj.Criar("34028316000103"), agora);
         var empresaD = new Empresa(orgD.Id, "Empresa da D", Cnpj.Criar("60746948000112"), agora);
         var empresaE = new Empresa(orgE.Id, "Empresa da E", Cnpj.Criar("33000167000101"), agora);
-        db.Empresas.AddRange(empresaA, empresaB, empresaC, empresaD, empresaE);
+        var empresaF = new Empresa(orgF.Id, "Empresa da F", Cnpj.Criar("00000000000191"), agora);
+        db.Empresas.AddRange(empresaA, empresaB, empresaC, empresaD, empresaE, empresaF);
 
         var estabA = new Estabelecimento(orgA.Id, empresaA.Id, "001", "Matriz A", agora);
         var estabC = new Estabelecimento(orgC.Id, empresaC.Id, "001", "Matriz C", agora);
         var estabD = new Estabelecimento(orgD.Id, empresaD.Id, "001", "Matriz D", agora);
         var estabE = new Estabelecimento(orgE.Id, empresaE.Id, "001", "Matriz E", agora);
-        db.Estabelecimentos.AddRange(estabA, estabC, estabD, estabE);
+        var estabF = new Estabelecimento(orgF.Id, empresaF.Id, "001", "Matriz F", agora);
+        db.Estabelecimentos.AddRange(estabA, estabC, estabD, estabE, estabF);
 
         // Parametro legal FEDERAL: nao pertence a organizacao alguma, entao
         // entra uma vez so e vale para as duas. Mesma tabela da semeadura de
@@ -264,6 +279,9 @@ public sealed class BancoPostgresFixture : IAsyncLifetime
         IdOrganizacaoE = orgE.Id;
         IdEmpresaE = empresaE.Id;
         IdEstabelecimentoE = estabE.Id;
+        IdOrganizacaoF = orgF.Id;
+        IdEmpresaF = empresaF.Id;
+        IdEstabelecimentoF = estabF.Id;
     }
 
     /// <summary>

@@ -2,7 +2,7 @@
 
 Plataforma B2B de gestão, cálculo, conferência e auditoria de folha de pagamento brasileira.
 
-> **Estado atual: Fase 4E, etapas 1 e 2a concluídas — direito e concessão de férias.**
+> **Estado atual: Fase 4E concluída — férias, do direito ao pagamento.**
 >
 > Existe login com JWT, cinco perfis, organizações isoladas entre si, o cadastro de
 > funcionários, contratos e histórico contratual por vigência, e a **primeira folha
@@ -14,9 +14,10 @@ Plataforma B2B de gestão, cálculo, conferência e auditoria de folha de pagame
 > O **IRRF** é retido pela tabela de 2026, com dedução por dependente, desconto
 > simplificado e o **redutor** da Lei 15.270/2025 — quem ganha até R$ 5.000 não paga.
 > Com isso a folha mensal está completa: salário proporcional, bases, INSS, FGTS e IRRF.
-> Existe também **férias**: quantos períodos cada contrato acumulou, quais já passaram do
-> prazo, e a **programação** dos dias — com fracionamento e abono validados pela CLT. O
-> **pagamento** das férias ainda não existe.
+> Existe também **férias**, completas: quantos períodos cada contrato acumulou, quais já
+> passaram do prazo, a **programação** dos dias — com fracionamento e abono validados pela
+> CLT — e o **pagamento**, numa folha de tipo próprio, com o 1/3 constitucional e as
+> incidências de cada verba conforme o Manual do eSocial.
 > Consulte o [ROADMAP.md](ROADMAP.md) para as fases seguintes e o
 > [CLAUDE.md](CLAUDE.md) para as regras do projeto.
 
@@ -171,6 +172,46 @@ Três diferenças em relação ao INSS, cada uma com teste próprio:
 > previdência privada e parcela isenta acima de 65 anos não têm dado de origem no
 > domínio ainda. Não há ajuste anual: o produto retém na fonte.
 
+**Pagamento de férias (Fase 4E, etapa 2b)**
+
+Fontes: **CLT art. 142** (remuneração devida na data da concessão), **CF art. 7º, XVII**
+(um terço a mais), **CLT art. 143** (abono) e o **Manual do eSocial** para as incidências.
+
+| Verba | Rubrica | INSS | IRRF | FGTS |
+|---|---|:--:|:--:|:--:|
+| Férias gozadas | `FER` | Sim | Sim | Sim |
+| Terço sobre férias gozadas (eSocial 1920) | `FER13` | Sim | Sim | Sim |
+| Abono pecuniário | `ABONO` | Não | Sim | Não |
+| Terço sobre o abono (eSocial 1940) | `ABN13` | Não | Sim | Não |
+
+- **Quatro rubricas, não duas** — e a razão é a tabela acima: as duas linhas de terço têm
+  incidências **diferentes**. Com uma rubrica de terço só, seria preciso escolher uma das
+  duas e errar a outra em todo holerite com abono. Há teste travando que os dois conjuntos
+  diferem, para que um copiar-colar quebre o teste em vez do imposto de todo mundo.
+- **`TipoFolha`** entrou em `FolhaPagamento`, e a coluna foi para o **índice único**: a
+  mesma empresa pode ter, em agosto, a folha mensal **e** a de férias.
+- O critério é a **data de início do gozo**, não o período aquisitivo: quem sai em 02/01 é
+  pago na folha de janeiro, mesmo que o período seja de dois anos atrás.
+- O **salário é o da data da concessão** (art. 142). Quem recebeu aumento entre o período
+  aquisitivo e o gozo goza com o salário novo.
+- O terço incide sobre o valor **arredondado** — é o número do holerite, e a pessoa precisa
+  conseguir refazer a conta à mão.
+- **Divisor 30, sempre.** Usar os dias do mês faria o mesmo funcionário receber valores
+  diferentes pelos mesmos 30 dias.
+- Faltando alguma das quatro rubricas, o cálculo **recusa** (409, listando quais) em vez de
+  pagar menos em silêncio.
+
+> ⚠️ **Limitação importante — IRRF apurado sobre a folha de férias isolada.** O imposto é
+> calculado sobre ela mesma, sem somar a folha mensal do mesmo mês. Quando as duas
+> coexistem, isso **subestima o imposto**: a tabela é progressiva, e dois rendimentos
+> separados caem em faixas mais baixas do que a soma cairia. Somar as duas exige decidir
+> em qual folha o imposto é retido e como reprocessar — a mesma classe de problema que o
+> 13º da Fase 4F traz. **Resolver antes de qualquer uso real.**
+
+> **Outras limitações:** a **dobra do art. 137** não é calculada — o período vencido é
+> identificado e a tela avisa, mas o pagamento em dobro não é aplicado, porque falta
+> decidir se o terço também dobra. **Férias coletivas** (art. 139) continuam fora.
+
 **Concessão de férias (Fase 4E, etapa 2a)**
 
 Fontes: **CLT art. 134, §1º** (até três períodos, um ≥ 14 dias corridos e os demais ≥ 5) e
@@ -239,16 +280,12 @@ subsequentes) e **art. 137** (fora do prazo, remuneração **em dobro**).
 
 ## O que ainda NÃO existe
 
-O **pagamento** de férias, 13º, rescisão, afastamentos, importações, motor de análises,
-integrações, recursos AWS e CI/CD. Tudo isso pertence às fases seguintes do roadmap.
+13º, rescisão, afastamentos, importações, motor de análises, integrações, recursos AWS e
+CI/CD. Tudo isso pertence às fases seguintes do roadmap.
 
-Férias hoje mostram o **direito** e a **programação**, não o pagamento: remunerar, aplicar
-o 1/3 e o abono exige um **tipo de folha** novo, que a etapa 2b da Fase 4E traz.
-
-> ⚠️ A etapa 2b está **bloqueada por uma decisão pendente**: se o **terço constitucional**
-> integra o salário-de-contribuição do **segurado**. O STF (Tema 985) decidiu sobre a
-> contribuição **patronal**, não sobre a do empregado, e concluir por analogia seria
-> interpretação jurídica. As outras três incidências têm resposta clara na Lei 8.212/91.
+A **folha mensal** e a **de férias** estão completas. Os demais tipos de processamento —
+13º (4F) e rescisão (4G) — continuam fora, e o 13º trará junto a decisão sobre somar
+rendimentos do mesmo mês para o IRRF, que a limitação das férias já registra.
 
 Cada encargo exige fonte oficial registrada e parâmetro versionado (`CLAUDE.md §29`). A
 Fase 4A criou as bases, a 4B aplicou a primeira alíquota, a 4C acrescentou o depósito do
@@ -450,6 +487,7 @@ Todos usam a senha de `PRISMARH_SEED_SENHA`.
 | `GET /api/contratos/{id}/ferias/periodos` | todos os 5 | Períodos aquisitivos, com saldo e concessões |
 | `POST /api/contratos/{id}/ferias/concessoes` | Adm. Empresa, Analista | Programa férias de um período |
 | `DELETE /api/contratos/{id}/ferias/concessoes/{idC}` | Adm. Empresa, Analista | Cancela uma programação que não começou |
+| `POST /api/folhas` (campo `tipo`) | Adm. Empresa, Analista | Abre folha **Mensal** ou **Ferias** |
 | `GET /api/folhas` | todos os 5 | Lista, com filtro por empresa e competência |
 | `GET /api/folhas/{id}` | todos os 5 | Folha com os holerites |
 | `GET /api/folhas/{id}/funcionarios/{idHolerite}` | todos os 5 | Holerite, memória de cálculo e bases |

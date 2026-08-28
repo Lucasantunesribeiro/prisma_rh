@@ -1,4 +1,5 @@
-﻿using PrismaRH.Dominio.Parametros;
+﻿using PrismaRH.Dominio.Ferias;
+using PrismaRH.Dominio.Parametros;
 
 namespace PrismaRH.Dominio.Folha;
 
@@ -98,6 +99,72 @@ public sealed class FolhaFuncionario
     /// recalculo - se nao sobrevivessem, o analista perderia tudo que digitou
     /// a cada clique em "calcular", e a folha viraria um trabalho de Sisifo.
     /// </summary>
+    /// <summary>
+    /// Aplica o calculo de FERIAS: as parcelas apuradas viram lancamentos.
+    ///
+    /// Diferente de AplicarCalculo, que parte dos avos do mes. Aqui nao ha
+    /// avos: o que define o valor sao os dias concedidos e o salario da data
+    /// da concessao (CLT art. 142).
+    ///
+    /// Os encargos rodam igual: INSS, FGTS e IRRF incidem sobre as bases que
+    /// as rubricas de ferias compuserem - e quem declara isso e o catalogo,
+    /// nao este metodo.
+    /// </summary>
+    internal void AplicarCalculoFerias(
+        IReadOnlyList<(ApuracaoFerias Apuracao, IReadOnlyDictionary<EstrategiaRubrica, Rubrica> Rubricas)> concessoes,
+        ParametrosEncargos encargos,
+        int quantidadeDependentesIrrf)
+    {
+        ArgumentNullException.ThrowIfNull(concessoes);
+        ArgumentNullException.ThrowIfNull(encargos);
+
+        if (quantidadeDependentesIrrf < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(quantidadeDependentesIrrf), quantidadeDependentesIrrf,
+                "Quantidade de dependentes nao pode ser negativa.");
+        }
+
+        QuantidadeDependentesIrrf = quantidadeDependentesIrrf;
+
+        _lancamentos.RemoveAll(l => l.Origem == OrigemLancamento.Calculado);
+
+        // Nao ha avos numa folha de ferias. O salario de referencia e o da
+        // primeira concessao - e o numero que a memoria exibe.
+        Avos = 0;
+        Divisor = CalculadoraFerias.Divisor;
+        SalarioReferencia = concessoes.Count > 0 ? concessoes[0].Apuracao.SalarioReferencia : 0m;
+        IdVigenciaReferencia = null;
+
+        var ordem = 1;
+
+        foreach (var (apuracao, rubricas) in concessoes)
+        {
+            foreach (var parcela in apuracao.Parcelas)
+            {
+                if (!rubricas.TryGetValue(parcela.Estrategia, out var rubrica))
+                {
+                    // Rubrica nao cadastrada: a parcela nao entra, e o holerite
+                    // fica visivelmente incompleto. Melhor do que inventar uma
+                    // rubrica com incidencia arbitrada.
+                    continue;
+                }
+
+                var lancamento = new LancamentoFolha(
+                    IdOrganizacao, Id, rubrica, OrigemLancamento.Calculado,
+                    parcela.Valor, parcela.Referencia, ordem++);
+
+                lancamento.RegistrarMemoria(parcela.Passos);
+
+                _lancamentos.Add(lancamento);
+            }
+        }
+
+        Reordenar();
+        RecalcularTotais();
+        ApurarEncargos(encargos);
+    }
+
     internal void AplicarCalculo(
         ApuracaoSalarioBase apuracao,
         Rubrica rubricaSalario,

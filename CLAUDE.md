@@ -1403,6 +1403,29 @@ A correção mexe no tratamento de erro de **todas** as rotas, e por isso não f
 dentro da subfase que a encontrou. **Resolver na Fase 10**, junto com os demais itens de
 robustez da API, mapeando `BadHttpRequestException` para 400.
 
+### 5. IRRF apurado por folha, sem somar rendimentos do mesmo mês
+
+Registrada em **28/08/2026**, durante a Fase 4E.
+
+A Fase 4E trouxe a **folha de férias**, e com ela a primeira situação em que a mesma
+pessoa recebe por **duas folhas na mesma competência**. O IRRF de cada uma é apurado sobre
+ela mesma.
+
+Como a tabela é **progressiva**, dois rendimentos separados caem em faixas mais baixas do
+que a soma cairia: o imposto retido fica **menor do que o devido**. Um salário de R$ 4.000
+mais R$ 4.000 de férias não é tributado como R$ 8.000.
+
+**Não é falha de segurança nem de isolamento — é correção fiscal**, e o efeito é a favor
+do contribuinte na retenção e contra ele no ajuste anual.
+
+Resolver exige decidir em qual folha o imposto é retido, o que fazer quando a mensal é
+calculada **depois** da de férias, e como reprocessar. É a mesma classe de problema que a
+**Fase 4F** trará no 13º — que tem tributação exclusiva e regra própria — e a decisão vale
+a pena ser tomada uma vez, para os dois.
+
+**Bloqueante antes de qualquer uso real.** Registrada também no `README.md` e no bloco da
+Fase 4E do `ROADMAP.md`.
+
 ## 24.20 Headers, CORS e navegador
 
 **Headers** a planejar e validar contra o frontend real na Fase 10:

@@ -55,4 +55,32 @@ public enum EstrategiaRubrica
     /// TabelaIrrf, que exige fonte oficial registrada.
     /// </summary>
     IrrfMensal = 5,
+
+    /// <summary>
+    /// O sistema calcula: remuneracao dos dias de ferias gozados, pelo salario
+    /// vigente na data da concessao (CLT art. 142). So aparece em folha do
+    /// tipo Ferias.
+    /// </summary>
+    FeriasGozadas = 6,
+
+    /// <summary>
+    /// O sistema calcula: um terco sobre a remuneracao das ferias gozadas
+    /// (CF art. 7o, XVII).
+    /// </summary>
+    TercoFerias = 7,
+
+    /// <summary>
+    /// O sistema calcula: os dias que o empregado converteu em dinheiro
+    /// (CLT art. 143). NAO sao gozados.
+    /// </summary>
+    AbonoPecuniario = 8,
+
+    /// <summary>
+    /// O sistema calcula: um terco sobre o abono pecuniario.
+    ///
+    /// E rubrica SEPARADA do terco sobre ferias gozadas, e nao um detalhe: as
+    /// incidencias das duas sao diferentes. Uma so rubrica de terco obrigaria
+    /// a escolher uma das duas tabelas de incidencia e errar a outra.
+    /// </summary>
+    TercoAbono = 9,
 }

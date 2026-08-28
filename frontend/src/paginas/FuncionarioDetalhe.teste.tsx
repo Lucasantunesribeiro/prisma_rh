@@ -305,11 +305,13 @@ describe('FuncionarioDetalhe', () => {
 
     renderizar('AdministradorEmpresa')
 
-    expect(await screen.findByText('Férias')).toBeInTheDocument()
+    // Esperar pelo CABEÇALHO não basta: ele renderiza antes do fetch. É
+    // preciso esperar por algo que só existe DEPOIS da resposta, senão o
+    // teste passa ou falha conforme a velocidade da máquina.
+    expect(await screen.findByText(/passou do prazo de concessão/)).toBeInTheDocument()
 
     // O aviso da dobra é o ponto da tela: é dinheiro a mais que a empresa
     // vai pagar por não ter concedido no prazo.
-    expect(screen.getByText(/passou do prazo de concessão/)).toBeInTheDocument()
     expect(screen.getByText(/em dobro/)).toBeInTheDocument()
     expect(screen.getByText('70 dias')).toBeInTheDocument()
 
@@ -328,7 +330,7 @@ describe('FuncionarioDetalhe', () => {
 
     renderizar('Visualizador')
 
-    expect(await screen.findByText('Férias')).toBeInTheDocument()
+    expect(await screen.findByText(/passou do prazo de concessão/)).toBeInTheDocument()
 
     // Esconder botão não é segurança - o backend recusa de qualquer jeito.
     // A tela só evita propor uma ação que daria 403.
@@ -350,7 +352,9 @@ describe('FuncionarioDetalhe', () => {
 
     renderizar('AdministradorEmpresa')
 
-    expect(await screen.findByText('Férias')).toBeInTheDocument()
+    // Aqui o alerta NAO deve aparecer, entao a espera precisa ser por outra
+    // coisa que so surge depois da resposta: o saldo do periodo.
+    expect(await screen.findByText(/70 dias/)).toBeInTheDocument()
     expect(screen.queryByText(/passou do prazo de concessão/)).not.toBeInTheDocument()
   })
 })

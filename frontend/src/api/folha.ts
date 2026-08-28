@@ -10,6 +10,10 @@ export type EstrategiaRubrica =
   | 'InssProgressivo'
   | 'FgtsMensal'
   | 'IrrfMensal'
+  | 'FeriasGozadas'
+  | 'TercoFerias'
+  | 'AbonoPecuniario'
+  | 'TercoAbono'
 
 /**
  * De onde sai o valor da rubrica, para a coluna da listagem.
@@ -23,6 +27,10 @@ export const ORIGEM_DO_VALOR: Record<EstrategiaRubrica, string> = {
   InssProgressivo: 'calculado pelo sistema',
   FgtsMensal: 'calculado pelo sistema',
   IrrfMensal: 'calculado pelo sistema',
+  FeriasGozadas: 'calculado na folha de férias',
+  TercoFerias: 'calculado na folha de férias',
+  AbonoPecuniario: 'calculado na folha de férias',
+  TercoAbono: 'calculado na folha de férias',
   ValorInformado: 'digitado no lançamento',
 }
 export type BaseCalculo = 'Inss' | 'Fgts' | 'Irrf'
@@ -88,6 +96,13 @@ export const inativarRubrica = (id: string): Promise<void> => remover(`/api/rubr
 // ---------------------------------------------------------------- folhas
 
 export type SituacaoFolha = 'Rascunho' | 'Calculada' | 'Fechada'
+
+export type TipoFolha = 'Mensal' | 'Ferias'
+
+export const ROTULO_TIPO_FOLHA: Record<TipoFolha, string> = {
+  Mensal: 'Mensal',
+  Ferias: 'Férias',
+}
 export type OrigemLancamento = 'Calculado' | 'Manual'
 
 export const ROTULO_SITUACAO_FOLHA: Record<SituacaoFolha, string> = {
@@ -101,6 +116,7 @@ export interface FolhaResumo {
   idEmpresa: string
   empresa: string
   competencia: string
+  tipo: TipoFolha
   situacao: SituacaoFolha
   versaoCalculo: number
   quantidadeFuncionarios: number
@@ -178,8 +194,11 @@ export function listarFolhas(filtro: { idEmpresa?: string; competencia?: string 
 
 export const obterFolha = (id: string): Promise<FolhaDetalhe> => obter(`/api/folhas/${id}`)
 
-export const abrirFolha = (idEmpresa: string, competencia: string): Promise<FolhaResumo> =>
-  enviar('/api/folhas', { idEmpresa, competencia })
+export const abrirFolha = (
+  idEmpresa: string,
+  competencia: string,
+  tipo: TipoFolha = 'Mensal',
+): Promise<FolhaResumo> => enviar('/api/folhas', { idEmpresa, competencia, tipo })
 
 export const calcularFolha = (id: string): Promise<FolhaDetalhe> =>
   enviar(`/api/folhas/${id}/calcular`, {})

@@ -9,7 +9,10 @@ using PrismaRH.Infraestrutura.Persistencia;
 
 namespace PrismaRH.Api.Endpoints;
 
-public sealed record AbrirFolhaRequisicao(Guid IdEmpresa, string Competencia);
+public sealed record AbrirFolhaRequisicao(
+    Guid IdEmpresa,
+    string Competencia,
+    TipoFolha Tipo = TipoFolha.Mensal);
 
 public sealed record LancamentoManualRequisicao(Guid IdRubrica, decimal Valor, string? Referencia);
 
@@ -18,6 +21,7 @@ public sealed record FolhaResumoResposta(
     Guid IdEmpresa,
     string Empresa,
     string Competencia,
+    TipoFolha Tipo,
     SituacaoFolha Situacao,
     int VersaoCalculo,
     int QuantidadeFuncionarios,
@@ -154,6 +158,7 @@ public static class FolhasEndpoints
                 x.Folha.IdEmpresa,
                 x.RazaoSocial,
                 x.Folha.Competencia.ToString(),
+                x.Folha.Tipo,
                 x.Folha.Situacao,
                 x.Folha.VersaoCalculo,
                 x.Folha.Funcionarios.Count,
@@ -265,16 +270,30 @@ public static class FolhasEndpoints
             return Results.NotFound(new { detalhe = "Empresa nao encontrada." });
         }
 
-        if (await db.Folhas.AnyAsync(
-                f => f.IdEmpresa == requisicao.IdEmpresa && f.Competencia == competencia, ct))
+        if (!Enum.IsDefined(requisicao.Tipo))
         {
-            return Results.Conflict(new
+            return Results.ValidationProblem(new Dictionary<string, string[]>
             {
-                detalhe = $"A folha de {competencia} desta empresa ja foi aberta."
+                ["tipo"] = ["Tipo de folha desconhecido."]
             });
         }
 
-        var folha = new FolhaPagamento(usuario.IdOrganizacao, requisicao.IdEmpresa, competencia, relogio.Agora);
+        // A checagem inclui o TIPO: a mesma empresa pode ter, em agosto, a
+        // folha mensal E a de ferias. O indice unico no banco garante o mesmo,
+        // mas a mensagem daqui explica.
+        if (await db.Folhas.AnyAsync(
+                f => f.IdEmpresa == requisicao.IdEmpresa
+                     && f.Competencia == competencia
+                     && f.Tipo == requisicao.Tipo, ct))
+        {
+            return Results.Conflict(new
+            {
+                detalhe = $"A folha {requisicao.Tipo} de {competencia} desta empresa ja foi aberta."
+            });
+        }
+
+        var folha = new FolhaPagamento(
+            usuario.IdOrganizacao, requisicao.IdEmpresa, competencia, relogio.Agora, requisicao.Tipo);
 
         db.Folhas.Add(folha);
         await db.SaveChangesAsync(ct);
@@ -290,6 +309,11 @@ public static class FolhasEndpoints
         if (folha is null)
         {
             return Results.NotFound();
+        }
+
+        if (folha.Tipo == TipoFolha.Ferias)
+        {
+            return await CalcularFeriasAsync(folha, db, relogio, ct);
         }
 
         var rubricaSalario = await db.Rubricas.FirstOrDefaultAsync(
@@ -457,6 +481,72 @@ public static class FolhasEndpoints
     /// continua valido para quem nao configurou encargo.
     /// </summary>
     /// <summary>
+    /// Calcula a folha de FERIAS: paga as concessoes que comecam na
+    /// competencia.
+    ///
+    /// Exige as QUATRO rubricas de ferias cadastradas. Faltando alguma, a
+    /// folha sairia incompleta em silencio - e o funcionario receberia menos
+    /// do que deveria sem nada parecer errado.
+    /// </summary>
+    private static async Task<IResult> CalcularFeriasAsync(
+        FolhaPagamento folha, PrismaRhDbContext db, IRelogio relogio, CancellationToken ct)
+    {
+        var rubricas = await db.Rubricas
+            .Where(r => r.Ativa && Rubrica.EstrategiasDeFerias.Contains(r.Estrategia))
+            .ToDictionaryAsync(r => r.Estrategia, ct);
+
+        var faltando = Rubrica.EstrategiasDeFerias
+            .Where(e => !rubricas.ContainsKey(e))
+            .ToList();
+
+        if (faltando.Count > 0)
+        {
+            return Results.Conflict(new
+            {
+                detalhe = "Faltam rubricas de ferias ativas: " + string.Join(", ", faltando)
+                    + ". Cadastre-as antes de calcular."
+            });
+        }
+
+        var contratos = await db.ContratosTrabalho
+            .Include(c => c.Vigencias)
+            .Where(c => c.IdEmpresa == folha.IdEmpresa)
+            .ToListAsync(ct);
+
+        var idsContratos = contratos.Select(c => c.Id).ToList();
+
+        // So as concessoes que COMECAM na competencia. O filtro por data vai
+        // ao banco, e nao para a memoria: uma empresa grande tem muito mais
+        // concessao acumulada do que ferias no mes.
+        var primeiro = folha.Competencia.PrimeiroDia;
+        var ultimo = folha.Competencia.UltimoDia;
+
+        var concessoes = await db.ConcessoesFerias
+            .AsNoTracking()
+            .Where(c => idsContratos.Contains(c.IdContrato)
+                        && c.Inicio >= primeiro && c.Inicio <= ultimo)
+            .ToListAsync(ct);
+
+        try
+        {
+            folha.CalcularFerias(
+                contratos, concessoes, rubricas,
+                await EncargosAsync(db, folha.Competencia, ct),
+                await DependentesPorFuncionarioAsync(db, folha.Competencia, ct),
+                relogio.Agora);
+        }
+        catch (InvalidOperationException erro)
+        {
+            return RespostasValidacao.De(erro);
+        }
+
+        await db.SaveChangesAsync(ct);
+
+        return Results.Ok(new FolhaDetalheResposta(
+            (await ResumoAsync(db, folha.Id, ct))!, await HoleritesAsync(db, folha.Id, ct)));
+    }
+
+    /// <summary>
     /// Todos os parametros legais da competencia, de uma vez.
     ///
     /// Os tres nao sao independentes na hora de usar: o IRRF deduz o INSS. Ler
@@ -589,6 +679,7 @@ public static class FolhasEndpoints
                 x.Folha.IdEmpresa,
                 x.RazaoSocial,
                 x.Folha.Competencia.ToString(),
+                x.Folha.Tipo,
                 x.Folha.Situacao,
                 x.Folha.VersaoCalculo,
                 x.Folha.Funcionarios.Count,

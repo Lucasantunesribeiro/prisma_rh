@@ -1112,6 +1112,31 @@ Implementar INSS de acordo com regras oficiais vigentes.
 
 ---
 
+### Security Gate — Fase 4E, etapa 2b (pagamento)
+
+| # | Ponto | Resposta |
+|---|---|---|
+| 1 | Ameaças introduzidas | Coluna nova no **índice único** de folhas — se ela falhasse, duas folhas do mesmo tipo e competência conviveriam com totais divergentes. Rubrica de férias com incidência errada muda o INSS e o IRRF de todo holerite de férias. Rubrica de férias cadastrada como desconto inverteria o sinal do holerite. Cálculo de férias disparado sobre folha mensal e vice-versa. |
+| 2 | Controles | Índice único passou a incluir `tipo`, e a checagem na API também. `Tipo` validado com `Enum.IsDefined` no construtor **e** no endpoint. `Calcular` e `CalcularFerias` recusam folha do tipo errado. Invariante `Provento` nas quatro rubricas. As quatro rubricas exigidas antes de calcular (**409** listando as que faltam). Nenhuma incidência no código do cálculo: elas são atributo da rubrica, configurável e auditável. |
+| 3 | Testes de segurança | Folha do mesmo tipo e competência: **409**. Tipo desconhecido: recusado. Rubrica de férias como desconto: **400**. Sem as quatro rubricas: **409** com a lista. Folha de férias de outra organização: **404**. |
+| 4 | Impacto multiempresa | Nenhuma tabela nova. `folhas_pagamento`, `rubricas` e `concessoes_ferias` já têm filtro global, e o cálculo lê tudo por elas. As **rubricas de férias são da organização** — por isso os testes usam a organização **F**, exclusiva: ligá-las na A mudaria as folhas mensais dos testes das Fases 3 e 4. |
+| 5 | Exposição de dados | Valores de férias herdam a classificação do holerite — classe **altamente sensível** (`CLAUDE.md §24.13`). A memória de cálculo cita salário e dias, que é o que o analista precisa conferir. Nenhum dado novo é exposto além do que a folha mensal já expõe. |
+| 6 | Permissões | Abrir e calcular folha de férias usam `ProcessarFolha`, a mesma da mensal. Rubricas seguem `AdministrarEmpresas`. Nenhuma política nova. |
+| 7 | Logging e auditoria | Calcular e fechar folha de férias entram na mesma lista de eventos sensíveis da mensal: **candidatos à trilha formal da Fase 7**. Alterar a incidência de uma rubrica de férias muda o imposto dos cálculos seguintes e é o item mais crítico dos três. |
+| 8 | Dependências | Nenhuma nova. |
+| 9 | Secrets | Não se aplica. |
+| 10 | Superfície pública | Nenhuma rota nova: o tipo entrou nas rotas de folha que já existiam. |
+| 11 | Risco de custo/abuso | As concessões da competência são filtradas **no banco**, por intervalo de data — uma empresa grande tem muito mais concessão acumulada do que férias no mês. Quem não sai de férias não entra na folha, então uma folha de férias é sempre menor que a mensal. |
+
+#### Pendência de segurança registrada
+
+O **IRRF apurado sobre a folha de férias isolada** subestima o imposto quando a mensal do
+mesmo mês existe (ver a limitação na etapa 2b). Não é falha de segurança nem de
+isolamento: é **correção fiscal**. Registrada aqui e no `README.md`, a resolver junto com
+o 13º da Fase 4F, que traz a mesma classe de problema.
+
+---
+
 ## FASE 4C — FGTS
 
 > **Status: concluída em 27/08/2026.**
@@ -1462,9 +1487,7 @@ declaração é do contribuinte.
 
 ## FASE 4E — FÉRIAS
 
-> **Status: etapas 1 e 2a concluídas em 28/08/2026 — direito e concessão.**
-> **Etapa 2b — o pagamento — BLOQUEADA aguardando decisão sobre a incidência do
-> terço constitucional.**
+> **Status: CONCLUÍDA em 28/08/2026 — direito, concessão e pagamento.**
 
 ### Objetivo
 
@@ -1646,41 +1669,110 @@ de comunicação.
 
 ---
 
-### Etapa 2b — Pagamento (bloqueada)
+### Etapa 2b — Pagamento (concluída)
 
-O que falta trazer:
+#### Fontes
 
-1. **`TipoFolha` em `FolhaPagamento`** — hoje toda folha é mensal, e o índice único
-   `ux_folhas_empresa_competencia` já tem comentário antecipando esta coluna;
-2. **remuneração de férias** e o **1/3 constitucional** (CF art. 7º, XVII);
-3. **abono pecuniário** e o terço sobre ele;
-4. **dobra** do art. 137, que a etapa 1 já sabe identificar;
-5. **incidências**.
+| Regra | Norma |
+|---|---|
+| Remuneração devida na **data da concessão** | **CLT art. 142** |
+| **Um terço** a mais que o salário normal | **CF art. 7º, XVII** |
+| **Abono pecuniário** — venda de até 1/3 | **CLT art. 143** |
+| **Incidências** das quatro verbas | **Manual do eSocial**, tabela de rubricas e bases de cálculo (informado pelo responsável em 28/08/2026) |
 
-#### ⚠️ A decisão que bloqueia — incidência do terço constitucional
+#### A decisão que estava bloqueada, resolvida
 
-Três das quatro incidências têm resposta clara em lei:
+A dúvida registrada na etapa 2a era se o terço constitucional integra o
+salário-de-contribuição do **segurado** — o STF (Tema 985) decidiu sobre a contribuição
+**patronal**, e concluir por analogia seria interpretação jurídica.
 
-| Verba | Integra salário-de-contribuição? | Fonte |
-|---|---|---|
-| **Férias gozadas** | **Sim** | Lei 8.212/91 art. 28 §9º "d" exclui apenas as *indenizadas* |
-| **Férias indenizadas** e seu adicional | **Não** | Lei 8.212/91 art. 28 §9º "d" |
-| **Abono pecuniário** | **Não** | Lei 8.212/91 art. 28 §9º "e", item 6 |
-| **Terço constitucional de férias gozadas** | **⚠️ a decidir** | ver abaixo |
+O responsável forneceu a fonte que responde: o **Manual do eSocial**. A tabela das quatro
+verbas ficou assim:
 
-O **STF, Tema 985 (RE 1.072.485)**, fixou que *"é legítima a incidência de contribuição
-social sobre o valor satisfeito a título de terço constitucional de férias"*, com efeitos
-**ex nunc** a partir de 15/09/2020 e modulação depois discutida em embargos.
+| Verba | Rubrica | INSS | IRRF | FGTS |
+|---|---|:--:|:--:|:--:|
+| Férias gozadas | `FER` | Sim | Sim | Sim |
+| **Terço sobre férias gozadas** (eSocial 1920) | `FER13` | **Sim** | Sim | **Sim** |
+| Abono pecuniário | `ABONO` | Não | Sim | Não |
+| **Terço sobre o abono** (eSocial 1940) | `ABN13` | **Não** | Sim | **Não** |
 
-**Essa decisão trata da contribuição PATRONAL.** O Prisma RH desconta a contribuição do
-**segurado** no holerite, e o Tema 985 não responde diretamente por ela. Concluir por
-analogia seria interpretação jurídica, não implementação — e o `CLAUDE.md §29` proíbe
-regra crítica sem fonte oficial.
+**As duas linhas de terço são diferentes**, e é essa diferença que justifica a decisão de
+arquitetura abaixo.
 
-**Decisão do responsável necessária antes de escrever a rubrica do terço.** A boa notícia
-é que a arquitetura já isola isso: incidência é atributo da **rubrica** (Fase 4A),
-configurável por organização. O que falta é o padrão da semeadura, e um padrão é uma
-afirmação.
+#### Decisões registradas
+
+##### 1. **Quatro** rubricas, não duas — e a razão é a incidência
+
+Seria natural ter uma rubrica de "1/3 de férias" e uma de "abono". Não dá: o terço sobre
+férias gozadas integra as três bases, e o terço sobre o abono só integra IRRF. Com uma
+rubrica de terço só, seria preciso escolher **uma das duas tabelas e errar a outra** em
+todo holerite com abono — e o erro seria a favor do fisco num caso e contra no outro, sem
+nada parecer errado no holerite.
+
+Há teste travando que os dois conjuntos são diferentes, exatamente para que um
+copiar-colar entre as rubricas quebre a compilação do teste em vez de mudar o imposto de
+todo mundo em silêncio.
+
+##### 2. `TipoFolha` na folha, e a coluna entrou no **índice único**
+
+`ux_folhas_empresa_competencia` virou `ux_folhas_empresa_competencia_tipo`. Sem isso, a
+folha de férias de agosto seria recusada porque já existe a mensal de agosto — e a
+mensagem falaria de duplicidade onde não há.
+
+A migration faz `AddColumn` com `defaultValue: 1`, o que marca **todas as folhas
+anteriores como mensais**, e o `Down` reverte para o índice antigo. O comentário que
+antecipava essa coluna estava no código desde a Fase 3.
+
+##### 3. O critério é a **data de início do gozo**, não o período aquisitivo
+
+Uma concessão que começa em 02/01 é paga na folha de férias de janeiro, mesmo que o
+período aquisitivo seja de dois anos atrás. É quando a pessoa sai de férias que o
+pagamento é devido — o art. 145 manda pagar **antes** do início.
+
+##### 4. O salário é o da **data da concessão** (art. 142)
+
+`contrato.VigenciaEm(concessao.Inicio)`, e não a vigência da competência da folha. Quem
+recebeu aumento entre o período aquisitivo e o gozo goza com o salário **novo**. Há teste
+de integração registrando um aumento e conferindo que o valor pago acompanhou.
+
+##### 5. O terço incide sobre o valor **arredondado**
+
+`2.000,00 / 3`, e não sobre o valor exato antes do arredondamento. É o número que aparece
+no holerite, e a pessoa precisa conseguir refazer a conta à mão — calcular sobre um valor
+que ninguém vê tornaria a memória impossível de conferir.
+
+##### 6. Divisor **30**, sempre
+
+Mês comercial, como o salário proporcional da Fase 3. Usar 31 em março e 28 em fevereiro
+faria o mesmo funcionário receber valores diferentes pelos mesmos 30 dias de descanso.
+
+##### 7. Faltando rubrica, o cálculo **recusa** em vez de pagar menos
+
+As quatro precisam estar ativas. Faltando alguma, a folha sairia incompleta em silêncio e
+o funcionário receberia menos sem nada parecer errado. Devolve **409** listando quais
+faltam.
+
+#### ⚠️ Limitação importante — IRRF apurado sobre a folha de férias isolada
+
+O IRRF da folha de férias é calculado **sobre ela mesma**, sem somar a folha mensal do
+mesmo mês. Quando as duas coexistem, isso **subestima o imposto**: a tabela é progressiva,
+e dois rendimentos separados caem em faixas mais baixas do que a soma cairia.
+
+Não é descuido: somar as duas exige decidir em qual folha o imposto é retido, o que fazer
+quando a mensal é calculada depois, e como reprocessar. É a mesma classe de problema que
+a Fase 4F trará no 13º (que tem tributação exclusiva) — e a decisão vale a pena ser
+tomada uma vez, para os dois.
+
+**Registrada aqui e no `README.md`. Resolver antes de qualquer uso real.**
+
+#### Outras limitações declaradas — 28/08/2026
+
+**Dobra do art. 137 não é calculada.** A etapa 1 já **identifica** o período vencido e a
+tela avisa em destaque, mas o pagamento em dobro não é aplicado: falta decidir se o terço
+também dobra, e isso é questão jurídica sem fonte oficial no projeto.
+
+**Férias coletivas** (art. 139) e **art. 134, §2º** (proibição de iniciar nos dois dias
+antes de feriado) continuam fora, pelos motivos da etapa 2a.
 
 ---
 

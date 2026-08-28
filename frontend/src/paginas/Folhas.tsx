@@ -8,8 +8,10 @@ import {
   normalizarCompetencia,
   podeProcessarFolha,
   ROTULO_SITUACAO_FOLHA,
+  ROTULO_TIPO_FOLHA,
   type FolhaResumo,
   type SituacaoFolha,
+  type TipoFolha,
 } from '@/api/folha'
 import { useSessao } from '@/auth/useSessao'
 import { DataTable, type Coluna } from '@/components/sistema/DataTable'
@@ -129,6 +131,17 @@ export default function Folhas() {
       largura: '130px',
       celula: (f) => <StatusBadge tom={TOM[f.situacao]}>{ROTULO_SITUACAO_FOLHA[f.situacao]}</StatusBadge>,
     },
+    {
+      cabecalho: 'Tipo',
+      largura: '110px',
+      celula: (f) => (
+        // Sem badge de propósito: o tipo não é um estado que muda, é o que a
+        // folha É. Dois badges lado a lado competiriam por atenção.
+        <span className={f.tipo === 'Ferias' ? 'font-medium' : 'text-muted-foreground'}>
+          {ROTULO_TIPO_FOLHA[f.tipo]}
+        </span>
+      ),
+    },
   ]
 
   return (
@@ -222,6 +235,7 @@ function AbrirFolha({
   const [competencia, definirCompetencia] = useState('')
   const [erro, definirErro] = useState<string | null>(null)
   const [enviando, definirEnviando] = useState(false)
+  const [tipo, definirTipo] = useState<TipoFolha>('Mensal')
 
   const aoEnviar = async (evento: FormEvent) => {
     evento.preventDefault()
@@ -237,7 +251,7 @@ function AbrirFolha({
     definirEnviando(true)
 
     try {
-      await abrirFolha(idEmpresa, normalizada)
+      await abrirFolha(idEmpresa, normalizada, tipo)
       definirCompetencia('')
       definirAberto(false)
       await aoAbrir()
@@ -259,7 +273,7 @@ function AbrirFolha({
 
       <DrawerContent
         titulo="Abrir folha"
-        descricao="Uma folha por empresa e competência. Entra quem teve vínculo em qualquer dia do mês."
+        descricao="Uma folha por empresa, competência e tipo. A mensal e a de férias do mesmo mês convivem."
         className="max-w-md"
       >
         <form onSubmit={aoEnviar} className="space-y-4" noValidate>
@@ -290,6 +304,27 @@ function AbrirFolha({
               className="tabular"
             />
             <p className="text-xs text-muted-foreground">Mês e ano: 08/2026.</p>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="tipoFolha">Tipo</Label>
+            <select
+              id="tipoFolha"
+              value={tipo}
+              onChange={(e) => definirTipo(e.target.value as TipoFolha)}
+              className="h-9 w-full rounded-md border border-input bg-card px-3 text-[13px] shadow-xs"
+            >
+              {(Object.keys(ROTULO_TIPO_FOLHA) as TipoFolha[]).map((x) => (
+                <option key={x} value={x}>
+                  {ROTULO_TIPO_FOLHA[x]}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-muted-foreground">
+              {tipo === 'Mensal'
+                ? 'Salário do mês, lançamentos e encargos. Entra quem teve vínculo em qualquer dia.'
+                : 'Paga as férias que começam nesta competência. Só entra quem sai de férias.'}
+            </p>
           </div>
 
           {erro && (

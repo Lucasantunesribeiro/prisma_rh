@@ -327,6 +327,51 @@ public static class SemeadorDesenvolvimento
     }
 
     /// <summary>
+    /// As quatro rubricas de ferias, com as incidencias de cada uma.
+    ///
+    /// FONTE (CLAUDE.md secao 29): Manual do eSocial, tabela de rubricas e
+    /// bases de calculo. As quatro linhas sao DIFERENTES entre si, e essa e a
+    /// razao de existirem quatro rubricas e nao duas:
+    ///
+    ///   ferias gozadas ....... INSS sim | IRRF sim | FGTS sim
+    ///   terco s/ ferias ...... INSS sim | IRRF sim | FGTS sim   (eSocial 1920)
+    ///   abono pecuniario ..... INSS nao | IRRF sim | FGTS nao
+    ///   terco s/ abono ....... INSS nao | IRRF sim | FGTS nao   (eSocial 1940)
+    ///
+    /// As ferias GOZADAS integram o salario-de-contribuicao porque a Lei
+    /// 8.212/91, art. 28, par. 9o, "d" exclui apenas as INDENIZADAS. O abono
+    /// pecuniario esta expressamente excluido no item 6 da alinea "e" do mesmo
+    /// paragrafo.
+    ///
+    /// ATENCAO ao copiar-colar entre elas: trocar a incidencia do terco sobre
+    /// abono pela do terco sobre ferias gozadas faria o INSS incidir sobre uma
+    /// verba que a lei exclui, em todo holerite com abono.
+    /// </summary>
+    private static Rubrica[] RubricasDeFerias(Guid idOrganizacao, DateTimeOffset agora)
+    {
+        const BaseCalculo integraTudo = BaseCalculo.Inss | BaseCalculo.Fgts | BaseCalculo.Irrf;
+
+        return
+        [
+            new Rubrica(
+                idOrganizacao, "FER", "Ferias",
+                TipoRubrica.Provento, EstrategiaRubrica.FeriasGozadas, integraTudo, agora),
+
+            new Rubrica(
+                idOrganizacao, "FER13", "1/3 constitucional de ferias",
+                TipoRubrica.Provento, EstrategiaRubrica.TercoFerias, integraTudo, agora),
+
+            new Rubrica(
+                idOrganizacao, "ABONO", "Abono pecuniario de ferias",
+                TipoRubrica.Provento, EstrategiaRubrica.AbonoPecuniario, BaseCalculo.Irrf, agora),
+
+            new Rubrica(
+                idOrganizacao, "ABN13", "1/3 sobre o abono pecuniario",
+                TipoRubrica.Provento, EstrategiaRubrica.TercoAbono, BaseCalculo.Irrf, agora),
+        ];
+    }
+
+    /// <summary>
     /// Acrescenta ao catalogo existente as rubricas calculadas que uma fase
     /// posterior introduziu.
     ///
@@ -379,6 +424,21 @@ public static class SemeadorDesenvolvimento
                 TipoRubrica.Desconto, EstrategiaRubrica.IrrfMensal, BaseCalculo.Nenhuma, agora));
 
             acrescentadas.Add("IRRF");
+        }
+
+        // Fase 4E: as quatro de ferias, cada uma com a sua incidencia.
+        foreach (var rubrica in RubricasDeFerias(prisma.Id, agora))
+        {
+            var estrategia = rubrica.Estrategia;
+
+            if (await contexto.Rubricas.IgnoreQueryFilters().AnyAsync(
+                    r => r.IdOrganizacao == prisma.Id && r.Ativa && r.Estrategia == estrategia, ct))
+            {
+                continue;
+            }
+
+            contexto.Rubricas.Add(rubrica);
+            acrescentadas.Add(rubrica.Codigo);
         }
 
         if (acrescentadas.Count > 0)
@@ -447,7 +507,11 @@ public static class SemeadorDesenvolvimento
             prisma.Id, "IRRF", "IRRF sobre a folha",
             TipoRubrica.Desconto, EstrategiaRubrica.IrrfMensal, BaseCalculo.Nenhuma, agora);
 
-        Rubrica[] catalogo = [salario, comissao, valeTransporte, adiantamento, inss, fgts, irrf];
+        Rubrica[] catalogo =
+        [
+            salario, comissao, valeTransporte, adiantamento, inss, fgts, irrf,
+            .. RubricasDeFerias(prisma.Id, agora),
+        ];
 
         contexto.Rubricas.AddRange(catalogo);
         await contexto.SaveChangesAsync(ct);

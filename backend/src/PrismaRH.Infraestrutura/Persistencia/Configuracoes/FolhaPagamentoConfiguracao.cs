@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using PrismaRH.Dominio.Empresas;
@@ -42,14 +42,26 @@ public sealed class FolhaPagamentoConfiguracao : IEntityTypeConfiguration<FolhaP
             .HasForeignKey(f => f.IdEmpresa)
             .OnDelete(DeleteBehavior.Restrict);
 
-        // Uma folha por empresa por competencia. Abrir agosto duas vezes
-        // produziria dois totais divergentes para o mesmo mes, e nada no
-        // sistema diria qual e o verdadeiro.
+        // O default existe para o BACKFILL: as folhas criadas antes da Fase 4E
+        // sao todas mensais, e a migration as marca assim.
         //
-        // Quando a Fase 4 trouxer adiantamento, ferias e 13o, este indice
-        // ganha a coluna do tipo de folha.
-        builder.HasIndex(f => new { f.IdEmpresa, f.Competencia })
-            .HasDatabaseName("ux_folhas_empresa_competencia")
+        // O EF avisa que o default do banco so entra quando a propriedade vale
+        // 0, o CLR default. Aqui isso nunca acontece: TipoFolha nao tem membro
+        // 0 (Mensal = 1) e o construtor recusa valor nao definido. Ou seja, o
+        // default nunca decide nada em INSERT novo - so preencheu o passado.
+        builder.Property(f => f.Tipo)
+            .HasColumnName("tipo").HasConversion<int>().IsRequired()
+            .HasDefaultValue(TipoFolha.Mensal);
+
+        // Uma folha por empresa, por competencia E POR TIPO. Abrir agosto
+        // duas vezes do mesmo tipo produziria dois totais divergentes para o
+        // mesmo mes, e nada no sistema diria qual e o verdadeiro.
+        //
+        // A coluna do tipo entrou na Fase 4E: a mesma empresa pode ter, em
+        // agosto, a folha mensal E a de ferias. Sem ela, a segunda seria
+        // recusada por um indice que nao existia para isso.
+        builder.HasIndex(f => new { f.IdEmpresa, f.Competencia, f.Tipo })
+            .HasDatabaseName("ux_folhas_empresa_competencia_tipo")
             .IsUnique();
 
         builder.HasMany(f => f.Funcionarios)

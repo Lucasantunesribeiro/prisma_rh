@@ -54,6 +54,17 @@ public sealed class Rubrica
                 nameof(tipo));
         }
 
+        if (EstrategiasDeFerias.Contains(estrategia) && tipo != TipoRubrica.Provento)
+        {
+            // As quatro rubricas de ferias sao dinheiro que a pessoa RECEBE:
+            // remuneracao dos dias, terco constitucional, abono e o terco
+            // sobre ele. Como desconto elas inverteriam o sinal do holerite;
+            // como informativo, a pessoa sairia de ferias sem receber.
+            throw new ArgumentException(
+                "As rubricas de ferias precisam ser provento: sao valores pagos ao funcionario.",
+                nameof(tipo));
+        }
+
         if (estrategia == EstrategiaRubrica.FgtsMensal && basesIncidentes != BaseCalculo.Nenhuma)
         {
             // Se o FGTS compusesse a base de FGTS, cada calculo aumentaria a
@@ -134,6 +145,24 @@ public sealed class Rubrica
     public void Inativar() => Ativa = false;
 
     public void Reativar() => Ativa = true;
+
+    /// <summary>
+    /// As quatro estrategias que so existem em folha de ferias.
+    ///
+    /// Elas compartilham invariantes - todas sao provento, nenhuma aceita
+    /// valor digitado - mas NAO compartilham incidencia: cada uma declara a
+    /// sua, porque a lei trata as quatro de forma diferente.
+    /// </summary>
+    /// ARRAY, e nao HashSet: esta lista e usada dentro de consulta LINQ, e o
+    /// EF Core nao traduz Contains de IReadOnlySet - a consulta ia para o
+    /// cliente ou estourava. Com quatro itens, a busca linear nao custa nada.
+    public static readonly EstrategiaRubrica[] EstrategiasDeFerias =
+    [
+        EstrategiaRubrica.FeriasGozadas,
+        EstrategiaRubrica.TercoFerias,
+        EstrategiaRubrica.AbonoPecuniario,
+        EstrategiaRubrica.TercoAbono,
+    ];
 
     private static BaseCalculo ValidarIncidencias(BaseCalculo bases, TipoRubrica tipo, string parametro)
     {
