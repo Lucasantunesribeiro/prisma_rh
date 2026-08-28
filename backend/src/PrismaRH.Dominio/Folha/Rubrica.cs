@@ -44,6 +44,16 @@ public sealed class Rubrica
                 + "nao desconto nem provento.", nameof(tipo));
         }
 
+        if (estrategia == EstrategiaRubrica.IrrfMensal && tipo != TipoRubrica.Desconto)
+        {
+            // IRRF sai do salario do funcionario - e a diferenca exata em
+            // relacao ao FGTS. Como informativo ele nao reduziria o liquido, e
+            // a pessoa receberia dinheiro que a empresa ja recolheu.
+            throw new ArgumentException(
+                "A rubrica de IRRF precisa ser desconto: ela sai do salario do funcionario.",
+                nameof(tipo));
+        }
+
         if (estrategia == EstrategiaRubrica.FgtsMensal && basesIncidentes != BaseCalculo.Nenhuma)
         {
             // Se o FGTS compusesse a base de FGTS, cada calculo aumentaria a

@@ -320,8 +320,8 @@ public static class FolhasEndpoints
         {
             folha.Calcular(
                 contratos, rubricaSalario, catalogo,
-                await ParametrosInssAsync(db, folha.Competencia, ct),
-                await ParametrosFgtsAsync(db, folha.Competencia, ct),
+                await EncargosAsync(db, folha.Competencia, ct),
+                await DependentesPorFuncionarioAsync(db, folha.Competencia, ct),
                 relogio.Agora);
         }
         catch (InvalidOperationException erro)
@@ -388,8 +388,7 @@ public static class FolhasEndpoints
         {
             folha.AdicionarLancamentoManual(
                 idHolerite, rubrica, requisicao.Valor, requisicao.Referencia,
-                await ParametrosInssAsync(db, folha.Competencia, ct),
-                await ParametrosFgtsAsync(db, folha.Competencia, ct));
+                await EncargosAsync(db, folha.Competencia, ct));
         }
         catch (InvalidOperationException erro)
         {
@@ -421,8 +420,7 @@ public static class FolhasEndpoints
         {
             removeu = folha.RemoverLancamento(
                 idHolerite, idLancamento,
-                await ParametrosInssAsync(db, folha.Competencia, ct),
-                await ParametrosFgtsAsync(db, folha.Competencia, ct));
+                await EncargosAsync(db, folha.Competencia, ct));
         }
         catch (InvalidOperationException erro)
         {
@@ -458,6 +456,74 @@ public static class FolhasEndpoints
     /// a folha calcula sem o desconto - e o comportamento da Fase 3, que
     /// continua valido para quem nao configurou encargo.
     /// </summary>
+    /// <summary>
+    /// Todos os parametros legais da competencia, de uma vez.
+    ///
+    /// Os tres nao sao independentes na hora de usar: o IRRF deduz o INSS. Ler
+    /// os tres juntos deixa isso explicito e evita a assinatura de quatro
+    /// parametros nulaveis que o motor tinha comecado a virar.
+    /// </summary>
+    private static async Task<ParametrosEncargos> EncargosAsync(
+        PrismaRhDbContext db, Competencia competencia, CancellationToken ct) =>
+        new(
+            await ParametrosInssAsync(db, competencia, ct),
+            await ParametrosFgtsAsync(db, competencia, ct),
+            await ParametrosIrrfAsync(db, competencia, ct));
+
+    /// <summary>
+    /// Quantos dependentes de cada funcionario abatem IRRF NESTA competencia.
+    ///
+    /// A pergunta e feita ao banco com o periodo declarado em cada dependente,
+    /// e nao carregando todos para filtrar em memoria: uma organizacao com
+    /// muitos funcionarios traria muito dado pessoal de terceiro para dentro
+    /// do processo sem necessidade (CLAUDE.md secao 25).
+    ///
+    /// A comparacao repete DedutivelEm: o periodo TOCA a competencia. Quem
+    /// passa a contar no dia 20 conta o mes inteiro.
+    ///
+    /// Passa pelo filtro global, entao so enxerga a organizacao autenticada.
+    /// </summary>
+    private static async Task<IReadOnlyDictionary<Guid, int>> DependentesPorFuncionarioAsync(
+        PrismaRhDbContext db, Competencia competencia, CancellationToken ct)
+    {
+        var primeiro = competencia.PrimeiroDia;
+        var ultimo = competencia.UltimoDia;
+
+        var contagens = await db.Dependentes
+            .AsNoTracking()
+            .Where(d => d.InicioDeducaoIrrf != null
+                        && d.InicioDeducaoIrrf <= ultimo
+                        && (d.FimDeducaoIrrf == null || d.FimDeducaoIrrf >= primeiro))
+            .GroupBy(d => d.IdFuncionario)
+            .Select(g => new { IdFuncionario = g.Key, Quantidade = g.Count() })
+            .ToListAsync(ct);
+
+        return contagens.ToDictionary(c => c.IdFuncionario, c => c.Quantidade);
+    }
+
+    /// <summary>
+    /// Monta os parametros de IRRF para a competencia da folha.
+    ///
+    /// Null quando a organizacao nao tem rubrica de IRRF ativa ou quando
+    /// nenhuma tabela comecou ate ali. Nos dois casos a folha calcula sem o
+    /// desconto - melhor do que aplicar a tabela mais proxima que encontrar.
+    /// </summary>
+    private static async Task<ParametrosIrrf?> ParametrosIrrfAsync(
+        PrismaRhDbContext db, Competencia competencia, CancellationToken ct)
+    {
+        var rubrica = await db.Rubricas.FirstOrDefaultAsync(
+            r => r.Ativa && r.Estrategia == EstrategiaRubrica.IrrfMensal, ct);
+
+        if (rubrica is null)
+        {
+            return null;
+        }
+
+        var tabelas = await db.TabelasIrrf.AsNoTracking().Include(t => t.Faixas).ToListAsync(ct);
+
+        return ParametrosIrrf.Montar(rubrica, tabelas, competencia);
+    }
+
     private static async Task<ParametrosInss?> ParametrosInssAsync(
         PrismaRhDbContext db, Competencia competencia, CancellationToken ct)
     {

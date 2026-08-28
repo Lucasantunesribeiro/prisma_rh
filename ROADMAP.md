@@ -1058,6 +1058,24 @@ Implementar INSS de acordo com regras oficiais vigentes.
 
 ---
 
+### Security Gate — Fase 4D, etapa 2 (cálculo do IRRF)
+
+| # | Ponto | Resposta |
+|---|---|---|
+| 1 | Ameaças introduzidas | Tabela legal errada ou adulterada muda o **imposto retido de todas as organizações**, e o holerite continua fechando. Duas rubricas de IRRF ativas descontariam duas vezes. Imposto stale após lançamento manual. Coeficiente do redutor digitado como `13,3145` em vez de `0,133145` zeraria o redutor de todo mundo. Contagem de dependentes vazando de uma organização para outra reduziria o imposto de quem não tem direito. |
+| 2 | Controles | Fonte oficial **obrigatória** no construtor. Alíquota e coeficiente em fração, com recusa de percentual. Base e coeficiente do redutor exigidos **juntos**. Faixa isenta não aceita parcela a deduzir (produziria imposto negativo). Limites estritamente crescentes. Índice único por vigência. Teto de 20 faixas por payload. IRRF reapurado ao calcular, ao lançar e ao remover. Rubrica de IRRF recusa valor digitado (**409**). Invariante `Desconto` na rubrica. |
+| 3 | Testes de segurança | Administrador de Empresa recebe **403** ao cadastrar tabela. Tabela sem fonte devolve **400**. Redutor com base sem coeficiente devolve **400**. Rubrica de IRRF como informativa devolve **400**. Rubrica de IRRF de uma organização não aparece para outra; contraprova de que a tabela federal **é lida** por todas. |
+| 4 | Impacto multiempresa | `tabelas_irrf` e `faixas_irrf` são federais: sem `id_organizacao` e fora do filtro global, pela mesma razão de INSS e FGTS. O ponto **novo e crítico** é a contagem de dependentes: `DependentesPorFuncionarioAsync` consulta `db.Dependentes`, que **passa pelo filtro global** — um funcionário de outra organização não aparece no dicionário, e sua ausência vira zero. Organização **E** foi criada na fixture só para estes testes: o IRRF é desconto e ligá-lo na organização A mudaria o **líquido** de todo holerite dela. |
+| 5 | Exposição de dados | Nenhum dado pessoal novo. A tabela é pública por natureza. A **memória de cálculo do IRRF** cita a quantidade de dependentes — número, nunca nome — e o valor do INSS: herda a classificação do holerite, e é exatamente o que o analista precisa para conferir. |
+| 6 | Permissões | Leitura da tabela para os cinco perfis. Escrita **só** para Administrador da Plataforma. Rubrica de IRRF segue a política de rubricas. |
+| 7 | Logging e auditoria | Cadastrar tabela legal segue sendo dos eventos mais sensíveis do produto — **candidato prioritário** à trilha da Fase 7. Some-se a ele: **alterar o período de dedução de um dependente muda o imposto dos cálculos seguintes**. |
+| 8 | Dependências | Nenhuma nova. Nenhuma biblioteca de cálculo fiscal de terceiro: importar tabela legal de pacote não auditado seria terceirizar a corretude. |
+| 9 | Secrets | Não se aplica. |
+| 10 | Superfície pública | Nenhuma rota anônima nova. `GET`/`POST /api/tabelas-irrf` exigem autenticação. |
+| 11 | Risco de custo/abuso | `GET /api/tabelas-irrf` devolve uma linha por vigência — poucas por natureza. A contagem de dependentes é **uma consulta agregada por folha**, com `GROUP BY`, e não uma por funcionário: sem isso, uma folha de mil pessoas faria mil consultas. No holerite, o IRRF acrescenta **uma** linha. |
+
+---
+
 ## FASE 4C — FGTS
 
 > **Status: concluída em 27/08/2026.**
@@ -1169,8 +1187,7 @@ correto para folha mensal.
 
 ## FASE 4D — IRRF
 
-> **Status: etapa 1 concluída em 27/08/2026 — dependentes.**
-> **Etapa 2 — o cálculo — BLOQUEADA aguardando a tabela oficial vigente.**
+> **Status: concluída em 27/08/2026 — etapa 1 (dependentes) e etapa 2 (cálculo).**
 
 ### Objetivo
 
@@ -1271,21 +1288,139 @@ Fase 10, porque a correção mexe no tratamento de erro de todas as rotas.
 
 ---
 
-### Etapa 2 — Cálculo do IRRF (bloqueada)
+### Etapa 2 — Cálculo do IRRF (concluída)
 
-**Não iniciar sem a fonte oficial.** O que falta confirmar, com a mesma disciplina da
-4B:
+#### Fonte oficial
 
-1. **tabela progressiva mensal vigente** — faixas, alíquotas e parcela a deduzir;
-2. **dedução mensal por dependente** — valor e norma;
-3. **desconto simplificado** — se o produto vai oferecê-lo, e qual o valor;
-4. **ordem das deduções** — o INSS abate a base antes dos dependentes, e isso precisa
-   estar apoiado em norma, não em senso comum;
-5. **arredondamento** — mesma pergunta que a 4B deixou registrada como pendência.
+A etapa começou bloqueada por falta de fonte. Ela foi **encontrada e conferida**, e é a
+razão de a etapa ter podido avançar:
 
-Estrutura que já existe e será reusada: base de IRRF apurada por holerite (4A),
-parâmetro versionado por vigência com fonte obrigatória (4B), memória de cálculo passo
-a passo (Fase 3) e dependentes (etapa 1).
+| O quê | Norma | Onde |
+|---|---|---|
+| Faixas, alíquotas e parcela a deduzir | **Lei nº 15.191, de 11/08/2025** | `gov.br/receitafederal/pt-br/assuntos/meu-imposto-de-renda/tabelas/2026` |
+| Dedução por dependente — R$ 189,59/mês | mesma publicação | idem |
+| Desconto simplificado — R$ 607,20/mês | mesma publicação (25% do limite da 1ª faixa) | idem |
+| **Redutor** do imposto | **Lei nº 15.270, de 26/11/2025** | `.../tabelas/exemplos-de-aplicacao-da-lei-15-270-2025` |
+
+A Receita publicou **cinco exemplos numéricos completos** de aplicação da Lei
+15.270/2025. Os cinco estão reproduzidos como testes em `IrrfTabela2026Testes.cs`, e
+valem mais que qualquer teste escrito de dentro do projeto: eles não provam que o código
+faz o que o autor quis, provam que ele faz o que a Receita publicou.
+
+#### As três diferenças em relação ao INSS
+
+Cada uma já causou erro em sistema de folha, e cada uma tem teste próprio.
+
+**1. Não é soma trecho a trecho.** O INSS soma: cada pedaço da base paga a alíquota da
+sua faixa. O IRRF aplica **uma** alíquota — a da faixa onde a base caiu — sobre a base
+**inteira**, e subtrai a **parcela a deduzir**, que devolve o excesso cobrado nos
+trechos de baixo. O resultado é numericamente equivalente hoje; a fórmula não é. Por
+isso `FaixaIrrf` é um tipo próprio e não reusa `FaixaInss`.
+
+**2. A base não é a remuneração.** É a remuneração menos as deduções, e há **duas
+formas** que **não se somam**:
+
+```text
+base legal        = rendimentos − INSS − (dependentes × 189,59)
+base simplificada = rendimentos − 607,20
+base              = a MENOR das duas
+```
+
+O desconto simplificado **substitui** todas as deduções legais, inclusive o INSS. Somar
+os dois seria deduzir duas vezes.
+
+**3. Existe redutor.** A Lei 15.270/2025 isentou quem ganha até R$ 5.000 sem mexer nas
+faixas, através de um abatimento sobre o imposto já apurado:
+
+```text
+redutor = 978,62 − 0,133145 × RENDIMENTOS BRUTOS
+IRRF    = imposto − redutor, nunca abaixo de zero
+```
+
+Dois detalhes que os exemplos oficiais deixam explícitos e que seriam facilmente
+errados: o redutor incide sobre os **rendimentos brutos**, não sobre a base; e é
+**limitado ao imposto apurado** — ele zera, nunca restitui.
+
+#### Decisões registradas
+
+##### 1. `ParametrosEncargos` substitui os parâmetros posicionais
+
+A assinatura do motor já carregava `inss, fgts` e ganharia `irrf` mais a contagem de
+dependentes: quatro parâmetros, quase sempre nulos, quase sempre na mesma ordem, em cinco
+assinaturas diferentes. Trocar dois de lugar compilaria sem reclamar.
+
+Não é abstração especulativa: atravessa o motor inteiro hoje, e as fases 4E a 4G
+acrescentam mais encargos ao mesmo lugar.
+
+##### 2. O IRRF é apurado por **último**, e a ordem não é estética
+
+`ApurarEncargos` roda INSS → FGTS → IRRF. O IRRF **deduz** o INSS do mês, então precisa
+do valor que a apuração anterior acabou de gravar — e o lê do **lançamento**, não de um
+campo em memória, porque o holerite pode ter vindo do banco.
+
+Apurar o IRRF antes do INSS usaria a dedução do cálculo anterior, e o imposto sairia
+errado sem que nenhuma linha parecesse errada.
+
+##### 3. A quantidade de dependentes é **congelada** no holerite
+
+`FolhaFuncionario.QuantidadeDependentesIrrf`, pelo mesmo motivo do código e da incidência
+das rubricas (`CLAUDE.md §4.3`). Cadastrar um filho hoje não pode mudar o imposto de uma
+folha fechada em março — a pessoa não era dependente naquela competência.
+
+Recalcular é o único momento em que a quantidade é relida do cadastro. Lançar uma
+comissão reusa a congelada: lançar não é hora de trocar os dependentes do holerite.
+
+##### 4. A última faixa tem limite **nulo**, não um número gigante
+
+O IRRF não tem teto. A primeira tentativa usou `decimal.MaxValue`, que tem 29 dígitos
+inteiros e **não cabe em coluna numérica alguma** — o `INSERT` estouraria.
+
+A correção não foi aumentar a precisão da coluna: foi reconhecer que *"o maior número que
+existe"* não é a mesma afirmação que *"não há limite"*. `LimiteSuperior` é anulável, e
+`null` diz exatamente o que a lei diz.
+
+##### 5. IRRF é **desconto**, e a invariante existe por contraste com o FGTS
+
+`Rubrica` recusa uma rubrica de estratégia `IrrfMensal` que não seja `Desconto`. Como
+informativo ela não reduziria o líquido, e a pessoa receberia dinheiro que a empresa já
+recolheu — o espelho exato do erro que a 4C impede no FGTS.
+
+##### 6. Arredondamento: uma vez, no valor final
+
+Mesmo critério do projeto (`CLAUDE.md §28`), e desta vez **com evidência**: os cinco
+exemplos oficiais são reproduzidos exatamente assim. É bem mais forte do que o que a 4B
+teve, onde a regra continua registrada como pendência.
+
+Consequência observada e travada por teste: a diferença de imposto ao acrescentar dois
+dependentes é **104,28**, e não os 104,27 de `379,18 × 27,5%`. Cada holerite arredonda o
+**seu** imposto uma vez, e a subtração acontece depois.
+
+#### Duas descobertas durante a implementação
+
+**O número anunciado do redutor não é o da fórmula.** A divulgação diz que o redutor zera
+em R$ 7.350,00; `978,62 ÷ 0,133145 = 7.350,03`. A diferença é irrelevante — em 7.350,00
+exatos o redutor bruto vale R$ 0,004, que arredonda para zero — mas `LimiteDoRedutor`
+devolve o valor **derivado da fórmula**, e não o número redondo da divulgação. Cravar
+7.350,00 seria pôr um número de comunicado no lugar do que a lei produz.
+
+**Um centavo acima da isenção ainda não paga.** Base de 2.428,81 produz
+`2.428,81 × 7,5% − 182,16 = 0,00075`, que arredonda para zero. Não é defeito: é a própria
+calibragem da parcela a deduzir, que existe para a transição entre faixas ser contínua.
+Há teste registrando isso, porque *"passou da isenção"* e *"passou a pagar"* não são a
+mesma coisa, e alguém poderia ler o zero como erro.
+
+#### Limitações declaradas — 27/08/2026
+
+**Só a folha mensal.** IRRF sobre 13º (tributação exclusiva, separada da mensal), sobre
+férias e sobre rescisão pertencem às Fases 4E, 4F e 4G, que introduzem essas verbas.
+
+**Deduções não implementadas:** pensão alimentícia judicial, previdência privada, parcela
+isenta de aposentadoria para maiores de 65 anos. Nenhuma delas tem, hoje, o dado de
+origem no domínio — pensão exigiria uma rubrica com natureza própria, e a parcela isenta
+exigiria distinguir aposentado no contrato. Entram quando a fase que as originar chegar.
+
+**Ajuste anual não existe e não vai existir nesta fase.** O produto retém na fonte; a
+declaração é do contribuinte.
 
 ---
 

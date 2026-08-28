@@ -1,10 +1,14 @@
+import type { ReactNode } from 'react'
 import { useCallback, useEffect, useState } from 'react'
 import {
   listarTabelasFgts,
   listarTabelasInss,
+  listarTabelasIrrf,
   type FaixaInss,
+  type FaixaIrrf,
   type TabelaFgts,
   type TabelaInss,
+  type TabelaIrrf,
 } from '@/api/folha'
 import { DataTable, type Coluna } from '@/components/sistema/DataTable'
 import {
@@ -37,6 +41,7 @@ export default function Parametros() {
 
   const [tabelas, definirTabelas] = useState<TabelaInss[]>([])
   const [fgts, definirFgts] = useState<TabelaFgts[]>([])
+  const [irrf, definirIrrf] = useState<TabelaIrrf[]>([])
   const [carregando, definirCarregando] = useState(true)
   const [erro, definirErro] = useState<string | null>(null)
 
@@ -47,10 +52,15 @@ export default function Parametros() {
     try {
       // Em paralelo: são duas rotas independentes, e encadear faria a tela
       // esperar a soma dos dois tempos sem motivo.
-      const [inss, deposito] = await Promise.all([listarTabelasInss(), listarTabelasFgts()])
+      const [inss, deposito, imposto] = await Promise.all([
+        listarTabelasInss(),
+        listarTabelasFgts(),
+        listarTabelasIrrf(),
+      ])
 
       definirTabelas(inss)
       definirFgts(deposito)
+      definirIrrf(imposto)
     } catch (falha) {
       definirErro(
         falha instanceof Error ? falha.message : 'Não foi possível carregar os parâmetros legais.',
@@ -77,14 +87,14 @@ export default function Parametros() {
 
       {!carregando && erro && <EstadoErro mensagem={erro} aoTentarNovamente={() => void carregar()} />}
 
-      {!carregando && !erro && tabelas.length === 0 && fgts.length === 0 && (
+      {!carregando && !erro && tabelas.length === 0 && fgts.length === 0 && irrf.length === 0 && (
         <EstadoVazio
           titulo="Nenhuma tabela cadastrada"
           descricao="Sem parâmetro vigente, a folha calcula sem os encargos correspondentes."
         />
       )}
 
-      {!carregando && !erro && (tabelas.length > 0 || fgts.length > 0) && (
+      {!carregando && !erro && (tabelas.length > 0 || fgts.length > 0 || irrf.length > 0) && (
         <section className="space-y-8">
           {tabelas.length > 0 && (
             <div>
@@ -122,6 +132,21 @@ export default function Parametros() {
               />
             </div>
           )}
+
+          {irrf.length > 0 && (
+            <div>
+              <CabecalhoSecao
+                titulo="IRRF — imposto de renda retido na fonte"
+                descricao="Uma alíquota sobre a base inteira, menos a parcela a deduzir. Não é soma faixa a faixa como o INSS."
+              />
+
+              <div className="space-y-6">
+                {irrf.map((tabela) => (
+                  <TabelaIrrfVigencia key={tabela.id} tabela={tabela} />
+                ))}
+              </div>
+            </div>
+          )}
         </section>
       )}
     </>
@@ -153,6 +178,127 @@ const COLUNAS_FGTS: Coluna<TabelaFgts>[] = [
     celula: (t) => <span className="text-[13px] text-muted-foreground">{t.fonte}</span>,
   },
 ]
+
+function TabelaIrrfVigencia({ tabela }: { tabela: TabelaIrrf }) {
+  const colunas: Coluna<FaixaIrrf>[] = [
+    {
+      cabecalho: 'Faixa',
+      largura: '80px',
+      celula: (f) => <span className="tabular text-muted-foreground">{f.ordem}</span>,
+    },
+    {
+      cabecalho: 'De',
+      numerica: true,
+      celula: (f) => <Dinheiro valor={f.limiteInferior} />,
+    },
+    {
+      cabecalho: 'Até',
+      numerica: true,
+      celula: (f) =>
+        // A última faixa não tem teto, e a tela precisa dizer isso em vez de
+        // mostrar um número gigante ou um vazio ambíguo.
+        f.limiteSuperior === null ? (
+          <span className="text-muted-foreground">sem limite</span>
+        ) : (
+          <Dinheiro valor={f.limiteSuperior} />
+        ),
+    },
+    {
+      cabecalho: 'Alíquota',
+      numerica: true,
+      largura: '110px',
+      celula: (f) =>
+        f.aliquota === 0 ? (
+          <span className="text-muted-foreground">isento</span>
+        ) : (
+          <span className="tabular font-medium">
+            {f.aliquotaPercentual.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%
+          </span>
+        ),
+    },
+    {
+      cabecalho: 'Parcela a deduzir',
+      numerica: true,
+      largura: '150px',
+      celula: (f) =>
+        f.parcelaADeduzir === 0 ? (
+          <span className="text-muted-foreground">—</span>
+        ) : (
+          <Dinheiro valor={f.parcelaADeduzir} />
+        ),
+    },
+  ]
+
+  return (
+    <div>
+      <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <div className="flex items-center gap-2">
+          <h3 className="text-[13px] font-medium">
+            Vigente a partir de {formatarData(tabela.vigenciaInicio)}
+          </h3>
+          {tabela.vigente && <StatusBadge tom="sucesso">Em vigor</StatusBadge>}
+        </div>
+      </div>
+
+      <div className="mb-3 grid gap-3 sm:grid-cols-3">
+        <Valor rotulo="Isento até" valor={<Dinheiro valor={tabela.limiteIsencao} />} />
+        <Valor
+          rotulo="Dedução por dependente"
+          valor={<Dinheiro valor={tabela.deducaoPorDependente} />}
+        />
+        <Valor
+          rotulo="Desconto simplificado"
+          valor={<Dinheiro valor={tabela.descontoSimplificado} />}
+        />
+      </div>
+
+      {tabela.temRedutor && (
+        <p className="mb-3 rounded-md border border-border bg-muted/30 p-3 text-[13px]">
+          <span className="font-medium">Redutor do imposto: </span>
+          <span className="tabular">
+            {tabela.redutorBase.toLocaleString('pt-BR', {
+              style: 'currency',
+              currency: 'BRL',
+            })}{' '}
+            − {tabela.redutorCoeficiente.toLocaleString('pt-BR', { maximumFractionDigits: 6 })} ×
+            rendimentos
+          </span>
+          <span className="text-muted-foreground">
+            {' '}
+            — zera a partir de{' '}
+            {tabela.limiteDoRedutor.toLocaleString('pt-BR', {
+              style: 'currency',
+              currency: 'BRL',
+            })}
+            . Aplicado sobre o imposto já apurado, e limitado a ele.
+          </span>
+        </p>
+      )}
+
+      <DataTable
+        rotulo={`Faixas de IRRF vigentes a partir de ${formatarData(tabela.vigenciaInicio)}`}
+        colunas={colunas}
+        itens={tabela.faixas}
+        chave={(f) => `${tabela.id}-${f.ordem}`}
+        rodape={
+          <span className="text-xs">
+            <span className="text-muted-foreground">Fonte: </span>
+            {tabela.fonte}
+          </span>
+        }
+      />
+    </div>
+  )
+}
+
+function Valor({ rotulo, valor }: { rotulo: string; valor: ReactNode }) {
+  return (
+    <div className="rounded-md border border-border px-3 py-2">
+      <p className="rotulo-secao">{rotulo}</p>
+      <p className="tabular mt-0.5 text-[15px] font-medium">{valor}</p>
+    </div>
+  )
+}
 
 function TabelaVigencia({ tabela }: { tabela: TabelaInss }) {
   const colunas: Coluna<FaixaInss>[] = [

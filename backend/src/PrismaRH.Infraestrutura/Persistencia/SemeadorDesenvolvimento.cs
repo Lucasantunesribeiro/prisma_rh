@@ -98,6 +98,12 @@ public static class SemeadorDesenvolvimento
             log.LogInformation("Semeadura: aliquota de FGTS cadastrada.");
         }
 
+        if (!await contexto.TabelasIrrf.AnyAsync(ct))
+        {
+            await SemearTabelaIrrfAsync(contexto, agora, ct);
+            log.LogInformation("Semeadura: tabela de IRRF vigente desde 01/01/2026 cadastrada.");
+        }
+
         if (await contexto.Rubricas.IgnoreQueryFilters().AnyAsync(ct))
         {
             // O catalogo ja existe, mas pode ter nascido numa fase anterior.
@@ -283,6 +289,44 @@ public static class SemeadorDesenvolvimento
     }
 
     /// <summary>
+    /// A tabela de IRRF vigente desde 01/01/2026.
+    ///
+    /// FONTE OFICIAL, conforme CLAUDE.md secao 29:
+    ///
+    /// - faixas, aliquotas e parcela a deduzir: Lei n. 15.191, de 11/08/2025,
+    ///   publicadas pela Receita Federal em
+    ///   gov.br/receitafederal/pt-br/assuntos/meu-imposto-de-renda/tabelas/2026;
+    /// - deducao por dependente (R$ 189,59) e desconto simplificado
+    ///   (R$ 607,20, que e 25% do limite da primeira faixa): mesma pagina;
+    /// - redutor: Lei n. 15.270, de 26/11/2025, formula
+    ///   978,62 - 0,133145 x rendimentos tributaveis, que zera em R$ 7.350,00.
+    ///
+    /// A ULTIMA faixa nao tem teto: o limite informado nela e ignorado pelo
+    /// construtor em favor de nulo.
+    /// </summary>
+    private static async Task SemearTabelaIrrfAsync(
+        PrismaRhDbContext contexto, DateTimeOffset agora, CancellationToken ct)
+    {
+        contexto.TabelasIrrf.Add(new TabelaIrrf(
+            new DateOnly(2026, 1, 1),
+            "Lei n. 15.191, de 11/08/2025 (tabela) e Lei n. 15.270, de 26/11/2025 (redutor)",
+            deducaoPorDependente: 189.59m,
+            descontoSimplificado: 607.20m,
+            redutorBase: 978.62m,
+            redutorCoeficiente: 0.133145m,
+            [
+                (2428.80m, 0m, 0m),
+                (2826.65m, 0.075m, 182.16m),
+                (3751.05m, 0.15m, 394.16m),
+                (4664.68m, 0.225m, 675.49m),
+                (0m, 0.275m, 908.73m),
+            ],
+            agora));
+
+        await contexto.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
     /// Acrescenta ao catalogo existente as rubricas calculadas que uma fase
     /// posterior introduziu.
     ///
@@ -323,6 +367,18 @@ public static class SemeadorDesenvolvimento
                 TipoRubrica.Informativo, EstrategiaRubrica.FgtsMensal, BaseCalculo.Nenhuma, agora));
 
             acrescentadas.Add("FGTS");
+        }
+
+        // Fase 4D: desconto calculado, sem incidencia.
+        if (!await contexto.Rubricas.IgnoreQueryFilters().AnyAsync(
+                r => r.IdOrganizacao == prisma.Id && r.Ativa
+                     && r.Estrategia == EstrategiaRubrica.IrrfMensal, ct))
+        {
+            contexto.Rubricas.Add(new Rubrica(
+                prisma.Id, "IRRF", "IRRF sobre a folha",
+                TipoRubrica.Desconto, EstrategiaRubrica.IrrfMensal, BaseCalculo.Nenhuma, agora));
+
+            acrescentadas.Add("IRRF");
         }
 
         if (acrescentadas.Count > 0)
@@ -386,7 +442,12 @@ public static class SemeadorDesenvolvimento
             prisma.Id, "FGTS", "FGTS sobre a folha",
             TipoRubrica.Informativo, EstrategiaRubrica.FgtsMensal, BaseCalculo.Nenhuma, agora);
 
-        Rubrica[] catalogo = [salario, comissao, valeTransporte, adiantamento, inss, fgts];
+        // Fase 4D: desconto, ao contrario do FGTS. IRRF sai do salario.
+        var irrf = new Rubrica(
+            prisma.Id, "IRRF", "IRRF sobre a folha",
+            TipoRubrica.Desconto, EstrategiaRubrica.IrrfMensal, BaseCalculo.Nenhuma, agora);
+
+        Rubrica[] catalogo = [salario, comissao, valeTransporte, adiantamento, inss, fgts, irrf];
 
         contexto.Rubricas.AddRange(catalogo);
         await contexto.SaveChangesAsync(ct);
@@ -407,38 +468,49 @@ public static class SemeadorDesenvolvimento
 
         // Uma por competencia: cada folha usa a tabela que valia NA SUA data,
         // e nao a mais recente cadastrada.
-        var inssAnterior = ParametrosInss.Montar(inss, tabelasInss, anterior);
-        var inssAtual = ParametrosInss.Montar(inss, tabelasInss, atual);
-        var fgtsAnterior = ParametrosFgts.Montar(fgts, tabelasFgts, anterior);
-        var fgtsAtual = ParametrosFgts.Montar(fgts, tabelasFgts, atual);
+        var tabelasIrrf = await contexto.TabelasIrrf.Include(x => x.Faixas).ToListAsync(ct);
+
+        var encargosAnterior = new ParametrosEncargos(
+            ParametrosInss.Montar(inss, tabelasInss, anterior),
+            ParametrosFgts.Montar(fgts, tabelasFgts, anterior),
+            ParametrosIrrf.Montar(irrf, tabelasIrrf, anterior));
+
+        var encargosAtual = new ParametrosEncargos(
+            ParametrosInss.Montar(inss, tabelasInss, atual),
+            ParametrosFgts.Montar(fgts, tabelasFgts, atual),
+            ParametrosIrrf.Montar(irrf, tabelasIrrf, atual));
+
+        // A demo nao semeia dependentes: o vazio e o estado normal, e quem
+        // quiser ver a deducao cadastra um pela tela.
+        var semDependentes = new Dictionary<Guid, int>();
 
         // A folha do mes passado nasce FECHADA, para a demo ter um fato
         // historico: alterar contrato depois disso nao muda mais nada nela.
         var fechada = new FolhaPagamento(prisma.Id, empresa.Id, anterior, agora);
-        fechada.Calcular(contratos, salario, catalogo, inssAnterior, fgtsAnterior, agora);
+        fechada.Calcular(contratos, salario, catalogo, encargosAnterior, semDependentes, agora);
 
         foreach (var holerite in fechada.Funcionarios.Take(2))
         {
-            fechada.AdicionarLancamentoManual(holerite.Id, valeTransporte, 180m, "22 dias", inssAnterior, fgtsAnterior);
+            fechada.AdicionarLancamentoManual(holerite.Id, valeTransporte, 180m, "22 dias", encargosAnterior);
         }
 
         if (fechada.Funcionarios.Count > 0)
         {
-            fechada.AdicionarLancamentoManual(fechada.Funcionarios[0].Id, comissao, 450m, null, inssAnterior, fgtsAnterior);
+            fechada.AdicionarLancamentoManual(fechada.Funcionarios[0].Id, comissao, 450m, null, encargosAnterior);
         }
 
         // Recalcula ANTES de fechar, de proposito: e o cenario que prova que
         // reprocessar preserva o que foi lancado a mao.
-        fechada.Calcular(contratos, salario, catalogo, inssAnterior, fgtsAnterior, agora);
+        fechada.Calcular(contratos, salario, catalogo, encargosAnterior, semDependentes, agora);
         fechada.Fechar(agora);
 
         // A do mes corrente fica calculada e aberta, para dar o que operar.
         var aberta = new FolhaPagamento(prisma.Id, empresa.Id, atual, agora);
-        aberta.Calcular(contratos, salario, catalogo, inssAtual, fgtsAtual, agora);
+        aberta.Calcular(contratos, salario, catalogo, encargosAtual, semDependentes, agora);
 
         if (aberta.Funcionarios.Count > 0)
         {
-            aberta.AdicionarLancamentoManual(aberta.Funcionarios[0].Id, adiantamento, 600m, null, inssAtual, fgtsAtual);
+            aberta.AdicionarLancamentoManual(aberta.Funcionarios[0].Id, adiantamento, 600m, null, encargosAtual);
         }
 
         contexto.Folhas.AddRange(fechada, aberta);

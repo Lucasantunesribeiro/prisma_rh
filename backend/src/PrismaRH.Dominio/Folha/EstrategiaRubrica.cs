@@ -41,4 +41,18 @@ public enum EstrategiaRubrica
     /// empresa, nao desconto do funcionario.
     /// </summary>
     FgtsMensal = 4,
+
+    /// <summary>
+    /// O sistema calcula: imposto de renda retido na fonte sobre a base de
+    /// IRRF, deduzidos o INSS e os dependentes, pela tabela vigente na
+    /// competencia (Fase 4D).
+    ///
+    /// E DESCONTO: sai do salario do funcionario, ao contrario do FGTS.
+    ///
+    /// Depende do INSS ja apurado, e por isso e a ultima rubrica calculada do
+    /// holerite. Nenhum numero legal mora aqui: faixas, parcela a deduzir,
+    /// deducao por dependente, desconto simplificado e redutor vem de
+    /// TabelaIrrf, que exige fonte oficial registrada.
+    /// </summary>
+    IrrfMensal = 5,
 }

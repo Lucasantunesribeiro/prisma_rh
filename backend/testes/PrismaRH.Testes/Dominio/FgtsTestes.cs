@@ -15,6 +15,9 @@ namespace PrismaRH.Testes.Dominio;
 /// </summary>
 public class FgtsTestes
 {
+    /// <summary>Sem dependentes: o cenario padrao da maioria dos testes.</summary>
+    private static readonly Dictionary<Guid, int> SemDependentes = [];
+
     private static readonly DateTimeOffset Agora = new(2026, 8, 27, 12, 0, 0, TimeSpan.Zero);
     private static readonly Guid Org = Guid.CreateVersion7();
     private static readonly Guid Empresa = Guid.CreateVersion7();
@@ -165,7 +168,9 @@ public class FgtsTestes
         var salarioRubrica = Salario();
         var fgts = new ParametrosFgts(RubricaFgts(), Tabela());
 
-        folha.Calcular([contrato], salarioRubrica, [salarioRubrica], null, fgts, Agora);
+        folha.Calcular(
+            [contrato], salarioRubrica, [salarioRubrica],
+            new ParametrosEncargos(null, fgts), SemDependentes, Agora);
 
         return (folha, contrato);
     }
@@ -202,7 +207,9 @@ public class FgtsTestes
         var folha = new FolhaPagamento(Org, Empresa, Agosto, Agora);
         var salario = Salario();
 
-        folha.Calcular([Contrato(3000m)], salario, [salario], null, null, Agora);
+        folha.Calcular(
+            [Contrato(3000m)], salario, [salario],
+            ParametrosEncargos.Nenhum, SemDependentes, Agora);
 
         Assert.DoesNotContain(folha.Funcionarios[0].Lancamentos, l => l.CodigoRubrica == "FGTS");
     }
@@ -214,8 +221,12 @@ public class FgtsTestes
         var salario = Salario();
         var fgts = new ParametrosFgts(RubricaFgts(), Tabela());
 
-        folha.Calcular([contrato], salario, [salario], null, fgts, Agora);
-        folha.Calcular([contrato], salario, [salario], null, fgts, Agora);
+        folha.Calcular(
+            [contrato], salario, [salario],
+            new ParametrosEncargos(null, fgts), SemDependentes, Agora);
+        folha.Calcular(
+            [contrato], salario, [salario],
+            new ParametrosEncargos(null, fgts), SemDependentes, Agora);
 
         Assert.Single(folha.Funcionarios[0].Lancamentos, l => l.CodigoRubrica == "FGTS");
     }
@@ -231,7 +242,9 @@ public class FgtsTestes
             Org, "COM", "Comissao", TipoRubrica.Provento,
             EstrategiaRubrica.ValorInformado, IntegraTudo, Agora);
 
-        folha.AdicionarLancamentoManual(holerite.Id, comissao, 1000m, null, null, fgts);
+        folha.AdicionarLancamentoManual(
+            holerite.Id, comissao, 1000m, null,
+            new ParametrosEncargos(null, fgts));
 
         // Base virou 4.000 e o deposito acompanhou, sem recalcular a folha.
         Assert.Equal(4000m, holerite.BaseDe(BaseCalculo.Fgts));
@@ -255,9 +268,7 @@ public class FgtsTestes
 
         folha.Calcular(
             [contrato], salario, [salario],
-            new ParametrosInss(rubricaInss, tabelaInss),
-            new ParametrosFgts(RubricaFgts(), Tabela()),
-            Agora);
+            new ParametrosEncargos(new ParametrosInss(rubricaInss, tabelaInss), new ParametrosFgts(RubricaFgts(), Tabela())), SemDependentes, Agora);
 
         var holerite = folha.Funcionarios[0];
 

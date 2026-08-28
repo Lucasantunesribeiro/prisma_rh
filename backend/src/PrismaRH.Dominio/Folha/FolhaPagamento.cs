@@ -81,13 +81,15 @@ public sealed class FolhaPagamento
         IEnumerable<ContratoTrabalho> contratosDaEmpresa,
         Rubrica rubricaSalario,
         IEnumerable<Rubrica> catalogoRubricas,
-        ParametrosInss? inss,
-        ParametrosFgts? fgts,
+        ParametrosEncargos encargos,
+        IReadOnlyDictionary<Guid, int> dependentesPorFuncionario,
         DateTimeOffset agora)
     {
         ArgumentNullException.ThrowIfNull(contratosDaEmpresa);
         ArgumentNullException.ThrowIfNull(rubricaSalario);
         ArgumentNullException.ThrowIfNull(catalogoRubricas);
+        ArgumentNullException.ThrowIfNull(encargos);
+        ArgumentNullException.ThrowIfNull(dependentesPorFuncionario);
 
         GarantirAberta("calcular");
 
@@ -123,7 +125,13 @@ public sealed class FolhaPagamento
                     $"Contrato {contrato.Matricula} passou na elegibilidade mas nao apurou: estado inconsistente.");
 
             holerite.AtualizarIncidenciasManuais(catalogo);
-            holerite.AplicarCalculo(apuracao, rubricaSalario, inss, fgts);
+
+            // Funcionario sem dependente nao precisa estar no dicionario:
+            // ausencia e zero, e exigir a chave obrigaria quem chama a montar
+            // uma entrada para cada pessoa da empresa.
+            dependentesPorFuncionario.TryGetValue(contrato.IdFuncionario, out var dependentes);
+
+            holerite.AplicarCalculo(apuracao, rubricaSalario, encargos, dependentes);
         }
 
         VersaoCalculo++;
@@ -138,13 +146,12 @@ public sealed class FolhaPagamento
         Rubrica rubrica,
         decimal valor,
         string? referencia,
-        ParametrosInss? inss,
-        ParametrosFgts? fgts)
+        ParametrosEncargos encargos)
     {
         GarantirAberta("lancar");
 
         var holerite = ObterHolerite(idFolhaFuncionario);
-        var lancamento = holerite.AdicionarManual(rubrica, valor, referencia, inss, fgts);
+        var lancamento = holerite.AdicionarManual(rubrica, valor, referencia, encargos);
 
         RecalcularTotais();
 
@@ -152,11 +159,11 @@ public sealed class FolhaPagamento
     }
 
     public bool RemoverLancamento(
-        Guid idFolhaFuncionario, Guid idLancamento, ParametrosInss? inss, ParametrosFgts? fgts)
+        Guid idFolhaFuncionario, Guid idLancamento, ParametrosEncargos encargos)
     {
         GarantirAberta("remover lancamento de");
 
-        var removeu = ObterHolerite(idFolhaFuncionario).RemoverLancamento(idLancamento, inss, fgts);
+        var removeu = ObterHolerite(idFolhaFuncionario).RemoverLancamento(idLancamento, encargos);
 
         if (removeu)
         {

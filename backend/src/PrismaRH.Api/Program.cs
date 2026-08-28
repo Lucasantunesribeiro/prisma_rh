@@ -99,6 +99,7 @@ app.MapearRubricas();
 app.MapearFolhas();
 app.MapearTabelasInss();
 app.MapearTabelasFgts();
+app.MapearTabelasIrrf();
 
 app.Run();
 

@@ -4,12 +4,25 @@ import type { Perfil } from './autenticacao'
 // ---------------------------------------------------------------- rubricas
 
 export type TipoRubrica = 'Provento' | 'Desconto' | 'Informativo'
-export type EstrategiaRubrica = 'SalarioBaseProporcional' | 'ValorInformado' | 'InssProgressivo'
+export type EstrategiaRubrica =
+  | 'SalarioBaseProporcional'
+  | 'ValorInformado'
+  | 'InssProgressivo'
+  | 'FgtsMensal'
+  | 'IrrfMensal'
 
-/** De onde sai o valor da rubrica, para a coluna da listagem. */
+/**
+ * De onde sai o valor da rubrica, para a coluna da listagem.
+ *
+ * O Record é exaustivo de propósito: acrescentar uma estratégia no backend sem
+ * acrescentá-la aqui passa a quebrar a compilação, em vez de renderizar
+ * `undefined` na tela — que foi o que aconteceu quando o FGTS entrou.
+ */
 export const ORIGEM_DO_VALOR: Record<EstrategiaRubrica, string> = {
   SalarioBaseProporcional: 'calculado pelo sistema',
   InssProgressivo: 'calculado pelo sistema',
+  FgtsMensal: 'calculado pelo sistema',
+  IrrfMensal: 'calculado pelo sistema',
   ValorInformado: 'digitado no lançamento',
 }
 export type BaseCalculo = 'Inss' | 'Fgts' | 'Irrf'
@@ -279,3 +292,32 @@ export interface TabelaFgts {
 
 /** Também federal, e sem faixas: o FGTS é uma alíquota única sobre a base. */
 export const listarTabelasFgts = (): Promise<TabelaFgts[]> => obter('/api/tabelas-fgts')
+
+export interface FaixaIrrf {
+  ordem: number
+  limiteInferior: number
+  /** Nulo na última: o IRRF não tem teto, ao contrário do INSS. */
+  limiteSuperior: number | null
+  aliquota: number
+  aliquotaPercentual: number
+  /** Subtraída depois da alíquota, para reproduzir a progressividade. */
+  parcelaADeduzir: number
+}
+
+export interface TabelaIrrf {
+  id: string
+  vigenciaInicio: string
+  fonte: string
+  deducaoPorDependente: number
+  descontoSimplificado: number
+  redutorBase: number
+  redutorCoeficiente: number
+  /** A partir de qual rendimento o redutor zera. Derivado da fórmula. */
+  limiteDoRedutor: number
+  limiteIsencao: number
+  temRedutor: boolean
+  vigente: boolean
+  faixas: FaixaIrrf[]
+}
+
+export const listarTabelasIrrf = (): Promise<TabelaIrrf[]> => obter('/api/tabelas-irrf')

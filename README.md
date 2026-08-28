@@ -2,7 +2,7 @@
 
 Plataforma B2B de gestão, cálculo, conferência e auditoria de folha de pagamento brasileira.
 
-> **Estado atual: Fase 4D, etapa 1 concluída — dependentes.**
+> **Estado atual: Fase 4D concluída — IRRF.**
 >
 > Existe login com JWT, cinco perfis, organizações isoladas entre si, o cadastro de
 > funcionários, contratos e histórico contratual por vigência, e a **primeira folha
@@ -11,8 +11,9 @@ Plataforma B2B de gestão, cálculo, conferência e auditoria de folha de pagame
 > As bases de INSS, FGTS e IRRF são apuradas por holerite, o **INSS do segurado é
 > descontado** pela tabela progressiva vigente e o **FGTS do empregador é depositado**
 > a 8% sobre a base — como linha informativa, que não reduz o líquido.
-> Existe também o **cadastro de dependentes**, que o IRRF vai usar. O **cálculo** do IRRF
-> ainda não existe: ele aguarda a tabela oficial vigente.
+> O **IRRF** é retido pela tabela de 2026, com dedução por dependente, desconto
+> simplificado e o **redutor** da Lei 15.270/2025 — quem ganha até R$ 5.000 não paga.
+> Com isso a folha mensal está completa: salário proporcional, bases, INSS, FGTS e IRRF.
 > Consulte o [ROADMAP.md](ROADMAP.md) para as fases seguintes e o
 > [CLAUDE.md](CLAUDE.md) para as regras do projeto.
 
@@ -133,6 +134,40 @@ obrigatório da tabela.
 > escopo da subfase. A **multa rescisória de 40%** e o FGTS sobre 13º e férias pertencem
 > às Fases 4E, 4F e 4G, que introduzem essas verbas.
 
+**IRRF (Fase 4D)**
+
+Fontes: **Lei nº 15.191/2025** (tabela) e **Lei nº 15.270/2025** (redutor), publicadas
+pela Receita Federal. Os **cinco exemplos numéricos oficiais** de aplicação da Lei
+15.270/2025 estão reproduzidos como testes — eles não provam que o código faz o que o
+autor quis, provam que ele faz o que a Receita publicou.
+
+Três diferenças em relação ao INSS, cada uma com teste próprio:
+
+1. **Não é soma trecho a trecho.** Aplica-se **uma** alíquota — a da faixa onde a base
+   caiu — sobre a base **inteira**, e subtrai-se a **parcela a deduzir**. O resultado é
+   equivalente hoje; a fórmula não é.
+2. **A base não é a remuneração.** É a remuneração menos as deduções, e há duas formas
+   que **não se somam**: `rendimentos − INSS − dependentes` ou `rendimentos − 607,20`.
+   Vale a que der a **menor** base. O desconto simplificado substitui todas as deduções
+   legais, inclusive o INSS.
+3. **Existe redutor**: `978,62 − 0,133145 × rendimentos brutos`, aplicado sobre o imposto
+   já apurado e **limitado a ele** — zera, nunca restitui. É o mecanismo que isentou quem
+   ganha até R$ 5.000 sem mexer nas faixas.
+
+- O IRRF é apurado **por último**, e a ordem não é estética: ele **deduz o INSS** que a
+  mesma folha acabou de apurar, e lê esse valor do lançamento — não de um campo em
+  memória, porque o holerite pode ter vindo do banco.
+- A **quantidade de dependentes é congelada** no holerite. Cadastrar um filho hoje não
+  muda o imposto de uma folha fechada em março.
+- A **última faixa tem limite nulo**, não um número gigante: o IRRF não tem teto, e *"o
+  maior número que existe"* não é a mesma afirmação que *"não há limite"*.
+- IRRF é **desconto** — o espelho exato do FGTS, que é informativo.
+
+> **Limitações declaradas:** só a folha **mensal**. IRRF sobre 13º (tributação
+> exclusiva), férias e rescisão pertencem às Fases 4E–4G. Pensão alimentícia,
+> previdência privada e parcela isenta acima de 65 anos não têm dado de origem no
+> domínio ainda. Não há ajuste anual: o produto retém na fonte.
+
 **Dependentes (Fase 4D, etapa 1)**
 
 - Pertencem à **pessoa**, não ao contrato: um filho continua sendo filho se ela for
@@ -151,14 +186,13 @@ obrigatório da tabela.
 
 ## O que ainda NÃO existe
 
-O **cálculo do IRRF**, férias, 13º, rescisão, importações, motor de análises, integrações,
+Férias, 13º, rescisão, afastamentos, importações, motor de análises, integrações,
 recursos AWS e CI/CD. Tudo isso pertence às fases seguintes do roadmap.
 
 Cada encargo exige fonte oficial registrada e parâmetro versionado (`CLAUDE.md §29`). A
 Fase 4A criou as bases, a 4B aplicou a primeira alíquota, a 4C acrescentou o depósito do
-empregador e a 4D já tem os dependentes — mas **a conta do IRRF está bloqueada** até a
-tabela oficial vigente ser confirmada, junto com a dedução por dependente e a ordem das
-deduções.
+empregador e a 4D fechou o imposto de renda. **A folha mensal está completa**; os demais
+tipos de processamento — férias (4E), 13º (4F) e rescisão (4G) — continuam fora.
 
 ### Camada de IA — planejada, não implementada
 
@@ -346,6 +380,8 @@ Todos usam a senha de `PRISMARH_SEED_SENHA`.
 | `POST /api/tabelas-inss` | **só Adm. Plataforma** | Cadastra a vigência de um ano novo |
 | `GET /api/tabelas-fgts` | todos os 5 | Alíquotas de FGTS por vigência |
 | `POST /api/tabelas-fgts` | **só Adm. Plataforma** | Cadastra uma vigência nova de alíquota |
+| `GET /api/tabelas-irrf` | todos os 5 | Tabelas de IRRF por vigência, com faixas e redutor |
+| `POST /api/tabelas-irrf` | **só Adm. Plataforma** | Cadastra a vigência de um ano novo |
 | `GET /api/funcionarios/{id}/dependentes` | todos os 5 | Dependentes da pessoa |
 | `POST /api/funcionarios/{id}/dependentes` | Adm. Empresa, Analista | Cadastra dependente |
 | `PUT /api/funcionarios/{id}/dependentes/{idDep}` | Adm. Empresa, Analista | Altera dados e período de dedução |

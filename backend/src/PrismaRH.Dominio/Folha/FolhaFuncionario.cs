@@ -59,6 +59,15 @@ public sealed class FolhaFuncionario
     /// <summary>Vigencia que valia no fim do periodo trabalhado. Rastreia de onde saiu o salario.</summary>
     public Guid? IdVigenciaReferencia { get; private set; }
 
+    /// <summary>
+    /// Quantos dependentes abatiam IRRF quando este holerite foi calculado.
+    ///
+    /// CONGELADO, como o codigo e a incidencia das rubricas (CLAUDE.md secao
+    /// 4.3). Cadastrar um filho hoje nao pode mudar o imposto de uma folha
+    /// fechada em marco - a pessoa nao era dependente naquela competencia.
+    /// </summary>
+    public int QuantidadeDependentesIrrf { get; private set; }
+
     public decimal TotalProventos { get; private set; }
     public decimal TotalDescontos { get; private set; }
     public decimal Liquido { get; private set; }
@@ -92,11 +101,23 @@ public sealed class FolhaFuncionario
     internal void AplicarCalculo(
         ApuracaoSalarioBase apuracao,
         Rubrica rubricaSalario,
-        ParametrosInss? inss,
-        ParametrosFgts? fgts)
+        ParametrosEncargos encargos,
+        int quantidadeDependentesIrrf)
     {
         ArgumentNullException.ThrowIfNull(apuracao);
         ArgumentNullException.ThrowIfNull(rubricaSalario);
+        ArgumentNullException.ThrowIfNull(encargos);
+
+        if (quantidadeDependentesIrrf < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(quantidadeDependentesIrrf), quantidadeDependentesIrrf,
+                "Quantidade de dependentes nao pode ser negativa.");
+        }
+
+        // Recalcular e o unico momento em que a quantidade e relida do
+        // cadastro. Depois disso ela fica congelada neste holerite.
+        QuantidadeDependentesIrrf = quantidadeDependentesIrrf;
 
         _lancamentos.RemoveAll(l => l.Origem == OrigemLancamento.Calculado);
 
@@ -120,8 +141,22 @@ public sealed class FolhaFuncionario
 
         Reordenar();
         RecalcularTotais();
-        ApurarInss(inss);
-        ApurarFgts(fgts);
+        ApurarEncargos(encargos);
+    }
+
+    /// <summary>
+    /// Apura os encargos calculados, na ordem que a dependencia exige.
+    ///
+    /// INSS primeiro porque o IRRF o DEDUZ da base. FGTS no meio porque nao
+    /// depende de nenhum dos dois. IRRF por ultimo, e essa ordem nao e
+    /// estetica: apurar o IRRF antes do INSS usaria a deducao do calculo
+    /// anterior, e o imposto sairia errado sem nenhuma linha parecer errada.
+    /// </summary>
+    private void ApurarEncargos(ParametrosEncargos encargos)
+    {
+        ApurarInss(encargos.Inss);
+        ApurarFgts(encargos.Fgts);
+        ApurarIrrf(encargos.Irrf);
     }
 
     /// <summary>
@@ -200,10 +235,10 @@ public sealed class FolhaFuncionario
         Rubrica rubrica,
         decimal valor,
         string? referencia,
-        ParametrosInss? inss,
-        ParametrosFgts? fgts)
+        ParametrosEncargos encargos)
     {
         ArgumentNullException.ThrowIfNull(rubrica);
+        ArgumentNullException.ThrowIfNull(encargos);
 
         if (!rubrica.Ativa)
         {
@@ -230,14 +265,18 @@ public sealed class FolhaFuncionario
 
         Reordenar();
         RecalcularTotais();
-        ApurarInss(inss);
-        ApurarFgts(fgts);
+
+        // Sem reler o cadastro: usa a quantidade JA congelada. Lancar uma
+        // comissao nao e momento de trocar os dependentes do holerite.
+        ApurarEncargos(encargos);
 
         return lancamento;
     }
 
-    internal bool RemoverLancamento(Guid idLancamento, ParametrosInss? inss, ParametrosFgts? fgts)
+    internal bool RemoverLancamento(Guid idLancamento, ParametrosEncargos encargos)
     {
+        ArgumentNullException.ThrowIfNull(encargos);
+
         var alvo = _lancamentos.SingleOrDefault(l => l.Id == idLancamento);
 
         if (alvo is null)
@@ -255,8 +294,7 @@ public sealed class FolhaFuncionario
 
         Reordenar();
         RecalcularTotais();
-        ApurarInss(inss);
-        ApurarFgts(fgts);
+        ApurarEncargos(encargos);
 
         return true;
     }
@@ -301,6 +339,59 @@ public sealed class FolhaFuncionario
         _lancamentos.Add(lancamento);
 
         Reordenar();
+    }
+
+    /// <summary>
+    /// Recalcula o IRRF sobre a base ja apurada, deduzidos INSS e dependentes.
+    ///
+    /// Roda por ULTIMO, e aqui a ordem importa de verdade: o IRRF deduz o
+    /// INSS do mes, entao precisa do valor que ApurarInss acabou de gravar.
+    /// Le esse valor do LANCAMENTO, e nao de um campo em memoria, porque o
+    /// holerite pode ter vindo do banco.
+    ///
+    /// Nao gera laco: o IRRF e desconto e desconto nao compoe base alguma
+    /// (invariante da Fase 4A), entao apura-lo nao muda a base que o originou
+    /// nem o INSS que ele deduziu.
+    /// </summary>
+    private void ApurarIrrf(ParametrosIrrf? irrf)
+    {
+        var removidos = _lancamentos.RemoveAll(l => l.Estrategia == EstrategiaRubrica.IrrfMensal);
+
+        if (irrf is null)
+        {
+            if (removidos > 0)
+            {
+                Reordenar();
+                RecalcularTotais();
+            }
+
+            return;
+        }
+
+        var deducaoInss = _lancamentos
+            .Where(l => l.Estrategia == EstrategiaRubrica.InssProgressivo)
+            .Sum(l => l.Valor);
+
+        var apuracao = CalculadoraIrrf.Apurar(
+            BaseDe(BaseCalculo.Irrf), deducaoInss, QuantidadeDependentesIrrf, irrf.Tabela);
+
+        var lancamento = new LancamentoFolha(
+            IdOrganizacao,
+            Id,
+            irrf.Rubrica,
+            OrigemLancamento.Calculado,
+            apuracao.Valor,
+            referencia: null,
+            ordem: _lancamentos.Count + 1);
+
+        lancamento.RegistrarMemoria(apuracao.Passos);
+
+        _lancamentos.Add(lancamento);
+
+        Reordenar();
+
+        // Os descontos mudaram. As bases nao: IRRF e desconto.
+        RecalcularTotais();
     }
 
     /// <summary>

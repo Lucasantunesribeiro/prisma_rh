@@ -1,4 +1,5 @@
 ﻿using PrismaRH.Dominio.Contratos;
+using PrismaRH.Dominio.Parametros;
 using PrismaRH.Dominio.Folha;
 
 namespace PrismaRH.Testes.Dominio;
@@ -11,6 +12,9 @@ namespace PrismaRH.Testes.Dominio;
 /// </summary>
 public class BasesDeCalculoTestes
 {
+    /// <summary>Sem dependentes: o cenario padrao da maioria dos testes.</summary>
+    private static readonly Dictionary<Guid, int> SemDependentes = [];
+
     private static readonly DateTimeOffset Agora = new(2026, 8, 20, 12, 0, 0, TimeSpan.Zero);
     private static readonly Guid Org = Guid.CreateVersion7();
     private static readonly Guid Empresa = Guid.CreateVersion7();
@@ -51,7 +55,9 @@ public class BasesDeCalculoTestes
     {
         var folha = new FolhaPagamento(Org, Empresa, Agosto, Agora);
         var contrato = Contrato(valorSalario);
-        folha.Calcular([contrato], salario, [salario], null, null, Agora);
+        folha.Calcular(
+            [contrato], salario, [salario],
+            ParametrosEncargos.Nenhum, SemDependentes, Agora);
         return (folha, contrato);
     }
 
@@ -194,7 +200,9 @@ public class BasesDeCalculoTestes
         var folha = FolhaCalculada(Salario(BaseCalculo.Inss));
         var holerite = folha.Funcionarios[0];
 
-        folha.AdicionarLancamentoManual(holerite.Id, Provento("PREMIO", BaseCalculo.Fgts), 500m, null, null, null);
+        folha.AdicionarLancamentoManual(
+            holerite.Id, Provento("PREMIO", BaseCalculo.Fgts), 500m, null,
+            ParametrosEncargos.Nenhum);
 
         Assert.Equal(3000m, holerite.BaseDe(BaseCalculo.Inss));
         Assert.Equal(500m, holerite.BaseDe(BaseCalculo.Fgts));
@@ -207,13 +215,17 @@ public class BasesDeCalculoTestes
         var folha = FolhaCalculada(Salario());
         var holerite = folha.Funcionarios[0];
 
-        folha.AdicionarLancamentoManual(holerite.Id, Provento("COM", IntegraTudo), 500m, null, null, null);
+        folha.AdicionarLancamentoManual(
+            holerite.Id, Provento("COM", IntegraTudo), 500m, null,
+            ParametrosEncargos.Nenhum);
 
         var vt = new Rubrica(
             Org, "VT", "Vale-transporte",
             TipoRubrica.Desconto, EstrategiaRubrica.ValorInformado, BaseCalculo.Nenhuma, Agora);
 
-        folha.AdicionarLancamentoManual(holerite.Id, vt, 180m, null, null, null);
+        folha.AdicionarLancamentoManual(
+            holerite.Id, vt, 180m, null,
+            ParametrosEncargos.Nenhum);
 
         // 3000 + 500. O desconto de 180 sai do liquido, nao da base.
         Assert.Equal(3500m, holerite.BaseDe(BaseCalculo.Inss));
@@ -226,7 +238,9 @@ public class BasesDeCalculoTestes
         var folha = FolhaCalculada(Salario());
         var holerite = folha.Funcionarios[0];
 
-        folha.AdicionarLancamentoManual(holerite.Id, Informativa("BFG", BaseCalculo.Fgts), 250m, null, null, null);
+        folha.AdicionarLancamentoManual(
+            holerite.Id, Informativa("BFG", BaseCalculo.Fgts), 250m, null,
+            ParametrosEncargos.Nenhum);
 
         Assert.Equal(3250m, holerite.BaseDe(BaseCalculo.Fgts));
         Assert.Equal(3000m, holerite.BaseDe(BaseCalculo.Inss));
@@ -240,11 +254,12 @@ public class BasesDeCalculoTestes
         var holerite = folha.Funcionarios[0];
 
         var lancamento = folha.AdicionarLancamentoManual(
-            holerite.Id, Provento("COM", IntegraTudo), 500m, null, null, null);
+            holerite.Id, Provento("COM", IntegraTudo), 500m, null,
+            ParametrosEncargos.Nenhum);
 
         Assert.Equal(3500m, holerite.BaseDe(BaseCalculo.Inss));
 
-        folha.RemoverLancamento(holerite.Id, lancamento.Id, null, null);
+        folha.RemoverLancamento(holerite.Id, lancamento.Id, ParametrosEncargos.Nenhum);
 
         Assert.Equal(3000m, holerite.BaseDe(BaseCalculo.Inss));
     }
@@ -285,7 +300,9 @@ public class BasesDeCalculoTestes
         var (folha, contrato) = FolhaComContrato(salario);
 
         salario.AlterarIncidencias(BaseCalculo.Inss | BaseCalculo.Fgts);
-        folha.Calcular([contrato], salario, [salario], null, null, Agora);
+        folha.Calcular(
+            [contrato], salario, [salario],
+            ParametrosEncargos.Nenhum, SemDependentes, Agora);
 
         Assert.Equal(3000m, folha.Funcionarios[0].BaseDe(BaseCalculo.Fgts));
     }
@@ -301,13 +318,17 @@ public class BasesDeCalculoTestes
         var (folha, contrato) = FolhaComContrato(salario);
         var holerite = folha.Funcionarios[0];
 
-        folha.AdicionarLancamentoManual(holerite.Id, premio, 200m, null, null, null);
+        folha.AdicionarLancamentoManual(
+            holerite.Id, premio, 200m, null,
+            ParametrosEncargos.Nenhum);
 
         Assert.Equal(3200m, holerite.BaseDe(BaseCalculo.Inss));
         Assert.Equal(3000m, holerite.BaseDe(BaseCalculo.Fgts));
 
         premio.AlterarIncidencias(BaseCalculo.Inss | BaseCalculo.Fgts);
-        folha.Calcular([contrato], salario, [salario, premio], null, null, Agora);
+        folha.Calcular(
+            [contrato], salario, [salario, premio],
+            ParametrosEncargos.Nenhum, SemDependentes, Agora);
 
         Assert.Equal(3200m, holerite.BaseDe(BaseCalculo.Fgts));
 
@@ -326,8 +347,12 @@ public class BasesDeCalculoTestes
         var premio = Provento("PRE", BaseCalculo.Inss);
         var (folha, contrato) = FolhaComContrato(salario);
 
-        folha.AdicionarLancamentoManual(folha.Funcionarios[0].Id, premio, 200m, null, null, null);
-        folha.Calcular([contrato], salario, [salario], null, null, Agora);
+        folha.AdicionarLancamentoManual(
+            folha.Funcionarios[0].Id, premio, 200m, null,
+            ParametrosEncargos.Nenhum);
+        folha.Calcular(
+            [contrato], salario, [salario],
+            ParametrosEncargos.Nenhum, SemDependentes, Agora);
 
         Assert.Equal(3200m, folha.Funcionarios[0].BaseDe(BaseCalculo.Inss));
     }
@@ -338,8 +363,12 @@ public class BasesDeCalculoTestes
         var salario = Salario();
         var (folha, contrato) = FolhaComContrato(salario);
 
-        folha.Calcular([contrato], salario, [salario], null, null, Agora);
-        folha.Calcular([contrato], salario, [salario], null, null, Agora);
+        folha.Calcular(
+            [contrato], salario, [salario],
+            ParametrosEncargos.Nenhum, SemDependentes, Agora);
+        folha.Calcular(
+            [contrato], salario, [salario],
+            ParametrosEncargos.Nenhum, SemDependentes, Agora);
 
         var holerite = folha.Funcionarios[0];
 
@@ -355,7 +384,9 @@ public class BasesDeCalculoTestes
         var folha = FolhaCalculada(Salario(BaseCalculo.Inss));
         var holerite = folha.Funcionarios[0];
 
-        folha.AdicionarLancamentoManual(holerite.Id, Provento("PREMIO", BaseCalculo.Fgts), 500m, null, null, null);
+        folha.AdicionarLancamentoManual(
+            holerite.Id, Provento("PREMIO", BaseCalculo.Fgts), 500m, null,
+            ParametrosEncargos.Nenhum);
 
         // E esta a memoria de calculo da base: derivada do que ja esta
         // gravado, sem duplicar nada.
@@ -385,7 +416,9 @@ public class BasesDeCalculoTestes
             Org, "VT", "VT", TipoRubrica.Desconto,
             EstrategiaRubrica.ValorInformado, BaseCalculo.Nenhuma, Agora);
 
-        var lancamento = folha.AdicionarLancamentoManual(holerite.Id, vt, 180m, null, null, null);
+        var lancamento = folha.AdicionarLancamentoManual(
+            holerite.Id, vt, 180m, null,
+            ParametrosEncargos.Nenhum);
 
         Assert.Equal(180m, lancamento.Valor);
         Assert.Equal(0m, lancamento.EfeitoNaBase);

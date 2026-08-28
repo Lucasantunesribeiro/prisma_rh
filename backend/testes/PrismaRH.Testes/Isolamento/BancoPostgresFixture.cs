@@ -80,6 +80,10 @@ public sealed class BancoPostgresFixture : IAsyncLifetime
     public Guid IdEmpresaD { get; private set; }
     public Guid IdEstabelecimentoD { get; private set; }
 
+    public Guid IdOrganizacaoE { get; private set; }
+    public Guid IdEmpresaE { get; private set; }
+    public Guid IdEstabelecimentoE { get; private set; }
+
     public const string Senha = "SenhaDeTeste#2026";
 
     public const string EmailAdminA = "admin@a.teste";
@@ -111,6 +115,14 @@ public sealed class BancoPostgresFixture : IAsyncLifetime
     /// ORDEM de execucao, e o defeito pareceria estar na Fase 3.
     /// </summary>
     public const string EmailAdminD = "admin@d.teste";
+
+    /// <summary>
+    /// Organizacao E existe so para os testes de IRRF, pela mesma razao da C e
+    /// da D - e aqui o motivo e mais forte: o IRRF e DESCONTO. Liga-lo na
+    /// organizacao A mudaria o LIQUIDO de todo holerite dela, e os testes das
+    /// Fases 3, 4A e 4C passariam a falhar conforme a ordem de execucao.
+    /// </summary>
+    public const string EmailAdminE = "admin@e.teste";
 
     /// <summary>
     /// CPF valido e unico por semente. Os testes desta colecao compartilham o
@@ -169,7 +181,8 @@ public sealed class BancoPostgresFixture : IAsyncLifetime
         var orgB = new Organizacao("Organizacao B", agora);
         var orgC = new Organizacao("Organizacao C", agora);
         var orgD = new Organizacao("Organizacao D", agora);
-        db.Organizacoes.AddRange(orgA, orgB, orgC, orgD);
+        var orgE = new Organizacao("Organizacao E", agora);
+        db.Organizacoes.AddRange(orgA, orgB, orgC, orgD, orgE);
 
         db.Usuarios.AddRange(
             new Usuario(orgA.Id, "Admin A", EmailAdminA, hash, Perfil.AdministradorEmpresa, agora),
@@ -179,18 +192,21 @@ public sealed class BancoPostgresFixture : IAsyncLifetime
             new Usuario(orgA.Id, "Plataforma A", EmailPlataformaA, hash, Perfil.AdministradorPlataforma, agora),
             new Usuario(orgB.Id, "Admin B", EmailAdminB, hash, Perfil.AdministradorEmpresa, agora),
             new Usuario(orgC.Id, "Admin C", EmailAdminC, hash, Perfil.AdministradorEmpresa, agora),
-            new Usuario(orgD.Id, "Admin D", EmailAdminD, hash, Perfil.AdministradorEmpresa, agora));
+            new Usuario(orgD.Id, "Admin D", EmailAdminD, hash, Perfil.AdministradorEmpresa, agora),
+            new Usuario(orgE.Id, "Admin E", EmailAdminE, hash, Perfil.AdministradorEmpresa, agora));
 
         var empresaA = new Empresa(orgA.Id, "Empresa da A", Cnpj.Criar("11222333000181"), agora);
         var empresaB = new Empresa(orgB.Id, "Empresa da B", Cnpj.Criar("11444777000161"), agora);
         var empresaC = new Empresa(orgC.Id, "Empresa da C", Cnpj.Criar("34028316000103"), agora);
         var empresaD = new Empresa(orgD.Id, "Empresa da D", Cnpj.Criar("60746948000112"), agora);
-        db.Empresas.AddRange(empresaA, empresaB, empresaC, empresaD);
+        var empresaE = new Empresa(orgE.Id, "Empresa da E", Cnpj.Criar("33000167000101"), agora);
+        db.Empresas.AddRange(empresaA, empresaB, empresaC, empresaD, empresaE);
 
         var estabA = new Estabelecimento(orgA.Id, empresaA.Id, "001", "Matriz A", agora);
         var estabC = new Estabelecimento(orgC.Id, empresaC.Id, "001", "Matriz C", agora);
         var estabD = new Estabelecimento(orgD.Id, empresaD.Id, "001", "Matriz D", agora);
-        db.Estabelecimentos.AddRange(estabA, estabC, estabD);
+        var estabE = new Estabelecimento(orgE.Id, empresaE.Id, "001", "Matriz E", agora);
+        db.Estabelecimentos.AddRange(estabA, estabC, estabD, estabE);
 
         // Parametro legal FEDERAL: nao pertence a organizacao alguma, entao
         // entra uma vez so e vale para as duas. Mesma tabela da semeadura de
@@ -214,6 +230,24 @@ public sealed class BancoPostgresFixture : IAsyncLifetime
             "Lei n. 8.036, de 11/05/1990, art. 15 - deposito mensal de 8% da remuneracao",
             agora));
 
+        // Tambem federal: a tabela de IRRF de 2026, com o redutor da Lei
+        // 15.270/2025. Os testes de IRRF conferem os exemplos oficiais.
+        db.TabelasIrrf.Add(new TabelaIrrf(
+            new DateOnly(2026, 1, 1),
+            "Lei n. 15.191, de 11/08/2025 (tabela) e Lei n. 15.270, de 26/11/2025 (redutor)",
+            deducaoPorDependente: 189.59m,
+            descontoSimplificado: 607.20m,
+            redutorBase: 978.62m,
+            redutorCoeficiente: 0.133145m,
+            [
+                (2428.80m, 0m, 0m),
+                (2826.65m, 0.075m, 182.16m),
+                (3751.05m, 0.15m, 394.16m),
+                (4664.68m, 0.225m, 675.49m),
+                (0m, 0.275m, 908.73m),
+            ],
+            agora));
+
         await db.SaveChangesAsync();
 
         IdOrganizacaoA = orgA.Id;
@@ -227,6 +261,9 @@ public sealed class BancoPostgresFixture : IAsyncLifetime
         IdOrganizacaoD = orgD.Id;
         IdEmpresaD = empresaD.Id;
         IdEstabelecimentoD = estabD.Id;
+        IdOrganizacaoE = orgE.Id;
+        IdEmpresaE = empresaE.Id;
+        IdEstabelecimentoE = estabE.Id;
     }
 
     /// <summary>

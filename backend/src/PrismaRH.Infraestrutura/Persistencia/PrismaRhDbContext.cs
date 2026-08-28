@@ -54,6 +54,8 @@ public sealed class PrismaRhDbContext(
     public DbSet<TabelaInss> TabelasInss => Set<TabelaInss>();
     public DbSet<FaixaInss> FaixasInss => Set<FaixaInss>();
     public DbSet<TabelaFgts> TabelasFgts => Set<TabelaFgts>();
+    public DbSet<TabelaIrrf> TabelasIrrf => Set<TabelaIrrf>();
+    public DbSet<FaixaIrrf> FaixasIrrf => Set<FaixaIrrf>();
 
     /// <summary>Organizacao do token atual. Exposta para os filtros e para diagnostico.</summary>
     public Guid IdOrganizacaoAtual => contextoUsuario.IdOrganizacao;
