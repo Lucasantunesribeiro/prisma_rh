@@ -80,13 +80,60 @@ const DEPENDENTES = [
   },
 ]
 
+const FERIAS = {
+  idContrato: 'c1',
+  matricula: '1001',
+  dataAdmissao: '2023-04-01',
+  dataDesligamento: null,
+  referencia: '2026-08-28',
+  diasAdquiridos: 90,
+  periodosVencidos: 1,
+  periodos: [
+    {
+      numero: 1,
+      inicio: '2023-04-01',
+      fim: '2024-03-31',
+      inicioConcessao: '2024-04-01',
+      limiteConcessao: '2025-03-31',
+      diasDireito: 30,
+      situacao: 'Vencido',
+      diasParaCompletar: 0,
+      emDobra: true,
+    },
+    {
+      numero: 2,
+      inicio: '2024-04-01',
+      fim: '2025-03-31',
+      inicioConcessao: '2025-04-01',
+      limiteConcessao: '2026-03-31',
+      diasDireito: 30,
+      situacao: 'Adquirido',
+      diasParaCompletar: 0,
+      emDobra: false,
+    },
+    {
+      numero: 3,
+      inicio: '2026-04-01',
+      fim: '2027-03-31',
+      inicioConcessao: '2027-04-01',
+      limiteConcessao: '2028-03-31',
+      diasDireito: 30,
+      situacao: 'EmAndamento',
+      diasParaCompletar: 215,
+      emDobra: false,
+    },
+  ],
+}
+
 /**
- * A ordem importa: `/dependentes` precisa vir ANTES de `/api/funcionarios/`,
- * senao a rota do dependente cai no ramo do funcionario e a secao recebe um
- * objeto no lugar da lista - o teste passaria sem exercitar nada.
+ * A ordem importa, e ja mordeu duas vezes: `/dependentes` e `/ferias` precisam
+ * vir ANTES de `/contratos` e de `/api/funcionarios/`, senao caem no ramo
+ * errado e a secao recebe um objeto no lugar da lista - o teste passaria sem
+ * exercitar nada.
  */
-function rotear(url: string, dependentes: unknown = DEPENDENTES) {
+function rotear(url: string, dependentes: unknown = DEPENDENTES, ferias: unknown = FERIAS) {
   if (url.includes('/dependentes')) return responder(dependentes)
+  if (url.includes('/ferias')) return responder(ferias)
   if (url.includes('/vigencias')) return responder(VIGENCIAS)
   if (url.includes('/contratos')) return responder([CONTRATO])
   if (url.includes('/api/cargos')) return responder(CARGOS)
@@ -222,5 +269,40 @@ describe('FuncionarioDetalhe', () => {
     renderizar('AdministradorEmpresa')
 
     expect(await screen.findByText('Nenhum dependente')).toBeInTheDocument()
+  })
+
+  it('mostra os períodos aquisitivos e avisa da dobra', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => Promise.resolve(rotear(String(url)))))
+
+    renderizar('AdministradorEmpresa')
+
+    expect(await screen.findByText('Férias')).toBeInTheDocument()
+
+    // O aviso da dobra é o ponto da tela: é dinheiro a mais que a empresa
+    // vai pagar por não ter concedido no prazo.
+    expect(screen.getByText(/passou do prazo de concessão/)).toBeInTheDocument()
+    expect(screen.getByText(/em dobro/)).toBeInTheDocument()
+    expect(screen.getByText('90 dias')).toBeInTheDocument()
+
+    expect(screen.getByText('Vencido')).toBeInTheDocument()
+    expect(screen.getByText('Adquirido')).toBeInTheDocument()
+    expect(screen.getByText('Em andamento')).toBeInTheDocument()
+    expect(screen.getByText(/faltam 215 dias/)).toBeInTheDocument()
+  })
+
+  it('sem período vencido, não mostra o aviso de dobra', async () => {
+    const semDobra = { ...FERIAS, periodosVencidos: 0 }
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((url: string) =>
+        Promise.resolve(rotear(String(url), DEPENDENTES, semDobra)),
+      ),
+    )
+
+    renderizar('AdministradorEmpresa')
+
+    expect(await screen.findByText('Férias')).toBeInTheDocument()
+    expect(screen.queryByText(/passou do prazo de concessão/)).not.toBeInTheDocument()
   })
 })

@@ -203,6 +203,44 @@ export const atualizarDependente = (
 export const removerDependente = (idFuncionario: string, id: string): Promise<void> =>
   remover(`/api/funcionarios/${idFuncionario}/dependentes/${id}`)
 
+// ------------------------------------------------------------------ férias
+
+export type SituacaoPeriodoAquisitivo = 'EmAndamento' | 'Adquirido' | 'Vencido'
+
+export const ROTULO_SITUACAO_PERIODO: Record<SituacaoPeriodoAquisitivo, string> = {
+  EmAndamento: 'Em andamento',
+  Adquirido: 'Adquirido',
+  Vencido: 'Vencido',
+}
+
+export interface PeriodoAquisitivo {
+  numero: number
+  inicio: string
+  fim: string
+  inicioConcessao: string
+  /** Depois desta data a remuneração é devida em dobro (CLT art. 137). */
+  limiteConcessao: string
+  diasDireito: number
+  situacao: SituacaoPeriodoAquisitivo
+  diasParaCompletar: number
+  emDobra: boolean
+}
+
+export interface FeriasDoContrato {
+  idContrato: string
+  matricula: string
+  dataAdmissao: string
+  dataDesligamento: string | null
+  /** A data usada como referência. Sem parâmetro, é hoje. */
+  referencia: string
+  diasAdquiridos: number
+  periodosVencidos: number
+  periodos: PeriodoAquisitivo[]
+}
+
+export const listarPeriodosFerias = (idContrato: string): Promise<FeriasDoContrato> =>
+  obter(`/api/contratos/${idContrato}/ferias/periodos`)
+
 // ---------------------------------------------------------------- formatação
 
 const MOEDA = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' })

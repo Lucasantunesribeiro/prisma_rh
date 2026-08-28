@@ -1076,6 +1076,24 @@ Implementar INSS de acordo com regras oficiais vigentes.
 
 ---
 
+### Security Gate — Fase 4E, etapa 1 (direito a férias)
+
+| # | Ponto | Resposta |
+|---|---|---|
+| 1 | Ameaças introduzidas | Rota nova que expõe **data de admissão e histórico de vínculo** de um contrato. IDOR pelo id do contrato. Parâmetro `referencia` vindo do cliente. |
+| 2 | Controles | Contrato resolvido **através do filtro global** — não por id direto com conferência manual. `referencia` é `DateOnly` tipado: valor malformado não chega ao domínio. Nenhuma escrita: a rota é `GET` e o domínio é função pura, sem banco e sem relógio. |
+| 3 | Testes de segurança | Contrato de outra organização devolve **404** (não 403). Contrato inexistente devolve **404**. Anônimo recebe **401**. Visualizador lê. |
+| 4 | Impacto multiempresa | O contrato passa pelo filtro global, e os períodos são derivados **dele** — não há consulta paralela que pudesse escapar. Não foi preciso criar organização própria na fixture, ao contrário de 4B/4C/4D, porque a etapa **não altera nenhum holerite**. |
+| 5 | Exposição de dados | Nenhum dado novo é armazenado. A resposta expõe admissão, desligamento e matrícula — que o endpoint de contratos já expõe ao mesmo perfil. Nenhum valor monetário. |
+| 6 | Permissões | `LerDadosEmpresariais` para os cinco perfis: saber quantas férias estão vencidas é informação operacional, e o Auditor precisa dela tanto quanto o Analista. Nenhuma rota de escrita. |
+| 7 | Logging e auditoria | Não se aplica: nada é alterado. Quando a etapa 2 trouxer a concessão, ela entra como evento auditável — conceder férias é decisão com efeito financeiro. |
+| 8 | Dependências | Nenhuma nova. |
+| 9 | Secrets | Não se aplica. |
+| 10 | Superfície pública | Nenhuma rota anônima nova. |
+| 11 | Risco de custo/abuso | Uma consulta por chamada, por chave primária. A derivação é um laço de no máximo algumas dezenas de iterações — um contrato de 27 anos gera 27 períodos. Sem paginação **porque a lista é limitada pelo tempo de casa**, não pelo volume de dados. |
+
+---
+
 ## FASE 4C — FGTS
 
 > **Status: concluída em 27/08/2026.**
@@ -1426,11 +1444,14 @@ declaração é do contribuinte.
 
 ## FASE 4E — FÉRIAS
 
+> **Status: etapa 1 concluída em 28/08/2026 — direito (períodos aquisitivos).**
+> **Etapa 2 — concessão e cálculo — não iniciada.**
+
 ### Objetivo
 
 Suportar processamento de férias.
 
-### Entregas futuras
+### Entregas
 
 - período aquisitivo;
 - período concessivo;
@@ -1440,6 +1461,117 @@ Suportar processamento de férias.
 - incidências;
 - memória;
 - testes.
+
+### Por que esta subfase é dividida em duas etapas
+
+Férias é o primeiro **tipo de processamento novo** do produto — as fases 4B a 4D
+acrescentaram encargos à folha mensal, e esta acrescenta uma folha diferente. Duas
+coisas separáveis vivem aqui:
+
+1. **o direito** — quantos períodos a pessoa acumulou, quando vencem, o que já passou
+   do prazo. É calendário puro, e não mexe em dinheiro;
+2. **o gozo e o pagamento** — escolher os dias, remunerar, aplicar o 1/3, o abono e as
+   incidências. Isso é folha, e exige `TipoFolha` em `FolhaPagamento`.
+
+A etapa 1 entrega a primeira, e ela é útil sozinha: um período vencido é dinheiro que a
+empresa vai pagar em dobro, e hoje o sistema não avisava.
+
+---
+
+### Etapa 1 — Direito a férias (concluída)
+
+#### Fontes
+
+| Regra | Norma |
+|---|---|
+| 12 meses de vigência dão direito a férias | **CLT art. 130** |
+| Concessão nos 12 meses subsequentes — o período concessivo | **CLT art. 134** |
+| Concedidas após esse prazo, remuneração **em dobro** | **CLT art. 137** |
+
+#### Decisões registradas
+
+##### 1. Período aquisitivo **não tem tabela no banco**
+
+A decisão mais importante da etapa, e ela é deliberada.
+
+Um período aquisitivo é função pura de duas coisas que o sistema **já guarda**: a data de
+admissão e a data de referência. Não há nada nele que alguém altere — ele nasce do
+calendário. Persistir criaria linhas cujo único conteúdo é o que o próprio cálculo
+produziria, com o risco extra de **divergirem da admissão** se ela for corrigida.
+
+O que tem estado é a **concessão** — quantos dias foram gozados, em que folha, quando.
+Isso não existe ainda: chega na etapa 2, e aí vira tabela.
+
+`CLAUDE.md §20`: não criar abstrações sem uso real. Uma tabela `periodos_aquisitivos`
+cuja única coluna mutável seria sempre zero é exatamente isso.
+
+##### 2. `SituacaoEm(referencia)`, e não uma coluna `Situacao`
+
+Mesmo padrão de `Dependente.DedutivelEm(competencia)`: a situação é uma **pergunta feita
+numa data**, não um estado guardado. Um campo `Situacao` persistido ficaria desatualizado
+sozinho — um período "Adquirido" vira "Vencido" pela simples passagem do tempo, sem que
+ninguém escreva nada.
+
+Consequência prática boa: a API aceita `?referencia=`, e a pergunta *"em dezembro,
+quantos períodos estarão vencidos?"* é respondida sem simular nada.
+
+##### 3. O limite de concessão **pertence** ao prazo
+
+`SituacaoEm` usa `referencia > LimiteConcessao` para declarar vencido. No **último dia**
+do concessivo ainda não há dobra. Um erro de `>` para `>=` aqui pagaria em dobro férias
+concedidas dentro do prazo — e ninguém reclamaria, porque o erro é a favor do
+funcionário e contra a empresa.
+
+##### 4. Contrato desligado para de gerar períodos
+
+O que sobra de período incompleto vira **férias proporcionais**, que são verba
+rescisória e pertencem à **Fase 4G**. Mostrá-lo aqui como se fosse um direito de 30 dias
+seria enganoso.
+
+##### 5. Períodos são contíguos por construção
+
+`fim = admissão.AddYears(n) − 1 dia`, e o próximo começa no aniversário. Há teste
+exigindo `periodos[i-1].Fim.AddDays(1) == periodos[i].Inicio` — um buraco aqui faria a
+pessoa perder dias de direito sem nada aparecer na tela.
+
+#### Caso de borda registrado — admissão em 29 de fevereiro
+
+`AddYears` leva 29/02/2024 para **28/02/2025** (o ano seguinte não é bissexto), então o
+primeiro período termina em 27/02/2025 e o segundo começa em 28/02/2025.
+
+O efeito é de **um dia** e só atinge quem foi admitido em 29/02. A alternativa — fechar
+em 28/02 e recomeçar em 01/03 — não é obviamente mais correta, e a lei não trata do caso.
+Registrado como **decisão, não como certeza**, com teste que documenta o comportamento e
+trava a contiguidade.
+
+#### Limitações declaradas — 28/08/2026
+
+**A redução por faltas injustificadas (art. 130) não é aplicada**, e não por
+esquecimento: **o domínio não tem faltas**. Não existe registro de ausência em lugar
+nenhum do Prisma RH, então não há o que contar. Implementar a tabela do art. 130 sem a
+entrada dela seria escrever regra que nunca dispara — e dar a impressão de que o sistema
+confere isso. Todo período completo dá **30 dias**.
+
+**Regime de tempo parcial (art. 130-A) não é suportado**: tem tabela própria de dias, e o
+contrato guarda jornada **mensal** — deduzir a semanal dela seria suposição.
+
+**Férias coletivas, abono pecuniário e o 1/3** pertencem à etapa 2.
+
+---
+
+### Etapa 2 — Concessão e cálculo (não iniciada)
+
+O que ela precisa trazer:
+
+1. **`TipoFolha` em `FolhaPagamento`** — hoje toda folha é mensal, e o índice único
+   `ux_folhas_empresa_competencia` já tem comentário antecipando esta coluna;
+2. **concessão** — a tabela com estado: período, dias gozados, data de início do gozo,
+   folha que pagou;
+3. **remuneração de férias** e o **1/3 constitucional** (CF art. 7º, XVII);
+4. **abono pecuniário** (CLT art. 143) — a venda de 1/3 dos dias;
+5. **dobra** do art. 137, que a etapa 1 já sabe identificar;
+6. **incidências** — férias gozadas integram salário-de-contribuição; o abono pecuniário
+   e o terço sobre ele **não**. Exige fonte oficial registrada antes de implementar.
 
 ---
 

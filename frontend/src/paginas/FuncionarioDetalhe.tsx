@@ -36,6 +36,7 @@ import { Label } from '@/components/ui/label'
 import { usePagina } from '@/layout/usePagina'
 import { cn } from '@/lib/utils'
 import { SecaoDependentes } from './SecaoDependentes'
+import { SecaoFerias } from './SecaoFerias'
 
 export default function FuncionarioDetalhe() {
   const { id } = useParams<{ id: string }>()
@@ -131,6 +132,14 @@ export default function FuncionarioDetalhe() {
             administra={administra}
             aoMudar={carregar}
           />
+        ))}
+
+        {/*
+         * Férias pertencem ao CONTRATO, não à pessoa: o período aquisitivo
+         * nasce da admissão daquele vínculo. Uma pessoa readmitida recomeça.
+         */}
+        {contratos.map((contrato) => (
+          <SecaoFerias key={`ferias-${contrato.id}`} idContrato={contrato.id} />
         ))}
 
         {/*

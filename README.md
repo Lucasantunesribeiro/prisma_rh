@@ -2,7 +2,7 @@
 
 Plataforma B2B de gestão, cálculo, conferência e auditoria de folha de pagamento brasileira.
 
-> **Estado atual: Fase 4D concluída — IRRF.**
+> **Estado atual: Fase 4E, etapa 1 concluída — direito a férias.**
 >
 > Existe login com JWT, cinco perfis, organizações isoladas entre si, o cadastro de
 > funcionários, contratos e histórico contratual por vigência, e a **primeira folha
@@ -14,6 +14,8 @@ Plataforma B2B de gestão, cálculo, conferência e auditoria de folha de pagame
 > O **IRRF** é retido pela tabela de 2026, com dedução por dependente, desconto
 > simplificado e o **redutor** da Lei 15.270/2025 — quem ganha até R$ 5.000 não paga.
 > Com isso a folha mensal está completa: salário proporcional, bases, INSS, FGTS e IRRF.
+> Existe também o **direito a férias** — quantos períodos cada contrato acumulou e quais
+> já passaram do prazo de concessão. O **pagamento** das férias ainda não existe.
 > Consulte o [ROADMAP.md](ROADMAP.md) para as fases seguintes e o
 > [CLAUDE.md](CLAUDE.md) para as regras do projeto.
 
@@ -168,6 +170,32 @@ Três diferenças em relação ao INSS, cada uma com teste próprio:
 > previdência privada e parcela isenta acima de 65 anos não têm dado de origem no
 > domínio ainda. Não há ajuste anual: o produto retém na fonte.
 
+**Direito a férias (Fase 4E, etapa 1)**
+
+Fontes: **CLT art. 130** (12 meses dão direito), **art. 134** (concessão nos 12 meses
+subsequentes) e **art. 137** (fora do prazo, remuneração **em dobro**).
+
+- O período aquisitivo **não tem tabela no banco**, e isso é decisão registrada: ele é
+  função pura da data de admissão e do calendário. Persistir criaria linhas cujo único
+  conteúdo é o que o próprio cálculo produziria — e que poderiam divergir da admissão se
+  ela fosse corrigida. Quem tem estado é a **concessão**, que ainda não existe.
+- A situação é uma **pergunta feita numa data**, não uma coluna: um período "Adquirido"
+  vira "Vencido" pela simples passagem do tempo. Por isso a API aceita `?referencia=`, e
+  *"em dezembro, quantos estarão vencidos?"* se responde sem simular nada.
+- O **último dia** do prazo de concessão ainda não é dobra. Um erro de `>` para `>=` aqui
+  pagaria em dobro férias concedidas no prazo — e ninguém reclamaria, porque o erro é
+  contra a empresa.
+- Contrato desligado **para de gerar períodos**: o que sobra vira férias proporcionais,
+  que são verba rescisória (Fase 4G).
+- A tela avisa em destaque quando há período vencido: é dinheiro a mais que a empresa vai
+  pagar por não ter concedido no prazo.
+
+> **Limitações declaradas:** a **redução por faltas** (art. 130) não é aplicada porque o
+> domínio **não tem faltas** — não há registro de ausência em lugar nenhum, então não há o
+> que contar. Todo período completo dá 30 dias. **Tempo parcial** (art. 130-A) não é
+> suportado: tem tabela própria, e o contrato guarda jornada mensal, não semanal.
+> **Férias coletivas, abono pecuniário e o 1/3** pertencem à etapa 2.
+
 **Dependentes (Fase 4D, etapa 1)**
 
 - Pertencem à **pessoa**, não ao contrato: um filho continua sendo filho se ela for
@@ -186,8 +214,11 @@ Três diferenças em relação ao INSS, cada uma com teste próprio:
 
 ## O que ainda NÃO existe
 
-Férias, 13º, rescisão, afastamentos, importações, motor de análises, integrações,
-recursos AWS e CI/CD. Tudo isso pertence às fases seguintes do roadmap.
+O **pagamento** de férias, 13º, rescisão, afastamentos, importações, motor de análises,
+integrações, recursos AWS e CI/CD. Tudo isso pertence às fases seguintes do roadmap.
+
+Férias hoje mostram o **direito**, não o gozo: escolher os dias, remunerar, aplicar o 1/3
+e o abono exige um **tipo de folha** novo, que a etapa 2 da Fase 4E traz.
 
 Cada encargo exige fonte oficial registrada e parâmetro versionado (`CLAUDE.md §29`). A
 Fase 4A criou as bases, a 4B aplicou a primeira alíquota, a 4C acrescentou o depósito do
@@ -386,6 +417,7 @@ Todos usam a senha de `PRISMARH_SEED_SENHA`.
 | `POST /api/funcionarios/{id}/dependentes` | Adm. Empresa, Analista | Cadastra dependente |
 | `PUT /api/funcionarios/{id}/dependentes/{idDep}` | Adm. Empresa, Analista | Altera dados e período de dedução |
 | `DELETE /api/funcionarios/{id}/dependentes/{idDep}` | Adm. Empresa, Analista | Remove dependente |
+| `GET /api/contratos/{id}/ferias/periodos` | todos os 5 | Períodos aquisitivos, com o que já venceu |
 | `GET /api/folhas` | todos os 5 | Lista, com filtro por empresa e competência |
 | `GET /api/folhas/{id}` | todos os 5 | Folha com os holerites |
 | `GET /api/folhas/{id}/funcionarios/{idHolerite}` | todos os 5 | Holerite, memória de cálculo e bases |
