@@ -213,6 +213,28 @@ export const ROTULO_SITUACAO_PERIODO: Record<SituacaoPeriodoAquisitivo, string> 
   Vencido: 'Vencido',
 }
 
+export type SituacaoConcessao = 'Programada' | 'EmGozo' | 'Concluida'
+
+export const ROTULO_SITUACAO_CONCESSAO: Record<SituacaoConcessao, string> = {
+  Programada: 'Programada',
+  EmGozo: 'Em gozo',
+  Concluida: 'Concluída',
+}
+
+export interface ConcessaoFerias {
+  id: string
+  inicioPeriodoAquisitivo: string
+  fimPeriodoAquisitivo: string
+  inicio: string
+  fim: string
+  dias: number
+  /** Dias vendidos (CLT art. 143). Não são gozados. */
+  diasAbonoPecuniario: number
+  diasBaixados: number
+  situacao: SituacaoConcessao
+  podeCancelar: boolean
+}
+
 export interface PeriodoAquisitivo {
   numero: number
   inicio: string
@@ -224,6 +246,13 @@ export interface PeriodoAquisitivo {
   situacao: SituacaoPeriodoAquisitivo
   diasParaCompletar: number
   emDobra: boolean
+  diasConcedidos: number
+  saldo: number
+  /** Quanto ainda pode ser vendido: 1/3 do período menos o já vendido. */
+  saldoAbono: number
+  /** Frações de gozo já usadas. No máximo três (CLT art. 134, §1º). */
+  fracoesUsadas: number
+  concessoes: ConcessaoFerias[]
 }
 
 export interface FeriasDoContrato {
@@ -234,12 +263,27 @@ export interface FeriasDoContrato {
   /** A data usada como referência. Sem parâmetro, é hoje. */
   referencia: string
   diasAdquiridos: number
+  /** Dias adquiridos menos o que já foi programado. */
+  saldoTotal: number
   periodosVencidos: number
   periodos: PeriodoAquisitivo[]
 }
 
 export const listarPeriodosFerias = (idContrato: string): Promise<FeriasDoContrato> =>
   obter(`/api/contratos/${idContrato}/ferias/periodos`)
+
+export const concederFerias = (
+  idContrato: string,
+  dados: {
+    inicioPeriodoAquisitivo: string
+    inicio: string
+    dias: number
+    diasAbonoPecuniario: number
+  },
+): Promise<ConcessaoFerias> => enviar(`/api/contratos/${idContrato}/ferias/concessoes`, dados)
+
+export const cancelarConcessao = (idContrato: string, id: string): Promise<void> =>
+  remover(`/api/contratos/${idContrato}/ferias/concessoes/${id}`)
 
 // ---------------------------------------------------------------- formatação
 

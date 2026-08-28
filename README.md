@@ -2,7 +2,7 @@
 
 Plataforma B2B de gestão, cálculo, conferência e auditoria de folha de pagamento brasileira.
 
-> **Estado atual: Fase 4E, etapa 1 concluída — direito a férias.**
+> **Estado atual: Fase 4E, etapas 1 e 2a concluídas — direito e concessão de férias.**
 >
 > Existe login com JWT, cinco perfis, organizações isoladas entre si, o cadastro de
 > funcionários, contratos e histórico contratual por vigência, e a **primeira folha
@@ -14,8 +14,9 @@ Plataforma B2B de gestão, cálculo, conferência e auditoria de folha de pagame
 > O **IRRF** é retido pela tabela de 2026, com dedução por dependente, desconto
 > simplificado e o **redutor** da Lei 15.270/2025 — quem ganha até R$ 5.000 não paga.
 > Com isso a folha mensal está completa: salário proporcional, bases, INSS, FGTS e IRRF.
-> Existe também o **direito a férias** — quantos períodos cada contrato acumulou e quais
-> já passaram do prazo de concessão. O **pagamento** das férias ainda não existe.
+> Existe também **férias**: quantos períodos cada contrato acumulou, quais já passaram do
+> prazo, e a **programação** dos dias — com fracionamento e abono validados pela CLT. O
+> **pagamento** das férias ainda não existe.
 > Consulte o [ROADMAP.md](ROADMAP.md) para as fases seguintes e o
 > [CLAUDE.md](CLAUDE.md) para as regras do projeto.
 
@@ -170,6 +171,30 @@ Três diferenças em relação ao INSS, cada uma com teste próprio:
 > previdência privada e parcela isenta acima de 65 anos não têm dado de origem no
 > domínio ainda. Não há ajuste anual: o produto retém na fonte.
 
+**Concessão de férias (Fase 4E, etapa 2a)**
+
+Fontes: **CLT art. 134, §1º** (até três períodos, um ≥ 14 dias corridos e os demais ≥ 5) e
+**art. 143** (venda de até 1/3 em abono pecuniário).
+
+- A concessão **tem** tabela, ao contrário do período: ela existe porque alguém decidiu
+  conceder, e essa decisão não se recalcula.
+- O período é referenciado pelas **datas**, não por um id. Consequência deliberada:
+  corrigir a admissão desloca os períodos, e uma concessão órfã fica **visível** — melhor
+  do que apontar em silêncio para o período errado.
+- O período é **procurado entre os derivados**, nunca aceito como o cliente mandou. Data
+  inventada não encontra período.
+- As recusas vêm **todas de uma vez** e **citam o artigo**: quem preenche o formulário
+  merece ver tudo que está errado, e quem recebe a recusa costuma precisar justificá-la.
+- A regra dos 14 dias só é cobrada **ao fechar** o período: 5 dias em janeiro e 25 em
+  julho cumprem a lei, e recusar a primeira metade impediria uma programação legítima.
+- **Abono puro não conta** como uma das três frações — vender dias não é gozar.
+- Cancelar só **antes** de começar (**409** depois): envolve retorno ao trabalho e acerto
+  do que foi pago.
+
+> **Limitações declaradas:** o **art. 134, §2º** — proibição de iniciar férias nos dois
+> dias antes de feriado ou repouso — exigiria um calendário de feriados, que o domínio não
+> tem. **Férias coletivas** (art. 139) não existem.
+
 **Direito a férias (Fase 4E, etapa 1)**
 
 Fontes: **CLT art. 130** (12 meses dão direito), **art. 134** (concessão nos 12 meses
@@ -217,8 +242,13 @@ subsequentes) e **art. 137** (fora do prazo, remuneração **em dobro**).
 O **pagamento** de férias, 13º, rescisão, afastamentos, importações, motor de análises,
 integrações, recursos AWS e CI/CD. Tudo isso pertence às fases seguintes do roadmap.
 
-Férias hoje mostram o **direito**, não o gozo: escolher os dias, remunerar, aplicar o 1/3
-e o abono exige um **tipo de folha** novo, que a etapa 2 da Fase 4E traz.
+Férias hoje mostram o **direito** e a **programação**, não o pagamento: remunerar, aplicar
+o 1/3 e o abono exige um **tipo de folha** novo, que a etapa 2b da Fase 4E traz.
+
+> ⚠️ A etapa 2b está **bloqueada por uma decisão pendente**: se o **terço constitucional**
+> integra o salário-de-contribuição do **segurado**. O STF (Tema 985) decidiu sobre a
+> contribuição **patronal**, não sobre a do empregado, e concluir por analogia seria
+> interpretação jurídica. As outras três incidências têm resposta clara na Lei 8.212/91.
 
 Cada encargo exige fonte oficial registrada e parâmetro versionado (`CLAUDE.md §29`). A
 Fase 4A criou as bases, a 4B aplicou a primeira alíquota, a 4C acrescentou o depósito do
@@ -417,7 +447,9 @@ Todos usam a senha de `PRISMARH_SEED_SENHA`.
 | `POST /api/funcionarios/{id}/dependentes` | Adm. Empresa, Analista | Cadastra dependente |
 | `PUT /api/funcionarios/{id}/dependentes/{idDep}` | Adm. Empresa, Analista | Altera dados e período de dedução |
 | `DELETE /api/funcionarios/{id}/dependentes/{idDep}` | Adm. Empresa, Analista | Remove dependente |
-| `GET /api/contratos/{id}/ferias/periodos` | todos os 5 | Períodos aquisitivos, com o que já venceu |
+| `GET /api/contratos/{id}/ferias/periodos` | todos os 5 | Períodos aquisitivos, com saldo e concessões |
+| `POST /api/contratos/{id}/ferias/concessoes` | Adm. Empresa, Analista | Programa férias de um período |
+| `DELETE /api/contratos/{id}/ferias/concessoes/{idC}` | Adm. Empresa, Analista | Cancela uma programação que não começou |
 | `GET /api/folhas` | todos os 5 | Lista, com filtro por empresa e competência |
 | `GET /api/folhas/{id}` | todos os 5 | Folha com os holerites |
 | `GET /api/folhas/{id}/funcionarios/{idHolerite}` | todos os 5 | Holerite, memória de cálculo e bases |

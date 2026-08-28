@@ -139,7 +139,11 @@ export default function FuncionarioDetalhe() {
          * nasce da admissão daquele vínculo. Uma pessoa readmitida recomeça.
          */}
         {contratos.map((contrato) => (
-          <SecaoFerias key={`ferias-${contrato.id}`} idContrato={contrato.id} />
+          <SecaoFerias
+            key={`ferias-${contrato.id}`}
+            idContrato={contrato.id}
+            administra={administra}
+          />
         ))}
 
         {/*

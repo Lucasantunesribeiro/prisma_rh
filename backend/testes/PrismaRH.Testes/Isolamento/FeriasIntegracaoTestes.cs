@@ -24,14 +24,27 @@ public class FeriasIntegracaoTestes(BancoPostgresFixture banco) : IDisposable
 
     private sealed record Identificado(Guid Id);
 
+    private sealed record ConcessaoItem(
+        Guid Id, DateOnly InicioPeriodoAquisitivo, DateOnly FimPeriodoAquisitivo,
+        DateOnly Inicio, DateOnly Fim, int Dias, int DiasAbonoPecuniario,
+        int DiasBaixados, string Situacao, bool PodeCancelar);
+
     private sealed record PeriodoItem(
         int Numero, DateOnly Inicio, DateOnly Fim, DateOnly InicioConcessao,
         DateOnly LimiteConcessao, int DiasDireito, string Situacao,
-        int DiasParaCompletar, bool EmDobra);
+        int DiasParaCompletar, bool EmDobra, int DiasConcedidos, int Saldo,
+        int SaldoAbono, int FracoesUsadas, List<ConcessaoItem> Concessoes);
 
     private sealed record FeriasResposta(
         Guid IdContrato, string Matricula, DateOnly DataAdmissao, DateOnly? DataDesligamento,
-        DateOnly Referencia, int DiasAdquiridos, int PeriodosVencidos, List<PeriodoItem> Periodos);
+        DateOnly Referencia, int DiasAdquiridos, int SaldoTotal, int PeriodosVencidos,
+        List<PeriodoItem> Periodos);
+
+    private sealed record ProblemaValidacao(Dictionary<string, string[]> Errors);
+
+    private static Task<HttpResponseMessage> ConcederAsync(
+        HttpClient cliente, Guid idContrato, object corpo) =>
+        cliente.PostAsJsonAsync($"/api/contratos/{idContrato}/ferias/concessoes", corpo);
 
     private static int _sufixo;
 
@@ -187,6 +200,198 @@ public class FeriasIntegracaoTestes(BancoPostgresFixture banco) : IDisposable
         Assert.Equal(HttpStatusCode.Unauthorized, resposta.StatusCode);
     }
 
+    // --------------------------------------------------------- concessao
+
+    [Fact]
+    public async Task Conceder_BaixaOSaldoDoPeriodo()
+    {
+        var cliente = await _fabrica.ClienteComoAsync(BancoPostgresFixture.EmailAdminA);
+        var sufixo = Sufixo();
+        var idContrato = await ContratoAsync(cliente, sufixo, "2023-04-01");
+
+        using var criacao = await ConcederAsync(cliente, idContrato, new
+        {
+            inicioPeriodoAquisitivo = "2023-04-01",
+            inicio = "2026-11-02",
+            dias = 20,
+            diasAbonoPecuniario = 10,
+        });
+        Assert.Equal(HttpStatusCode.Created, criacao.StatusCode);
+
+        var criada = (await criacao.Content.ReadFromJsonAsync<ConcessaoItem>())!;
+        Assert.Equal(new DateOnly(2026, 11, 21), criada.Fim);
+        Assert.Equal(30, criada.DiasBaixados);
+        Assert.Equal("Programada", criada.Situacao);
+
+        var ferias = (await PeriodosAsync(cliente, idContrato, "2026-08-28"))!;
+        var primeiro = ferias.Periodos[0];
+
+        Assert.Equal(30, primeiro.DiasConcedidos);
+        Assert.Equal(0, primeiro.Saldo);
+        Assert.Equal(0, primeiro.SaldoAbono);
+        Assert.Equal(1, primeiro.FracoesUsadas);
+        Assert.Single(primeiro.Concessoes);
+
+        // O saldo total desconta o que ja foi programado, mas os dias
+        // ADQUIRIDOS continuam sendo o direito bruto.
+        Assert.Equal(90, ferias.DiasAdquiridos);
+        Assert.Equal(60, ferias.SaldoTotal);
+    }
+
+    [Fact]
+    public async Task Conceder_AlemDoSaldo_ERecusado()
+    {
+        var cliente = await _fabrica.ClienteComoAsync(BancoPostgresFixture.EmailAdminA);
+        var sufixo = Sufixo();
+        var idContrato = await ContratoAsync(cliente, sufixo, "2023-04-01");
+
+        using var resposta = await ConcederAsync(cliente, idContrato, new
+        {
+            inicioPeriodoAquisitivo = "2023-04-01",
+            inicio = "2026-11-02",
+            dias = 31,
+            diasAbonoPecuniario = 0,
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, resposta.StatusCode);
+
+        var problema = (await resposta.Content.ReadFromJsonAsync<ProblemaValidacao>())!;
+        Assert.Contains(problema.Errors["concessao"], m => m.Contains("nao tem dias suficientes"));
+    }
+
+    [Fact]
+    public async Task Conceder_ComAbonoAcimaDoTerco_ERecusadoCitandoALei()
+    {
+        var cliente = await _fabrica.ClienteComoAsync(BancoPostgresFixture.EmailAdminA);
+        var sufixo = Sufixo();
+        var idContrato = await ContratoAsync(cliente, sufixo, "2023-04-01");
+
+        using var resposta = await ConcederAsync(cliente, idContrato, new
+        {
+            inicioPeriodoAquisitivo = "2023-04-01",
+            inicio = "2026-11-02",
+            dias = 19,
+            diasAbonoPecuniario = 11,
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, resposta.StatusCode);
+
+        var problema = (await resposta.Content.ReadFromJsonAsync<ProblemaValidacao>())!;
+        Assert.Contains(problema.Errors["concessao"], m => m.Contains("art. 143"));
+    }
+
+    [Fact]
+    public async Task Conceder_FracaoAbaixoDeCinco_ERecusada()
+    {
+        var cliente = await _fabrica.ClienteComoAsync(BancoPostgresFixture.EmailAdminA);
+        var sufixo = Sufixo();
+        var idContrato = await ContratoAsync(cliente, sufixo, "2023-04-01");
+
+        using var resposta = await ConcederAsync(cliente, idContrato, new
+        {
+            inicioPeriodoAquisitivo = "2023-04-01",
+            inicio = "2026-11-02",
+            dias = 4,
+            diasAbonoPecuniario = 0,
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, resposta.StatusCode);
+
+        var problema = (await resposta.Content.ReadFromJsonAsync<ProblemaValidacao>())!;
+        Assert.Contains(problema.Errors["concessao"], m => m.Contains("art. 134"));
+    }
+
+    [Fact]
+    public async Task Conceder_ComGozoSobreposto_ERecusado()
+    {
+        var cliente = await _fabrica.ClienteComoAsync(BancoPostgresFixture.EmailAdminA);
+        var sufixo = Sufixo();
+        var idContrato = await ContratoAsync(cliente, sufixo, "2023-04-01");
+
+        using var primeira = await ConcederAsync(cliente, idContrato, new
+        {
+            inicioPeriodoAquisitivo = "2023-04-01",
+            inicio = "2026-11-02",
+            dias = 15,
+            diasAbonoPecuniario = 0,
+        });
+        primeira.EnsureSuccessStatusCode();
+
+        using var segunda = await ConcederAsync(cliente, idContrato, new
+        {
+            inicioPeriodoAquisitivo = "2023-04-01",
+            inicio = "2026-11-10",
+            dias = 10,
+            diasAbonoPecuniario = 0,
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, segunda.StatusCode);
+    }
+
+    [Fact]
+    public async Task Conceder_EmPeriodoQueOContratoNaoTem_ERecusado()
+    {
+        var cliente = await _fabrica.ClienteComoAsync(BancoPostgresFixture.EmailAdminA);
+        var sufixo = Sufixo();
+        var idContrato = await ContratoAsync(cliente, sufixo, "2023-04-01");
+
+        // Data inventada pelo cliente: o periodo e procurado entre os
+        // DERIVADOS, entao nao existe.
+        using var resposta = await ConcederAsync(cliente, idContrato, new
+        {
+            inicioPeriodoAquisitivo = "2019-01-01",
+            inicio = "2026-11-02",
+            dias = 30,
+            diasAbonoPecuniario = 0,
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, resposta.StatusCode);
+    }
+
+    [Fact]
+    public async Task Cancelar_LiberaOSaldo()
+    {
+        var cliente = await _fabrica.ClienteComoAsync(BancoPostgresFixture.EmailAdminA);
+        var sufixo = Sufixo();
+        var idContrato = await ContratoAsync(cliente, sufixo, "2023-04-01");
+
+        using var criacao = await ConcederAsync(cliente, idContrato, new
+        {
+            inicioPeriodoAquisitivo = "2023-04-01",
+            inicio = "2030-05-01",
+            dias = 30,
+            diasAbonoPecuniario = 0,
+        });
+        var criada = (await criacao.Content.ReadFromJsonAsync<ConcessaoItem>())!;
+
+        using var remocao = await cliente.DeleteAsync(
+            $"/api/contratos/{idContrato}/ferias/concessoes/{criada.Id}");
+        Assert.Equal(HttpStatusCode.NoContent, remocao.StatusCode);
+
+        var ferias = (await PeriodosAsync(cliente, idContrato, "2026-08-28"))!;
+        Assert.Equal(30, ferias.Periodos[0].Saldo);
+    }
+
+    [Fact]
+    public async Task Auditor_NaoConcede()
+    {
+        var admin = await _fabrica.ClienteComoAsync(BancoPostgresFixture.EmailAdminA);
+        var sufixo = Sufixo();
+        var idContrato = await ContratoAsync(admin, sufixo, "2023-04-01");
+
+        var auditor = await _fabrica.ClienteComoAsync(BancoPostgresFixture.EmailAuditorA);
+
+        using var resposta = await ConcederAsync(auditor, idContrato, new
+        {
+            inicioPeriodoAquisitivo = "2023-04-01",
+            inicio = "2026-11-02",
+            dias = 30,
+            diasAbonoPecuniario = 0,
+        });
+
+        Assert.Equal(HttpStatusCode.Forbidden, resposta.StatusCode);
+    }
+
     // --------------------------------------------------------- isolamento
 
     [Fact]
@@ -203,6 +408,60 @@ public class FeriasIntegracaoTestes(BancoPostgresFixture banco) : IDisposable
 
         // 404 e nao 403: um 403 confirmaria que o contrato existe, e o
         // historico de admissao do vizinho poderia ser mapeado um id por vez.
+        Assert.Equal(HttpStatusCode.NotFound, resposta.StatusCode);
+    }
+
+    [Fact]
+    public async Task IdorPeloIdDaConcessao_NaoAlcanca()
+    {
+        var clienteA = await _fabrica.ClienteComoAsync(BancoPostgresFixture.EmailAdminA);
+        var sufixoA = Sufixo();
+        var contratoA = await ContratoAsync(clienteA, sufixoA, "2023-04-01");
+
+        using var criacao = await ConcederAsync(clienteA, contratoA, new
+        {
+            inicioPeriodoAquisitivo = "2023-04-01",
+            inicio = "2030-07-01",
+            dias = 30,
+            diasAbonoPecuniario = 0,
+        });
+        var daA = (await criacao.Content.ReadFromJsonAsync<ConcessaoItem>())!;
+
+        // A organizacao B tem contrato proprio e tenta usar o id da concessao
+        // da A por baixo dele. Como a concessao e resolvida pelo PAI, o
+        // caminho nao existe.
+        var clienteB = await _fabrica.ClienteComoAsync(BancoPostgresFixture.EmailAdminB);
+
+        using var remocao = await clienteB.DeleteAsync(
+            $"/api/contratos/{contratoA}/ferias/concessoes/{daA.Id}");
+        Assert.Equal(HttpStatusCode.NotFound, remocao.StatusCode);
+
+        // E a concessao continua intacta na organizacao dona.
+        var ferias = (await PeriodosAsync(clienteA, contratoA, "2026-08-28"))!;
+        Assert.Single(ferias.Periodos[0].Concessoes);
+    }
+
+    [Fact]
+    public async Task ConcessaoDeOutraOrganizacao_NaoAparece()
+    {
+        var clienteA = await _fabrica.ClienteComoAsync(BancoPostgresFixture.EmailAdminA);
+        var sufixo = Sufixo();
+        var contratoA = await ContratoAsync(clienteA, sufixo, "2023-04-01");
+
+        using var criacao = await ConcederAsync(clienteA, contratoA, new
+        {
+            inicioPeriodoAquisitivo = "2023-04-01",
+            inicio = "2030-09-01",
+            dias = 30,
+            diasAbonoPecuniario = 0,
+        });
+        criacao.EnsureSuccessStatusCode();
+
+        var clienteB = await _fabrica.ClienteComoAsync(BancoPostgresFixture.EmailAdminB);
+
+        using var resposta = await clienteB.GetAsync(
+            $"/api/contratos/{contratoA}/ferias/periodos");
+
         Assert.Equal(HttpStatusCode.NotFound, resposta.StatusCode);
     }
 }

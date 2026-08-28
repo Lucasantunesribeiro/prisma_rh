@@ -1094,6 +1094,24 @@ Implementar INSS de acordo com regras oficiais vigentes.
 
 ---
 
+### Security Gate — Fase 4E, etapa 2a (concessão)
+
+| # | Ponto | Resposta |
+|---|---|---|
+| 1 | Ameaças introduzidas | Tabela nova com escrita. IDOR pelo id da concessão. Overposting de `Id`/`IdOrganizacao`. Programar férias de um período **que o contrato não tem**, enviando datas arbitrárias. Cancelar férias já em gozo. Inflar um contrato com concessões. |
+| 2 | Controles | Concessão resolvida **pelo contrato pai**, que passa pelo filtro global. Record de entrada próprio, sem `Id` nem `IdOrganizacao`. O período é **procurado entre os derivados** — data inventada não encontra período. Invariantes no construtor (dias ≥ 0, início após o aquisitivo, algo concedido) **e** *check constraint* no PostgreSQL. Cancelamento só antes do início (**409**). Filtro global em `concessoes_ferias`. |
+| 3 | Testes de segurança | Auditor recebe **403** ao conceder. Concessão de outra organização: **404** no DELETE, e o registro original fica intacto. Contrato de outra organização: **404** na leitura. Período inexistente: **400**. Saldo, abono, fracionamento e sobreposição: **400** com a lei citada. |
+| 4 | Impacto multiempresa | `concessoes_ferias` é tabela de tenant: filtro global **e** teste de isolamento contra PostgreSQL real, incluindo o caminho de IDOR pelo id da concessão sob um contrato próprio. |
+| 5 | Exposição de dados | Nenhum dado pessoal novo, nenhum valor monetário. Datas de férias são dado operacional, da mesma classe do contrato. |
+| 6 | Permissões | Leitura com `LerDadosEmpresariais` — o Auditor precisa ver o que foi programado. Escrita com `AdministrarPessoas`, a mesma do cadastro funcional. |
+| 7 | Logging e auditoria | Conceder e cancelar férias são decisões com efeito trabalhista e, depois da etapa 2b, financeiro: **candidatas à trilha formal da Fase 7**, junto com alteração salarial e parâmetro legal. |
+| 8 | Dependências | Nenhuma nova. |
+| 9 | Secrets | Não se aplica. |
+| 10 | Superfície pública | Nenhuma rota anônima nova. As três rotas exigem autenticação e política declarada. |
+| 11 | Risco de custo/abuso | Concessões lidas em **uma consulta por contrato**, e o casamento com os períodos acontece em memória — uma consulta por período faria N chamadas para responder uma tela. O número de concessões é limitado pelas próprias regras: no máximo três frações por período. |
+
+---
+
 ## FASE 4C — FGTS
 
 > **Status: concluída em 27/08/2026.**
@@ -1444,8 +1462,9 @@ declaração é do contribuinte.
 
 ## FASE 4E — FÉRIAS
 
-> **Status: etapa 1 concluída em 28/08/2026 — direito (períodos aquisitivos).**
-> **Etapa 2 — concessão e cálculo — não iniciada.**
+> **Status: etapas 1 e 2a concluídas em 28/08/2026 — direito e concessão.**
+> **Etapa 2b — o pagamento — BLOQUEADA aguardando decisão sobre a incidência do
+> terço constitucional.**
 
 ### Objetivo
 
@@ -1470,11 +1489,14 @@ coisas separáveis vivem aqui:
 
 1. **o direito** — quantos períodos a pessoa acumulou, quando vencem, o que já passou
    do prazo. É calendário puro, e não mexe em dinheiro;
-2. **o gozo e o pagamento** — escolher os dias, remunerar, aplicar o 1/3, o abono e as
-   incidências. Isso é folha, e exige `TipoFolha` em `FolhaPagamento`.
+2. **a concessão** — escolher os dias, respeitando o fracionamento e o abono. É cadastro
+   com regras, e ainda não é dinheiro;
+3. **o pagamento** — remunerar, aplicar o 1/3, o abono e as incidências. Isso é folha, e
+   exige `TipoFolha` em `FolhaPagamento`.
 
-A etapa 1 entrega a primeira, e ela é útil sozinha: um período vencido é dinheiro que a
-empresa vai pagar em dobro, e hoje o sistema não avisava.
+As duas primeiras são úteis sozinhas: um período vencido é dinheiro que a empresa vai
+pagar em dobro, e uma programação que viola o art. 134 é um problema trabalhista — e o
+sistema não avisava de nenhum dos dois.
 
 ---
 
@@ -1559,19 +1581,106 @@ contrato guarda jornada **mensal** — deduzir a semanal dela seria suposição.
 
 ---
 
-### Etapa 2 — Concessão e cálculo (não iniciada)
+### Etapa 2a — Concessão (concluída)
 
-O que ela precisa trazer:
+#### Fontes
+
+| Regra | Norma |
+|---|---|
+| Fracionamento em até **três** períodos, um ≥ **14 dias** corridos e os demais ≥ **5** | **CLT art. 134, §1º** (redação da Lei 13.467/2017), confirmado em material do **TST** |
+| Conversão de até **1/3** do período em abono pecuniário | **CLT art. 143** |
+
+#### Decisões registradas
+
+##### 1. A concessão **tem** tabela — ao contrário do período
+
+É o outro lado da decisão da etapa 1. O período aquisitivo nasce do calendário e não se
+guarda; a concessão existe porque **alguém decidiu conceder**, e essa decisão não se
+recalcula.
+
+##### 2. O período é referenciado pelas **datas**, não por um id
+
+Ele não tem tabela, e as datas são a identidade natural dele. Consequência deliberada:
+corrigir a admissão de um contrato desloca os períodos, e uma concessão apontando para um
+intervalo que não existe mais fica **visivelmente órfã** — o que é melhor do que apontar
+em silêncio para o período errado.
+
+##### 3. O período é procurado entre os **derivados**, nunca aceito como veio
+
+`ConcederAsync` não confia na data que o cliente mandou: ele deriva os períodos do
+contrato e procura o que começa naquela data. Assim ninguém programa férias de um período
+que o contrato não tem.
+
+##### 4. As recusas vêm **todas de uma vez**, e citam a lei
+
+`RegrasDeConcessao.Conferir` devolve a **lista** de violações, não a primeira. Quem
+preenche o formulário merece ver tudo que está errado de uma vez, em vez de descobrir um
+problema por tentativa. Cada mensagem cita o artigo — `art. 134, §1º`, `art. 143` — porque
+quem recebe a recusa muitas vezes precisa justificá-la a um terceiro.
+
+##### 5. A regra dos 14 dias só é cobrada ao **fechar** o período
+
+Cobrar a cada concessão impediria uma programação legítima: 5 dias em janeiro e 25 em
+julho cumprem a lei, mas a primeira metade, isolada, não tem fração de 14. A checagem
+dispara quando o saldo chegaria a zero — que é o momento em que a regra pode
+efetivamente ser violada.
+
+##### 6. Abono puro **não conta** como uma das três frações
+
+Vender dias não é gozar. Se contasse, quem vendesse 10 dias teria gasto uma das três
+frações do art. 134 sem ter descansado nada.
+
+##### 7. Cancelar só **antes** de começar
+
+Cancelar férias que a pessoa já está gozando não é operação de cadastro — envolve retorno
+ao trabalho e acerto do que foi pago. Devolve **409**, com a razão.
+
+#### Limitações declaradas — 28/08/2026
+
+**Art. 134, §2º não é verificado**: a proibição de iniciar férias nos dois dias que
+antecedem feriado ou repouso semanal exigiria um **calendário de feriados**, que o
+domínio não tem. Registrado, não implementado.
+
+**Férias coletivas** (art. 139) não existem: são concessão em massa com regras próprias
+de comunicação.
+
+---
+
+### Etapa 2b — Pagamento (bloqueada)
+
+O que falta trazer:
 
 1. **`TipoFolha` em `FolhaPagamento`** — hoje toda folha é mensal, e o índice único
    `ux_folhas_empresa_competencia` já tem comentário antecipando esta coluna;
-2. **concessão** — a tabela com estado: período, dias gozados, data de início do gozo,
-   folha que pagou;
-3. **remuneração de férias** e o **1/3 constitucional** (CF art. 7º, XVII);
-4. **abono pecuniário** (CLT art. 143) — a venda de 1/3 dos dias;
-5. **dobra** do art. 137, que a etapa 1 já sabe identificar;
-6. **incidências** — férias gozadas integram salário-de-contribuição; o abono pecuniário
-   e o terço sobre ele **não**. Exige fonte oficial registrada antes de implementar.
+2. **remuneração de férias** e o **1/3 constitucional** (CF art. 7º, XVII);
+3. **abono pecuniário** e o terço sobre ele;
+4. **dobra** do art. 137, que a etapa 1 já sabe identificar;
+5. **incidências**.
+
+#### ⚠️ A decisão que bloqueia — incidência do terço constitucional
+
+Três das quatro incidências têm resposta clara em lei:
+
+| Verba | Integra salário-de-contribuição? | Fonte |
+|---|---|---|
+| **Férias gozadas** | **Sim** | Lei 8.212/91 art. 28 §9º "d" exclui apenas as *indenizadas* |
+| **Férias indenizadas** e seu adicional | **Não** | Lei 8.212/91 art. 28 §9º "d" |
+| **Abono pecuniário** | **Não** | Lei 8.212/91 art. 28 §9º "e", item 6 |
+| **Terço constitucional de férias gozadas** | **⚠️ a decidir** | ver abaixo |
+
+O **STF, Tema 985 (RE 1.072.485)**, fixou que *"é legítima a incidência de contribuição
+social sobre o valor satisfeito a título de terço constitucional de férias"*, com efeitos
+**ex nunc** a partir de 15/09/2020 e modulação depois discutida em embargos.
+
+**Essa decisão trata da contribuição PATRONAL.** O Prisma RH desconta a contribuição do
+**segurado** no holerite, e o Tema 985 não responde diretamente por ela. Concluir por
+analogia seria interpretação jurídica, não implementação — e o `CLAUDE.md §29` proíbe
+regra crítica sem fonte oficial.
+
+**Decisão do responsável necessária antes de escrever a rubrica do terço.** A boa notícia
+é que a arquitetura já isola isso: incidência é atributo da **rubrica** (Fase 4A),
+configurável por organização. O que falta é o padrão da semeadura, e um padrão é uma
+afirmação.
 
 ---
 

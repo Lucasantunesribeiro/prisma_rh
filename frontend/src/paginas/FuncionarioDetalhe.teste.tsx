@@ -87,6 +87,7 @@ const FERIAS = {
   dataDesligamento: null,
   referencia: '2026-08-28',
   diasAdquiridos: 90,
+  saldoTotal: 70,
   periodosVencidos: 1,
   periodos: [
     {
@@ -99,6 +100,24 @@ const FERIAS = {
       situacao: 'Vencido',
       diasParaCompletar: 0,
       emDobra: true,
+      diasConcedidos: 20,
+      saldo: 10,
+      saldoAbono: 10,
+      fracoesUsadas: 1,
+      concessoes: [
+        {
+          id: 'cf1',
+          inicioPeriodoAquisitivo: '2023-04-01',
+          fimPeriodoAquisitivo: '2024-03-31',
+          inicio: '2026-10-01',
+          fim: '2026-10-20',
+          dias: 20,
+          diasAbonoPecuniario: 0,
+          diasBaixados: 20,
+          situacao: 'Programada',
+          podeCancelar: true,
+        },
+      ],
     },
     {
       numero: 2,
@@ -110,6 +129,11 @@ const FERIAS = {
       situacao: 'Adquirido',
       diasParaCompletar: 0,
       emDobra: false,
+      diasConcedidos: 0,
+      saldo: 30,
+      saldoAbono: 10,
+      fracoesUsadas: 0,
+      concessoes: [],
     },
     {
       numero: 3,
@@ -121,6 +145,11 @@ const FERIAS = {
       situacao: 'EmAndamento',
       diasParaCompletar: 215,
       emDobra: false,
+      diasConcedidos: 0,
+      saldo: 30,
+      saldoAbono: 10,
+      fracoesUsadas: 0,
+      concessoes: [],
     },
   ],
 }
@@ -282,12 +311,31 @@ describe('FuncionarioDetalhe', () => {
     // vai pagar por não ter concedido no prazo.
     expect(screen.getByText(/passou do prazo de concessão/)).toBeInTheDocument()
     expect(screen.getByText(/em dobro/)).toBeInTheDocument()
-    expect(screen.getByText('90 dias')).toBeInTheDocument()
+    expect(screen.getByText('70 dias')).toBeInTheDocument()
 
     expect(screen.getByText('Vencido')).toBeInTheDocument()
     expect(screen.getByText('Adquirido')).toBeInTheDocument()
     expect(screen.getByText('Em andamento')).toBeInTheDocument()
     expect(screen.getByText(/faltam 215 dias/)).toBeInTheDocument()
+
+    // A concessao ja programada aparece sob o periodo dela.
+    expect(screen.getByText(/20 dias · 01\/10\/2026 a 20\/10\/2026/)).toBeInTheDocument()
+    expect(screen.getByText('Programada')).toBeInTheDocument()
+  })
+
+  it('quem não administra não vê programar nem cancelar', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => Promise.resolve(rotear(String(url)))))
+
+    renderizar('Visualizador')
+
+    expect(await screen.findByText('Férias')).toBeInTheDocument()
+
+    // Esconder botão não é segurança - o backend recusa de qualquer jeito.
+    // A tela só evita propor uma ação que daria 403.
+    expect(screen.queryByRole('button', { name: /programar/i })).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: /cancelar férias de/i }),
+    ).not.toBeInTheDocument()
   })
 
   it('sem período vencido, não mostra o aviso de dobra', async () => {
