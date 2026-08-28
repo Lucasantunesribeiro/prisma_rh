@@ -1,4 +1,4 @@
-using PrismaRH.Dominio.Contratos;
+﻿using PrismaRH.Dominio.Contratos;
 using PrismaRH.Dominio.Folha;
 
 namespace PrismaRH.Testes.Dominio;
@@ -55,7 +55,7 @@ public class MotorCalculoFolhaTestes
     public void DesligadoAntesDaCompetencia_NaoEntra()
     {
         var contrato = Contrato(new DateOnly(2025, 1, 10));
-        contrato.Desligar(new DateOnly(2026, 6, 30));
+        contrato.Desligar(new DateOnly(2026, 6, 30), MotivoDesligamento.DispensaSemJustaCausa);
 
         Assert.False(MotorCalculoFolha.Elegivel(contrato, Agosto));
     }
@@ -67,7 +67,7 @@ public class MotorCalculoFolhaTestes
         // mes entra. Excluir essa pessoa deixaria dez dias trabalhados sem
         // pagamento nenhum.
         var contrato = Contrato(new DateOnly(2025, 1, 10));
-        contrato.Desligar(new DateOnly(2026, 8, 10));
+        contrato.Desligar(new DateOnly(2026, 8, 10), MotivoDesligamento.DispensaSemJustaCausa);
 
         var apuracao = MotorCalculoFolha.Apurar(contrato, Agosto);
 
@@ -139,7 +139,7 @@ public class MotorCalculoFolhaTestes
     public void AdmitidoEDesligadoNoMesmoMes_ContaSoOIntervalo()
     {
         var contrato = Contrato(new DateOnly(2026, 8, 5));
-        contrato.Desligar(new DateOnly(2026, 8, 20));
+        contrato.Desligar(new DateOnly(2026, 8, 20), MotivoDesligamento.DispensaSemJustaCausa);
 
         var apuracao = MotorCalculoFolha.Apurar(contrato, Agosto);
 

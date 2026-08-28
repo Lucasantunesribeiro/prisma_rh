@@ -30,7 +30,25 @@ public class CadastroFuncionalTestes(BancoPostgresFixture banco) : IDisposable
         decimal Salario,
         string Motivo);
 
-    private sealed record Contrato(Guid Id, string Matricula, string Situacao, Vigencia? VigenciaAtual);
+    private sealed record Contrato(
+        Guid Id, string Matricula, string Situacao,
+        string? MotivoDesligamento, Vigencia? VigenciaAtual);
+
+    /// <summary>
+    /// O contrato do funcionario, pela rota que EXISTE.
+    ///
+    /// Nao ha GET /api/contratos/{id}: o contrato so e listado pelo
+    /// funcionario. Tentar buscar pelo id direto devolve 404, e
+    /// GetFromJsonAsync transforma isso em excecao - o teste falharia
+    /// parecendo defeito de negocio.
+    /// </summary>
+    private static async Task<Contrato> ContratoAsync(HttpClient cliente, Guid idFuncionario)
+    {
+        var contratos = await cliente.GetFromJsonAsync<List<Contrato>>(
+            $"/api/funcionarios/{idFuncionario}/contratos");
+
+        return contratos!.Single();
+    }
 
     /// <summary>Cria cargo, funcionario e contrato para a organizacao do cliente informado.</summary>
     private static async Task<(Guid IdFuncionario, Guid IdContrato, Guid IdCargo)> MontarCenarioAsync(
@@ -76,6 +94,70 @@ public class CadastroFuncionalTestes(BancoPostgresFixture banco) : IDisposable
     }
 
     // ---------------------------------------------------------------- isolamento
+
+    [Fact]
+    public async Task Desligamento_SemMotivo_ERecusado()
+    {
+        var cliente = await _fabrica.ClienteComoAsync(BancoPostgresFixture.EmailAdminA);
+        var (idFuncionario, idContrato, _) = await MontarCenarioAsync(
+            cliente, banco.IdEmpresaA, banco.IdEstabelecimentoA,
+            BancoPostgresFixture.CpfDeTeste(21), "A21");
+
+        using var resposta = await cliente.PostAsJsonAsync(
+            $"/api/contratos/{idContrato}/desligamento",
+            new { dataDesligamento = "2026-07-31" });
+
+        // Sem motivo o enum chega como zero, que nao e valor definido. O
+        // dominio recusa, e o contrato NAO fica meio desligado.
+        Assert.Equal(HttpStatusCode.BadRequest, resposta.StatusCode);
+        Assert.Equal("Ativo", (await ContratoAsync(cliente, idFuncionario)).Situacao);
+    }
+
+    [Fact]
+    public async Task Desligamento_ComMotivoDesconhecido_ERecusado()
+    {
+        var cliente = await _fabrica.ClienteComoAsync(BancoPostgresFixture.EmailAdminA);
+        var (idFuncionario, idContrato, _) = await MontarCenarioAsync(
+            cliente, banco.IdEmpresaA, banco.IdEstabelecimentoA,
+            BancoPostgresFixture.CpfDeTeste(22), "A22");
+
+        using var resposta = await cliente.PostAsJsonAsync(
+            $"/api/contratos/{idContrato}/desligamento",
+            new { dataDesligamento = "2026-07-31", motivo = "MotivoQueNaoExiste" });
+
+        // Vocabulario fechado: o que nao esta no enum nao vira dado.
+        Assert.False(resposta.IsSuccessStatusCode);
+        Assert.Equal("Ativo", (await ContratoAsync(cliente, idFuncionario)).Situacao);
+    }
+
+    // Sementes FIXAS e distintas, uma por motivo. GetHashCode de string nao
+    // serve: dois motivos poderiam cair na mesma semente e colidir no indice
+    // unico - e o teste falharia por colisao, nao por defeito.
+    [Theory]
+    [InlineData("DispensaSemJustaCausa", 31)]
+    [InlineData("DispensaPorJustaCausa", 32)]
+    [InlineData("RescisaoIndireta", 33)]
+    [InlineData("AcordoEntreAsPartes", 34)]
+    [InlineData("TerminoDeContratoPorPrazoDeterminado", 35)]
+    [InlineData("FalecimentoDoEmpregado", 36)]
+    [InlineData("Aposentadoria", 37)]
+    public async Task TodosOsMotivos_TrafegamPelaApi(string motivo, int semente)
+    {
+        var cliente = await _fabrica.ClienteComoAsync(BancoPostgresFixture.EmailAdminA);
+
+        var (_, idContrato, _) = await MontarCenarioAsync(
+            cliente, banco.IdEmpresaA, banco.IdEstabelecimentoA,
+            BancoPostgresFixture.CpfDeTeste(semente), $"M{semente}");
+
+        using var resposta = await cliente.PostAsJsonAsync(
+            $"/api/contratos/{idContrato}/desligamento",
+            new { dataDesligamento = "2026-07-31", motivo });
+
+        resposta.EnsureSuccessStatusCode();
+
+        var contrato = (await resposta.Content.ReadFromJsonAsync<Contrato>())!;
+        Assert.Equal(motivo, contrato.MotivoDesligamento);
+    }
 
     [Fact]
     public async Task Funcionario_DeOutraOrganizacao_NaoAparece_E_Devolve404()
@@ -214,12 +296,16 @@ public class CadastroFuncionalTestes(BancoPostgresFixture banco) : IDisposable
 
         using var desligamento = await cliente.PostAsJsonAsync(
             $"/api/contratos/{idContrato}/desligamento",
-            new { dataDesligamento = "2026-07-31" });
+            new { dataDesligamento = "2026-07-31", motivo = "PedidoDeDemissao" });
 
         Assert.Equal(HttpStatusCode.OK, desligamento.StatusCode);
         var contrato = (await desligamento.Content.ReadFromJsonAsync<Contrato>())!;
         Assert.Equal("Desligado", contrato.Situacao);
         Assert.Null(contrato.VigenciaAtual);
+
+        // O motivo volta na resposta: ele decide as verbas rescisorias, e
+        // quem desliga precisa conferir que gravou o certo.
+        Assert.Equal("PedidoDeDemissao", contrato.MotivoDesligamento);
 
         // O passado continua consultavel depois do desligamento.
         var durante = await cliente.GetFromJsonAsync<Vigencia>(

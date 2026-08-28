@@ -1,4 +1,4 @@
-using PrismaRH.Dominio.Contratos;
+﻿using PrismaRH.Dominio.Contratos;
 using PrismaRH.Dominio.DecimoTerceiro;
 
 namespace PrismaRH.Testes.Dominio;
@@ -26,7 +26,7 @@ public class AvosDecimoTerceiroTestes
 
         if (desligamento is { } data)
         {
-            contrato.Desligar(data);
+            contrato.Desligar(data, MotivoDesligamento.DispensaSemJustaCausa);
         }
 
         return contrato;

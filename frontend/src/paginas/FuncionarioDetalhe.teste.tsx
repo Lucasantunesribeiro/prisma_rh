@@ -1,4 +1,5 @@
 import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import FuncionarioDetalhe from './FuncionarioDetalhe'
@@ -29,6 +30,7 @@ const CONTRATO = {
   dataAdmissao: '2026-01-15',
   dataDesligamento: null,
   situacao: 'Ativo',
+  motivoDesligamento: null,
   vigenciaAtual: {
     id: 'v2',
     validoDe: '2026-06-01',
@@ -397,5 +399,40 @@ describe('FuncionarioDetalhe', () => {
     // Março não contou, e o motivo fica no title do item.
     const marco = screen.getByText('mar').closest('li')!
     expect(marco).toHaveAttribute('title', 'so 14 dias, menos que 15')
+  })
+
+  it('oferece desligar, e o motivo começa em branco', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => Promise.resolve(rotear(String(url)))))
+
+    const usuario = userEvent.setup()
+    renderizar('AdministradorEmpresa')
+
+    await usuario.click(await screen.findByRole('button', { name: /^desligar$/i }))
+
+    const motivo = await screen.findByLabelText('Motivo')
+
+    // Sem valor pré-selecionado: o motivo decide as verbas rescisórias, e um
+    // padrão convidaria a aceitar o que já estava lá.
+    expect(motivo).toHaveValue('')
+
+    // Os oito motivos, e os que têm artigo o citam na própria opção.
+    expect(
+      screen.getByRole('option', { name: /Dispensa sem justa causa/ }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('option', { name: /Acordo entre as partes \(CLT art\. 484-A\)/ }),
+    ).toBeInTheDocument()
+  })
+
+  it('visualizador não vê o botão de desligar', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => Promise.resolve(rotear(String(url)))))
+
+    renderizar('Visualizador')
+
+    expect(await screen.findByText('Carla Analista')).toBeInTheDocument()
+
+    // Esconder botão não é segurança - a política AdministrarPessoas recusa de
+    // qualquer jeito. A tela só evita propor uma ação que daria 403.
+    expect(screen.queryByRole('button', { name: /^desligar$/i })).not.toBeInTheDocument()
   })
 })

@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using PrismaRH.Dominio.Contratos;
@@ -27,6 +27,19 @@ public sealed class ContratoTrabalhoConfiguracao : IEntityTypeConfiguration<Cont
 
         builder.Property(c => c.DataAdmissao).HasColumnName("data_admissao").IsRequired();
         builder.Property(c => c.DataDesligamento).HasColumnName("data_desligamento");
+
+        // Nulo enquanto ativo, e NAO ha check constraint exigindo motivo em
+        // contrato desligado - de proposito.
+        //
+        // Os contratos desligados ANTES da Fase 4G ficam com motivo nulo:
+        // eles foram encerrados quando o campo nao existia, e ninguem sabe por
+        // que. Uma constraint obrigaria a inventar um motivo no backfill, e
+        // motivo inventado decide verba rescisoria errada.
+        //
+        // Para os novos a garantia e do dominio: Desligar exige o motivo e
+        // recusa valor nao definido.
+        builder.Property(c => c.MotivoDesligamento)
+            .HasColumnName("motivo_desligamento").HasConversion<int>();
         builder.Property(c => c.Situacao).HasColumnName("situacao").HasConversion<int>().IsRequired();
         builder.Property(c => c.CriadoEm).HasColumnName("criado_em").IsRequired();
 

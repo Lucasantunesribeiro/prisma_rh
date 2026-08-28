@@ -1166,6 +1166,31 @@ determinística sem enfraquecê-la.
 
 ---
 
+### Security Gate — Fase 4G, etapa 1 (motivo do desligamento)
+
+| # | Ponto | Resposta |
+|---|---|---|
+| 1 | Ameaças introduzidas | Campo novo que **decide dinheiro**: motivo errado gera verbas erradas. Desligamento sem motivo, ou com motivo fora do vocabulário. Contrato ficando "meio desligado" se a validação falhar no meio. |
+| 2 | Controles | Motivo **obrigatório** no construtor de `Desligar`, validado com `Enum.IsDefined` **antes** de qualquer mutação — o contrato não é tocado se o motivo for inválido. Vocabulário fechado (`CLAUDE.md §24.7`). Sem método de alteração: corrigir motivo é operação de correção, não de cadastro. |
+| 3 | Testes de segurança | Desligar sem motivo: **400**, e o contrato continua **Ativo**. Motivo desconhecido: recusado, e o contrato continua **Ativo**. Desligar duas vezes: **409**. Contrato de outra organização: **404**. Os oito motivos trafegam e voltam na resposta. |
+| 4 | Impacto multiempresa | Nenhuma tabela nova: é uma coluna em `contratos_trabalho`, que já tem filtro global. A rota de desligamento já era resolvida pelo filtro. |
+| 5 | Exposição de dados | O motivo é dado **sensível de outra natureza**: "dispensa por justa causa" é informação reputacional sobre a pessoa. Fica na mesma classe do contrato — visível a quem já vê salário e cargo — e **não aparece em log**. |
+| 6 | Permissões | `AdministrarPessoas` para desligar, a mesma do resto do cadastro funcional. Leitura com `LerDadosEmpresariais`. Nenhuma política nova. |
+| 7 | Logging e auditoria | **Desligar é dos eventos mais sensíveis do produto** — encerra um vínculo e determina verbas. Candidato prioritário à trilha formal da Fase 7, ao lado de alteração salarial e parâmetro legal. |
+| 8 | Dependências | Nenhuma nova. |
+| 9 | Secrets | Não se aplica. |
+| 10 | Superfície pública | Nenhuma rota nova: o motivo entrou no corpo da rota de desligamento que já existia. |
+| 11 | Risco de custo/abuso | Nenhuma consulta nova. Uma coluna `int` anulável. |
+
+#### Pendência confirmada de novo
+
+Motivo desconhecido devolve **500 em vez de 400** — é a pendência já registrada em
+`CLAUDE.md §24.19, item 4` (entrada malformada em toda a API). O teste de integração
+afirma **"não foi aceito"** em vez de travar o código de status, justamente para não
+congelar o defeito.
+
+---
+
 ## FASE 4C — FGTS
 
 > **Status: concluída em 27/08/2026.**
@@ -1923,6 +1948,10 @@ descobri-lo no meio.
 
 ## FASE 4G — RESCISÃO
 
+> **Status: etapa 1 concluída em 28/08/2026 — motivo do desligamento.**
+> **Etapa 2 — as verbas — não iniciada: depende da matriz por motivo, ainda sem
+> fonte confirmada, e do 13º proporcional que a Fase 4F deixou pendente.**
+
 ### Objetivo
 
 Suportar cálculo de desligamento.
@@ -1938,6 +1967,98 @@ Suportar cálculo de desligamento.
 - descontos;
 - memória;
 - testes.
+
+---
+
+### Etapa 1 — Motivo do desligamento (concluída)
+
+#### O buraco que ela fecha
+
+Até aqui o contrato desligava **sem motivo**: `Desligar(data)`. E o motivo é o campo que
+**decide as verbas** — quem pede demissão não recebe aviso prévio indenizado nem multa de
+FGTS; quem é dispensado por justa causa perde também as férias proporcionais; no acordo do
+art. 484-A metade do aviso e metade da multa são devidas.
+
+Sem ele, a Fase 4G não teria como calcular nada. E preenchê-lo depois significaria reabrir
+um fato já registrado.
+
+#### Fontes
+
+Cada motivo cita o artigo que o define:
+
+| Motivo | Norma |
+|---|---|
+| Dispensa por justa causa | **CLT art. 482** |
+| Rescisão indireta | **CLT art. 483** |
+| Acordo entre as partes | **CLT art. 484-A** (incluído pela Lei 13.467/2017) |
+| Término de contrato por prazo determinado | **CLT art. 443** |
+
+Os demais — dispensa sem justa causa, pedido de demissão, falecimento e aposentadoria —
+não têm artigo que os "crie": são as situações que a lei pressupõe.
+
+#### Decisões registradas
+
+##### 1. O enum **não é** a Tabela 19 do eSocial
+
+A Tabela 19 tem cerca de trinta códigos e inclui situações que **não mudam verba
+nenhuma**: transferência entre empresas do grupo, mudança de CNPJ, reforma de
+aposentadoria. Aqui estão os **oito motivos que o cálculo distingue**, que é o que o
+`CLAUDE.md §7` pede — nada de campo sem uso claro.
+
+O mapeamento para os códigos do eSocial é assunto de **integração (Fase 8)** e fica
+pendente: a Tabela 19 **não pôde ser lida** das fontes oficiais com as ferramentas
+disponíveis — o HTML das tabelas trunca antes dela e os PDFs do Anexo I não são
+extraíveis. Registrado, não adivinhado.
+
+##### 2. O motivo é **obrigatório** e não tem valor padrão na tela
+
+`Desligar` exige o motivo e recusa valor não definido. Na interface o campo começa em
+branco: um padrão convidaria a aceitar o que já estava lá, e o que está em jogo é quanto a
+pessoa recebe.
+
+##### 3. **Não** há check constraint exigindo motivo em contrato desligado
+
+De propósito. Os contratos encerrados **antes** desta fase ficam com motivo nulo: eles
+foram desligados quando o campo não existia, e ninguém sabe por quê. Uma constraint
+obrigaria a **inventar um motivo no backfill**, e motivo inventado decide verba errada.
+
+Para os novos, a garantia é do domínio.
+
+##### 4. Não há como **alterar** o motivo
+
+Corrigir o motivo de um desligamento já registrado é operação de correção, com efeito
+financeiro — não um ajuste de cadastro. Entra quando a etapa 2 definir esse fluxo.
+
+#### A tela de desligamento não existia
+
+Descoberta durante a etapa: `desligar` estava no cliente HTTP do frontend **sem nenhum uso
+em página alguma**. O endpoint existia desde a Fase 2 e só era exercitado por teste. Agora
+há o formulário, com o motivo e o aviso de que não há reabertura.
+
+---
+
+### Etapa 2 — Verbas rescisórias (não iniciada)
+
+#### O que ela precisa, e o que falta
+
+| Verba | Depende de |
+|---|---|
+| Saldo de salário | Nada novo — é o que `MotorCalculoFolha` já faz para o mês do desligamento |
+| **13º proporcional** | Os avos da **Fase 4F etapa 1**, que já existem — mas a Fase 4F etapa 2 está bloqueada, e a rescisão herda a mesma dúvida sobre incidências |
+| **Férias proporcionais + 1/3** | Avos de férias do período aquisitivo **incompleto** — estrutura que ainda não existe (a 4E deriva períodos completos) |
+| Férias vencidas + 1/3 | Já existe: `PeriodosAquisitivos.Adquiridos` com saldo |
+| **Aviso prévio** | Lei 12.506/2011 — 30 dias mais 3 por ano de serviço, até 90. Precisa de fonte confirmada |
+| **Multa de 40% do FGTS** | O saldo da conta vinculada, que o produto **não tem** — só os depósitos que ele mesmo calculou |
+| **A matriz de quais verbas cada motivo gera** | Fonte oficial ainda não confirmada |
+
+#### ⚠️ A multa do FGTS é o item mais difícil, e não por regra legal
+
+Ela incide sobre o **saldo da conta vinculada** do trabalhador na Caixa — que inclui
+depósitos de contratos anteriores, correção monetária e juros. O Prisma RH conhece apenas
+os depósitos que ele mesmo apurou desde a Fase 4C.
+
+Ou o produto passa a receber esse saldo como **entrada informada**, ou a multa fica fora.
+É decisão de escopo, não de lei, e precisa ser tomada antes de a etapa 2 começar.
 
 ---
 

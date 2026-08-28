@@ -1,4 +1,4 @@
-using PrismaRH.Dominio.Contratos;
+﻿using PrismaRH.Dominio.Contratos;
 using PrismaRH.Dominio.Ferias;
 
 namespace PrismaRH.Testes.Dominio;
@@ -27,7 +27,7 @@ public class PeriodoAquisitivoTestes
 
         if (desligamento is { } data)
         {
-            contrato.Desligar(data);
+            contrato.Desligar(data, MotivoDesligamento.DispensaSemJustaCausa);
         }
 
         return contrato;

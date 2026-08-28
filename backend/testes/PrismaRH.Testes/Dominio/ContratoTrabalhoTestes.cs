@@ -1,4 +1,4 @@
-using PrismaRH.Dominio.Contratos;
+﻿using PrismaRH.Dominio.Contratos;
 
 namespace PrismaRH.Testes.Dominio;
 
@@ -133,7 +133,7 @@ public class ContratoTrabalhoTestes
         var contrato = Novo();
         var saida = new DateOnly(2026, 7, 31);
 
-        contrato.Desligar(saida);
+        contrato.Desligar(saida, MotivoDesligamento.DispensaSemJustaCausa);
 
         Assert.Equal(SituacaoContrato.Desligado, contrato.Situacao);
         Assert.Equal(saida, contrato.DataDesligamento);
@@ -154,10 +154,60 @@ public class ContratoTrabalhoTestes
     {
         var contrato = Novo();
 
-        Assert.Throws<ArgumentException>(() => contrato.Desligar(Admissao.AddDays(-1)));
+        const MotivoDesligamento motivo = MotivoDesligamento.DispensaSemJustaCausa;
 
-        contrato.Desligar(new DateOnly(2026, 7, 31));
-        Assert.Throws<InvalidOperationException>(() => contrato.Desligar(new DateOnly(2026, 8, 31)));
+        Assert.Throws<ArgumentException>(() => contrato.Desligar(Admissao.AddDays(-1), motivo));
+
+        contrato.Desligar(new DateOnly(2026, 7, 31), motivo);
+        Assert.Throws<InvalidOperationException>(() => contrato.Desligar(new DateOnly(2026, 8, 31), motivo));
+    }
+
+    [Fact]
+    public void Desligar_GravaOMotivo()
+    {
+        var contrato = Novo();
+
+        Assert.Null(contrato.MotivoDesligamento);
+
+        contrato.Desligar(new DateOnly(2026, 7, 31), MotivoDesligamento.PedidoDeDemissao);
+
+        // O motivo decide as verbas rescisorias: sem ele, a Fase 4G nao teria
+        // como calcular nada.
+        Assert.Equal(MotivoDesligamento.PedidoDeDemissao, contrato.MotivoDesligamento);
+        Assert.Equal(SituacaoContrato.Desligado, contrato.Situacao);
+    }
+
+    [Fact]
+    public void Desligar_ComMotivoDesconhecido_ERecusado()
+    {
+        var contrato = Novo();
+
+        var erro = Assert.Throws<ArgumentException>(
+            () => contrato.Desligar(new DateOnly(2026, 7, 31), (MotivoDesligamento)99));
+
+        Assert.Contains("motivo", erro.Message, StringComparison.OrdinalIgnoreCase);
+
+        // E o contrato NAO ficou meio desligado.
+        Assert.Equal(SituacaoContrato.Ativo, contrato.Situacao);
+        Assert.Null(contrato.DataDesligamento);
+    }
+
+    [Theory]
+    [InlineData(MotivoDesligamento.DispensaSemJustaCausa)]
+    [InlineData(MotivoDesligamento.DispensaPorJustaCausa)]
+    [InlineData(MotivoDesligamento.PedidoDeDemissao)]
+    [InlineData(MotivoDesligamento.RescisaoIndireta)]
+    [InlineData(MotivoDesligamento.AcordoEntreAsPartes)]
+    [InlineData(MotivoDesligamento.TerminoDeContratoPorPrazoDeterminado)]
+    [InlineData(MotivoDesligamento.FalecimentoDoEmpregado)]
+    [InlineData(MotivoDesligamento.Aposentadoria)]
+    public void TodosOsMotivos_SaoAceitos(MotivoDesligamento motivo)
+    {
+        var contrato = Novo();
+
+        contrato.Desligar(new DateOnly(2026, 7, 31), motivo);
+
+        Assert.Equal(motivo, contrato.MotivoDesligamento);
     }
 
     [Theory]

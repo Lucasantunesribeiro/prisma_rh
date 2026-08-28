@@ -192,7 +192,7 @@ public class FolhaPagamentoTestes
             ParametrosEncargos.Nenhum, SemDependentes, Agora);
         Assert.Single(folha.Funcionarios);
 
-        contrato.Desligar(new DateOnly(2026, 7, 20));
+        contrato.Desligar(new DateOnly(2026, 7, 20), MotivoDesligamento.DispensaSemJustaCausa);
         folha.Calcular(
             [contrato], Salario(), [],
             ParametrosEncargos.Nenhum, SemDependentes, Agora);

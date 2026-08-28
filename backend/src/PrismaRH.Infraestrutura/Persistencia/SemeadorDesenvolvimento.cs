@@ -279,7 +279,7 @@ public static class SemeadorDesenvolvimento
             MotivoVigencia.AlteracaoSalarial, agora);
 
         // Um desligado, para o cadastro nao parecer que so existe gente ativa.
-        contratos[4].Desligar(new DateOnly(2026, 6, 30));
+        contratos[4].Desligar(new DateOnly(2026, 6, 30), MotivoDesligamento.DispensaSemJustaCausa);
 
         contexto.ContratosTrabalho.AddRange(contratos);
 

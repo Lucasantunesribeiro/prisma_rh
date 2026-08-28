@@ -1,4 +1,4 @@
-namespace PrismaRH.Dominio.Contratos;
+﻿namespace PrismaRH.Dominio.Contratos;
 
 /// <summary>
 /// O VINCULO entre uma pessoa e uma empresa. Tem matricula, admissao e,
@@ -71,6 +71,15 @@ public sealed class ContratoTrabalho
     public string Matricula { get; private set; } = string.Empty;
     public DateOnly DataAdmissao { get; private set; }
     public DateOnly? DataDesligamento { get; private set; }
+
+    /// <summary>
+    /// Por que o contrato terminou. Nulo enquanto ele estiver ativo.
+    ///
+    /// Nao ha metodo para alterar: corrigir o motivo de um desligamento ja
+    /// registrado e operacao de correcao, com efeito financeiro, e nao um
+    /// ajuste de cadastro. Entra quando a Fase 4G definir esse fluxo.
+    /// </summary>
+    public MotivoDesligamento? MotivoDesligamento { get; private set; }
     public SituacaoContrato Situacao { get; private set; }
     public DateTimeOffset CriadoEm { get; private set; }
 
@@ -138,11 +147,24 @@ public sealed class ContratoTrabalho
     }
 
     /// <summary>Encerra o vinculo. A ultima vigencia fecha no dia do desligamento.</summary>
-    public void Desligar(DateOnly dataDesligamento)
+    /// <summary>
+    /// Encerra o contrato.
+    ///
+    /// O MOTIVO e obrigatorio, e nao um detalhe de cadastro: ele decide quais
+    /// verbas rescisorias sao devidas. Desligar sem motivo deixaria a Fase 4G
+    /// sem a informacao mais importante que ela precisa, e preenche-la depois
+    /// significaria reabrir um fato ja registrado.
+    /// </summary>
+    public void Desligar(DateOnly dataDesligamento, MotivoDesligamento motivo)
     {
         if (Situacao == SituacaoContrato.Desligado)
         {
             throw new InvalidOperationException("Contrato ja esta desligado.");
+        }
+
+        if (!Enum.IsDefined(motivo))
+        {
+            throw new ArgumentException("Motivo de desligamento desconhecido.", nameof(motivo));
         }
 
         if (dataDesligamento < DataAdmissao)
@@ -163,6 +185,7 @@ public sealed class ContratoTrabalho
         aberta.Fechar(dataDesligamento);
 
         DataDesligamento = dataDesligamento;
+        MotivoDesligamento = motivo;
         Situacao = SituacaoContrato.Desligado;
     }
 }

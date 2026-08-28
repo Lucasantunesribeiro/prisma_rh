@@ -2,7 +2,7 @@
 
 Plataforma B2B de gestão, cálculo, conferência e auditoria de folha de pagamento brasileira.
 
-> **Estado atual: Fase 4F, etapa 1 concluída — avos de 13º.**
+> **Estado atual: Fase 4G, etapa 1 concluída — motivo do desligamento.**
 >
 > Existe login com JWT, cinco perfis, organizações isoladas entre si, o cadastro de
 > funcionários, contratos e histórico contratual por vigência, e a **primeira folha
@@ -18,8 +18,9 @@ Plataforma B2B de gestão, cálculo, conferência e auditoria de folha de pagame
 > passaram do prazo, a **programação** dos dias — com fracionamento e abono validados pela
 > CLT — e o **pagamento**, numa folha de tipo próprio, com o 1/3 constitucional e as
 > incidências de cada verba conforme o Manual do eSocial.
-> Do **13º salário** existem os **avos** — quantos meses de cada ano contam, e por quê. O
-> pagamento do 13º ainda não existe.
+> Do **13º salário** existem os **avos** — quantos meses de cada ano contam, e por quê.
+> O desligamento agora exige o **motivo**, que é o campo que decide as verbas rescisórias.
+> O pagamento do 13º e o cálculo da rescisão ainda não existem.
 > Consulte o [ROADMAP.md](ROADMAP.md) para as fases seguintes e o
 > [CLAUDE.md](CLAUDE.md) para as regras do projeto.
 
@@ -174,6 +175,35 @@ Três diferenças em relação ao INSS, cada uma com teste próprio:
 > previdência privada e parcela isenta acima de 65 anos não têm dado de origem no
 > domínio ainda. Não há ajuste anual: o produto retém na fonte.
 
+**Motivo do desligamento (Fase 4G, etapa 1)**
+
+Até aqui o contrato desligava **sem motivo** — e o motivo é o campo que **decide as
+verbas**: quem pede demissão não recebe aviso prévio indenizado nem multa de FGTS; quem é
+dispensado por justa causa perde também as férias proporcionais; no acordo do art. 484-A
+metade do aviso e metade da multa são devidas.
+
+Fontes: **CLT art. 482** (justa causa), **art. 483** (rescisão indireta), **art. 484-A**
+(acordo, Lei 13.467/2017) e **art. 443** (prazo determinado).
+
+- O enum **não é a Tabela 19 do eSocial**. Aquela tem ~30 códigos e inclui situações que
+  não mudam verba nenhuma — transferência entre empresas do grupo, mudança de CNPJ. Aqui
+  estão os **oito motivos que o cálculo distingue**. O mapeamento para os códigos do
+  eSocial é assunto de integração (Fase 8) e fica pendente: a Tabela 19 **não pôde ser
+  lida** das fontes oficiais — o HTML trunca antes dela e os PDFs não são extraíveis.
+- O motivo é **obrigatório**, validado **antes** de qualquer mutação: motivo inválido não
+  deixa o contrato "meio desligado".
+- Na tela o campo começa **em branco**. Um padrão convidaria a aceitar o que já estava lá,
+  e o que está em jogo é quanto a pessoa recebe.
+- **Não** há constraint exigindo motivo em contrato desligado: os encerrados antes desta
+  fase ficam com motivo nulo, porque ninguém sabe por quê. Uma constraint obrigaria a
+  **inventar** um motivo no backfill.
+- **Não** há como alterar o motivo depois. Corrigi-lo é operação de correção, com efeito
+  financeiro — entra quando a etapa 2 definir esse fluxo.
+
+> A **tela de desligamento não existia**: `desligar` estava no cliente HTTP sem uso em
+> página alguma, e o endpoint só era exercitado por teste desde a Fase 2. Agora há o
+> formulário, com o motivo e o aviso de que não há reabertura.
+
 **Avos de 13º (Fase 4F, etapa 1)**
 
 Fontes: **Lei nº 4.090/1962** (1/12 por mês de serviço; fração **≥ 15 dias** conta como mês
@@ -304,8 +334,13 @@ subsequentes) e **art. 137** (fora do prazo, remuneração **em dobro**).
 
 ## O que ainda NÃO existe
 
-O **pagamento** do 13º, rescisão, afastamentos, importações, motor de análises,
-integrações, recursos AWS e CI/CD. Tudo isso pertence às fases seguintes do roadmap.
+O **pagamento** do 13º, o **cálculo da rescisão**, afastamentos, importações, motor de
+análises, integrações, recursos AWS e CI/CD. Tudo isso pertence às fases seguintes.
+
+Da rescisão existe o **motivo**, não as verbas. Além da matriz de quais verbas cada motivo
+gera, falta um item que **não é regra legal**: a multa de 40% incide sobre o **saldo da
+conta vinculada do FGTS**, que o produto não conhece — ele só sabe os depósitos que ele
+mesmo apurou. Ou esse saldo vira entrada informada, ou a multa fica fora.
 
 A **folha mensal** e a **de férias** estão completas. Do 13º existe o direito (os avos),
 não o pagamento.
@@ -519,6 +554,7 @@ Todos usam a senha de `PRISMARH_SEED_SENHA`.
 | `DELETE /api/contratos/{id}/ferias/concessoes/{idC}` | Adm. Empresa, Analista | Cancela uma programação que não começou |
 | `POST /api/folhas` (campo `tipo`) | Adm. Empresa, Analista | Abre folha **Mensal** ou **Ferias** |
 | `GET /api/contratos/{id}/decimo-terceiro/avos` | todos os 5 | Avos de 13º no ano, mês a mês, com o motivo |
+| `POST /api/contratos/{id}/desligamento` (campo `motivo`) | Adm. Empresa, Analista | Encerra o vínculo, com o motivo obrigatório |
 | `GET /api/folhas` | todos os 5 | Lista, com filtro por empresa e competência |
 | `GET /api/folhas/{id}` | todos os 5 | Folha com os holerites |
 | `GET /api/folhas/{id}/funcionarios/{idHolerite}` | todos os 5 | Holerite, memória de cálculo e bases |

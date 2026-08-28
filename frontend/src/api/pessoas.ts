@@ -63,6 +63,41 @@ export const criarFuncionario = (dados: {
 
 export type SituacaoContrato = 'Ativo' | 'Desligado'
 
+/**
+ * Por que o contrato terminou — o campo que decide as verbas rescisórias.
+ *
+ * Não é a Tabela 19 do eSocial: são os motivos que o **cálculo** distingue.
+ * Cada um cita o artigo da CLT que o define.
+ */
+export type MotivoDesligamento =
+  | 'DispensaSemJustaCausa'
+  | 'DispensaPorJustaCausa'
+  | 'PedidoDeDemissao'
+  | 'RescisaoIndireta'
+  | 'AcordoEntreAsPartes'
+  | 'TerminoDeContratoPorPrazoDeterminado'
+  | 'FalecimentoDoEmpregado'
+  | 'Aposentadoria'
+
+export const ROTULO_MOTIVO_DESLIGAMENTO: Record<MotivoDesligamento, string> = {
+  DispensaSemJustaCausa: 'Dispensa sem justa causa',
+  DispensaPorJustaCausa: 'Dispensa por justa causa',
+  PedidoDeDemissao: 'Pedido de demissão',
+  RescisaoIndireta: 'Rescisão indireta',
+  AcordoEntreAsPartes: 'Acordo entre as partes',
+  TerminoDeContratoPorPrazoDeterminado: 'Término de contrato por prazo determinado',
+  FalecimentoDoEmpregado: 'Falecimento do empregado',
+  Aposentadoria: 'Aposentadoria',
+}
+
+/** O artigo que define cada motivo, para a tela citar em vez de só rotular. */
+export const NORMA_MOTIVO_DESLIGAMENTO: Partial<Record<MotivoDesligamento, string>> = {
+  DispensaPorJustaCausa: 'CLT art. 482',
+  RescisaoIndireta: 'CLT art. 483',
+  AcordoEntreAsPartes: 'CLT art. 484-A',
+  TerminoDeContratoPorPrazoDeterminado: 'CLT art. 443',
+}
+
 export type MotivoVigencia =
   | 'Admissao'
   | 'AlteracaoSalarial'
@@ -99,6 +134,7 @@ export interface Contrato {
   dataAdmissao: string
   dataDesligamento: string | null
   situacao: SituacaoContrato
+  motivoDesligamento: MotivoDesligamento | null
   vigenciaAtual: Vigencia | null
 }
 
@@ -133,8 +169,12 @@ export const registrarAlteracao = (
   },
 ): Promise<Vigencia> => enviar(`/api/contratos/${idContrato}/vigencias`, dados)
 
-export const desligar = (idContrato: string, dataDesligamento: string): Promise<Contrato> =>
-  enviar(`/api/contratos/${idContrato}/desligamento`, { dataDesligamento })
+export const desligar = (
+  idContrato: string,
+  dataDesligamento: string,
+  motivo: MotivoDesligamento,
+): Promise<Contrato> =>
+  enviar(`/api/contratos/${idContrato}/desligamento`, { dataDesligamento, motivo })
 
 // -------------------------------------------------------------- dependentes
 

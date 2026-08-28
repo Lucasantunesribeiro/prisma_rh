@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PrismaRH.Api.Identidade;
 using PrismaRH.Aplicacao.Comum;
@@ -25,7 +25,7 @@ public sealed record RegistrarAlteracaoRequisicao(
     int JornadaMensalHoras,
     MotivoVigencia Motivo);
 
-public sealed record DesligarRequisicao(DateOnly DataDesligamento);
+public sealed record DesligarRequisicao(DateOnly DataDesligamento, MotivoDesligamento Motivo);
 
 public sealed record VigenciaResposta(
     Guid Id,
@@ -49,12 +49,13 @@ public sealed record ContratoResposta(
     string Matricula,
     DateOnly DataAdmissao,
     DateOnly? DataDesligamento,
+    MotivoDesligamento? MotivoDesligamento,
     SituacaoContrato Situacao,
     VigenciaResposta? VigenciaAtual)
 {
     public static ContratoResposta De(ContratoTrabalho c) =>
         new(c.Id, c.IdFuncionario, c.IdEmpresa, c.Matricula, c.DataAdmissao,
-            c.DataDesligamento, c.Situacao,
+            c.DataDesligamento, c.MotivoDesligamento, c.Situacao,
             c.VigenciaAtual is null ? null : VigenciaResposta.De(c.VigenciaAtual));
 }
 
@@ -314,7 +315,7 @@ public static class ContratosEndpoints
 
         try
         {
-            contrato.Desligar(requisicao.DataDesligamento);
+            contrato.Desligar(requisicao.DataDesligamento, requisicao.Motivo);
         }
         catch (ArgumentException erro)
         {

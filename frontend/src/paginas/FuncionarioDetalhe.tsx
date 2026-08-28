@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from
 import { useParams } from 'react-router'
 import { podeAdministrarPessoas } from '@/api/autenticacao'
 import {
+  desligar,
   formatarData,
   formatarSalario,
   listarCargos,
@@ -10,12 +11,15 @@ import {
   listarDependentes,
   listarVigencias,
   obterFuncionario,
+  NORMA_MOTIVO_DESLIGAMENTO,
   registrarAlteracao,
   ROTULO_MOTIVO,
+  ROTULO_MOTIVO_DESLIGAMENTO,
   type Cargo,
   type Contrato,
   type Dependente,
   type Funcionario,
+  type MotivoDesligamento,
   type MotivoVigencia,
   type Vigencia,
 } from '@/api/pessoas'
@@ -204,7 +208,10 @@ function SecaoContrato({
         titulo={`Matrícula ${contrato.matricula}`}
         descricao={
           contrato.dataDesligamento
-            ? `Admissão em ${formatarData(contrato.dataAdmissao)} · desligado em ${formatarData(contrato.dataDesligamento)}`
+            ? `Admissão em ${formatarData(contrato.dataAdmissao)} · desligado em ${formatarData(contrato.dataDesligamento)}` +
+              (contrato.motivoDesligamento
+                ? ` · ${ROTULO_MOTIVO_DESLIGAMENTO[contrato.motivoDesligamento]}`
+                : '')
             : `Admissão em ${formatarData(contrato.dataAdmissao)}`
         }
         acao={
@@ -214,14 +221,23 @@ function SecaoContrato({
             </StatusBadge>
 
             {administra && ativo && contrato.vigenciaAtual && (
-              <RegistrarAlteracao
-                contrato={contrato}
-                cargos={cargos}
-                aoRegistrar={async () => {
-                  await carregarHistorico()
-                  await aoMudar()
-                }}
-              />
+              <>
+                <RegistrarAlteracao
+                  contrato={contrato}
+                  cargos={cargos}
+                  aoRegistrar={async () => {
+                    await carregarHistorico()
+                    await aoMudar()
+                  }}
+                />
+                <Desligar
+                  contrato={contrato}
+                  aoDesligar={async () => {
+                    await carregarHistorico()
+                    await aoMudar()
+                  }}
+                />
+              </>
             )}
           </div>
         }
@@ -372,6 +388,124 @@ function Mudanca({
         <span className={cn(de && 'font-medium', tabular && 'tabular')}>{para}</span>
       </dd>
     </div>
+  )
+}
+
+/**
+ * Encerra o contrato.
+ *
+ * O **motivo** é obrigatório e não tem valor pré-selecionado: ele decide as
+ * verbas rescisórias, e um padrão convidaria a aceitar o que já estava lá.
+ * Deixar em branco força a escolha consciente.
+ *
+ * Ação irreversível — não há reabertura de contrato no produto —, por isso o
+ * botão é destrutivo e o texto avisa antes.
+ */
+function Desligar({
+  contrato,
+  aoDesligar,
+}: {
+  contrato: Contrato
+  aoDesligar: () => Promise<void>
+}) {
+  const [aberto, definirAberto] = useState(false)
+  const [data, definirData] = useState('')
+  const [motivo, definirMotivo] = useState<MotivoDesligamento | ''>('')
+  const [erro, definirErro] = useState<string | null>(null)
+  const [enviando, definirEnviando] = useState(false)
+
+  const aoEnviar = async (evento: FormEvent) => {
+    evento.preventDefault()
+
+    if (motivo === '') {
+      definirErro('Escolha o motivo do desligamento.')
+      return
+    }
+
+    definirErro(null)
+    definirEnviando(true)
+
+    try {
+      await desligar(contrato.id, data, motivo)
+      definirAberto(false)
+      await aoDesligar()
+    } catch (falha) {
+      definirErro(falha instanceof Error ? falha.message : 'Não foi possível desligar.')
+    } finally {
+      definirEnviando(false)
+    }
+  }
+
+  const motivos = Object.keys(ROTULO_MOTIVO_DESLIGAMENTO) as MotivoDesligamento[]
+
+  return (
+    <Drawer open={aberto} onOpenChange={definirAberto}>
+      <DrawerTrigger asChild>
+        <Button variant="outline" size="sm">
+          Desligar
+        </Button>
+      </DrawerTrigger>
+
+      <DrawerContent
+        titulo="Desligar contrato"
+        descricao="O vínculo é encerrado e a vigência atual é fechada na data informada. Não há reabertura."
+        className="max-w-lg"
+      >
+        <form onSubmit={aoEnviar} className="space-y-4" noValidate>
+          <div className="space-y-1.5">
+            <Label htmlFor={`desligamento-${contrato.id}`}>Data do desligamento</Label>
+            <Input
+              id={`desligamento-${contrato.id}`}
+              type="date"
+              required
+              autoFocus
+              value={data}
+              onChange={(e) => definirData(e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor={`motivo-${contrato.id}`}>Motivo</Label>
+            <select
+              id={`motivo-${contrato.id}`}
+              required
+              value={motivo}
+              onChange={(e) => definirMotivo(e.target.value as MotivoDesligamento)}
+              className="h-9 w-full rounded-md border border-input bg-card px-3 text-[13px] shadow-xs"
+            >
+              <option value="">Escolha…</option>
+              {motivos.map((m) => (
+                <option key={m} value={m}>
+                  {ROTULO_MOTIVO_DESLIGAMENTO[m]}
+                  {NORMA_MOTIVO_DESLIGAMENTO[m] ? ` (${NORMA_MOTIVO_DESLIGAMENTO[m]})` : ''}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-muted-foreground">
+              O motivo decide as verbas rescisórias — quem pede demissão não recebe o mesmo que
+              quem é dispensado. O cálculo da rescisão ainda não existe.
+            </p>
+          </div>
+
+          {erro && (
+            <Alert variant="destructive" role="alert">
+              <AlertDescription>{erro}</AlertDescription>
+            </Alert>
+          )}
+
+          <div className="flex justify-end gap-2 border-t border-border pt-4">
+            <DrawerClose asChild>
+              <Button type="button" variant="outline" size="sm">
+                Cancelar
+              </Button>
+            </DrawerClose>
+            <Button type="submit" size="sm" variant="destructive" disabled={enviando}>
+              {enviando ? 'Desligando...' : 'Desligar'}
+            </Button>
+          </div>
+        </form>
+      </DrawerContent>
+    </Drawer>
   )
 }
 
