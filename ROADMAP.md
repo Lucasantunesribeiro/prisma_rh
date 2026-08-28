@@ -1137,6 +1137,35 @@ o 13º da Fase 4F, que traz a mesma classe de problema.
 
 ---
 
+### Security Gate — Fase 4F, etapa 1 (avos de 13º)
+
+| # | Ponto | Resposta |
+|---|---|---|
+| 1 | Ameaças introduzidas | Rota nova que expõe **admissão, desligamento e meses de vínculo** de um contrato. IDOR pelo id do contrato. Parâmetro `ano` vindo do cliente. |
+| 2 | Controles | Contrato resolvido **através do filtro global** — nunca por id direto com conferência manual. `ano` é `int` tipado e validado contra o intervalo do domínio (**400** fora dele). Nenhuma escrita: a rota é `GET` e o domínio é função pura. |
+| 3 | Testes de segurança | Contrato de outra organização devolve **404** (não 403). Contrato inexistente devolve **404**. Anônimo recebe **401**. Auditor lê. Ano fora do intervalo devolve **400**. |
+| 4 | Impacto multiempresa | O contrato passa pelo filtro global e os avos são derivados **dele** — não há consulta paralela que pudesse escapar. Não foi preciso criar organização própria na fixture: a etapa **não altera nenhum holerite**. |
+| 5 | Exposição de dados | Nenhum dado novo é armazenado. A resposta expõe admissão, desligamento e matrícula, que o endpoint de contratos já expõe ao mesmo perfil. **Nenhum valor monetário.** |
+| 6 | Permissões | `LerDadosEmpresariais` para os cinco perfis: saber quantos avos cada pessoa tem é informação de provisionamento, e o Auditor precisa dela tanto quanto o Analista. Nenhuma rota de escrita. |
+| 7 | Logging e auditoria | Não se aplica: nada é alterado. |
+| 8 | Dependências | Nenhuma nova. |
+| 9 | Secrets | Não se aplica. |
+| 10 | Superfície pública | Nenhuma rota anônima nova. |
+| 11 | Risco de custo/abuso | Uma consulta por chamada, por chave primária. A derivação é um laço de **doze** iterações, fixo. Sem paginação porque a resposta tem tamanho constante. |
+
+#### Defeito de teste revelado nesta etapa
+
+`CadastroFuncionalTestes.Funcionario_DeOutraOrganizacao_NaoAparece_E_Devolve404` lia
+`GET /api/funcionarios` **sem filtro** e assumia que o registro criado estava na primeira
+página — que tem **25 itens ordenados por nome**. Os funcionários "Decimo Pessoa 000X"
+desta etapa entram alfabeticamente antes de "Pessoa A1" e o empurraram para fora.
+
+O teste era **frágil por construção**: qualquer classe que criasse um nome alfabeticamente
+anterior o quebraria. Corrigido para filtrar por `?nome=`, o que torna a asserção
+determinística sem enfraquecê-la.
+
+---
+
 ## FASE 4C — FGTS
 
 > **Status: concluída em 27/08/2026.**
@@ -1778,6 +1807,10 @@ antes de feriado) continuam fora, pelos motivos da etapa 2a.
 
 ## FASE 4F — 13º SALÁRIO
 
+> **Status: etapa 1 concluída em 28/08/2026 — avos.**
+> **Etapa 2 — o pagamento — BLOQUEADA: duas fontes `gov.br` se contradizem sobre
+> quando INSS e IRRF incidem.**
+
 ### Objetivo
 
 Suportar processamento de 13º.
@@ -1790,6 +1823,101 @@ Suportar processamento de 13º.
 - incidências;
 - memória;
 - testes.
+
+---
+
+### Etapa 1 — Avos (concluída)
+
+#### Fontes
+
+| Regra | Norma |
+|---|---|
+| 1/12 da remuneração **por mês de serviço** | **Lei nº 4.090, de 13/07/1962**, art. 1º |
+| Fração **igual ou superior a 15 dias** é havida como mês integral | **Lei nº 4.090/1962**, art. 1º, §2º |
+| Pagamento até **20 de dezembro**, compensado o adiantamento | **Lei nº 4.749, de 12/08/1965**, art. 1º |
+| Adiantamento entre **fevereiro e novembro**, metade do salário | **Lei nº 4.749/1965**, art. 2º |
+
+#### Decisões registradas
+
+##### 1. Avos **não têm tabela**, como os períodos aquisitivos
+
+Terceira vez que a mesma decisão aparece, e pelo mesmo motivo: os avos são função pura da
+admissão, do desligamento e do calendário. Nada neles alguém altera.
+
+##### 2. **Reusa** `MotorCalculoFolha.PeriodoNaCompetencia`
+
+A pergunta *"quantos dias este contrato esteve vigente neste mês?"* já era respondida pelo
+motor da folha mensal. Duas contas separadas para a mesma pergunta acabariam divergindo —
+e a divergência apareceria como um avo a mais ou a menos, sem nada parecer errado.
+
+##### 3. O teste dos 15 dias é `>=`, e há teste para o dia exato
+
+Admitido em **17 de março** (mês de 31 dias): 17 a 31 são **15 dias exatos**, e o mês
+conta. Em **18 de março**: 14 dias, não conta. Um erro de `>=` para `>` tiraria um avo de
+quem foi admitido no dia 17 — e o teste `QuinzeDiasEXATOS_ContamComoMesInteiro` trava
+exatamente essa fronteira, nos dois lados.
+
+##### 4. A resposta traz **os doze meses**, com o motivo de cada um
+
+Não só os que contam. Mostrar apenas "9/12" deixa o analista sem saber se é o mês da
+admissão, o do desligamento ou um erro de cadastro — e é justamente essa conferência que
+ele faz antes de provisionar. Cada mês devolve `diasTrabalhados` e um `motivo` em
+português: *"sem vínculo no mes"*, *"so 14 dias, menos que 15"*, *"30 dias trabalhados"*.
+
+#### Limitações declaradas — 28/08/2026
+
+**Afastamentos não são considerados**, pelo mesmo motivo das faltas nas férias: o domínio
+**não tem afastamento**. Um mês em que a pessoa esteve afastada por doença além do 15º dia
+não deveria contar, e aqui conta.
+
+---
+
+### Etapa 2 — Pagamento (bloqueada)
+
+#### ⚠️ A contradição que bloqueia
+
+Duas fontes **oficiais** consultadas em 28/08/2026 dizem coisas diferentes sobre quando
+INSS e IRRF incidem no 13º:
+
+| Fonte | O que diz |
+|---|---|
+| Nota orientativa do **FGTS Digital** / eSocial (regime geral) | INSS e IRRF são apurados **apenas na folha anual do 13º**, sobre o **valor total**. O **FGTS** incide no mês do pagamento de cada parcela — inclusive no adiantamento. |
+| Página do eSocial *"Como pagar a primeira parcela do 13º salário"* | Manda **descontar INSS e IRRF do adiantamento**, com exemplo numérico. |
+
+A segunda é, muito provavelmente, do **empregador doméstico**, que tem regime próprio
+(DAE / Simples Doméstico) — mas a página não deixa isso explícito no trecho alcançado, e
+os dois PDFs técnicos (Nota Orientativa 2018.13 e FD 11/2025) **não são extraíveis** pelas
+ferramentas disponíveis.
+
+**Concluir por eliminação seria interpretação, não implementação.** O `CLAUDE.md §29`
+proíbe regra crítica sem fonte oficial inequívoca, e a diferença não é de centavos: ela
+muda o que a pessoa recebe em novembro.
+
+#### O que a etapa 2 precisa, além dessa resposta
+
+1. **`TipoFolha`** ganha os tipos das duas parcelas — provavelmente
+   `DecimoTerceiroAdiantamento` e `DecimoTerceiro`, dois tipos e não um com campo
+   `parcela`, para caber no índice único que a Fase 4E já compôs;
+2. **rubricas** do 13º e do adiantamento (eSocial **1800** para o adiantamento);
+3. o cálculo das duas parcelas.
+
+#### ⚠️ Uma sutileza já mapeada: **três bases diferentes** na 2ª parcela
+
+Mesmo com a contradição resolvida, a 2ª parcela tem um problema que a arquitetura atual
+não modela direto. Se o regime geral estiver certo:
+
+```text
+INSS  incide sobre o TOTAL do 13º
+IRRF  incide sobre o TOTAL do 13º
+FGTS  incide apenas sobre a PARCELA paga agora (o adiantamento já teve o seu)
+```
+
+Três bases distintas num holerite só. A incidência é atributo da **rubrica**, e uma
+rubrica tem **uma** declaração de incidência — então o total e o saldo precisam ser
+rubricas diferentes, provavelmente com uma **informativa** carregando a base que sobra.
+
+Registrado agora para que a etapa 2 comece com o problema já enunciado, em vez de
+descobri-lo no meio.
 
 ---
 

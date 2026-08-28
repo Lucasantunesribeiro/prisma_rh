@@ -154,14 +154,37 @@ const FERIAS = {
   ],
 }
 
+const AVOS = {
+  idContrato: 'c1',
+  matricula: '1001',
+  dataAdmissao: '2026-03-18',
+  dataDesligamento: null,
+  ano: new Date().getFullYear(),
+  avos: 9,
+  fracao: '9/12',
+  anoCompleto: false,
+  meses: [
+    { mes: 1, diasTrabalhados: 0, conta: false, motivo: 'sem vinculo no mes' },
+    { mes: 2, diasTrabalhados: 0, conta: false, motivo: 'sem vinculo no mes' },
+    { mes: 3, diasTrabalhados: 14, conta: false, motivo: 'so 14 dias, menos que 15' },
+    ...Array.from({ length: 9 }, (_, i) => ({
+      mes: i + 4,
+      diasTrabalhados: 30,
+      conta: true,
+      motivo: '30 dias trabalhados',
+    })),
+  ],
+}
+
 /**
- * A ordem importa, e ja mordeu duas vezes: `/dependentes` e `/ferias` precisam
- * vir ANTES de `/contratos` e de `/api/funcionarios/`, senao caem no ramo
- * errado e a secao recebe um objeto no lugar da lista - o teste passaria sem
- * exercitar nada.
+ * A ordem importa, e ja mordeu duas vezes: `/dependentes`, `/ferias` e
+ * `/decimo-terceiro` precisam vir ANTES de `/contratos` e de
+ * `/api/funcionarios/`, senao caem no ramo errado e a secao recebe um objeto
+ * no lugar da lista - o teste passaria sem exercitar nada.
  */
 function rotear(url: string, dependentes: unknown = DEPENDENTES, ferias: unknown = FERIAS) {
   if (url.includes('/dependentes')) return responder(dependentes)
+  if (url.includes('/decimo-terceiro')) return responder(AVOS)
   if (url.includes('/ferias')) return responder(ferias)
   if (url.includes('/vigencias')) return responder(VIGENCIAS)
   if (url.includes('/contratos')) return responder([CONTRATO])
@@ -356,5 +379,23 @@ describe('FuncionarioDetalhe', () => {
     // coisa que so surge depois da resposta: o saldo do periodo.
     expect(await screen.findByText(/70 dias/)).toBeInTheDocument()
     expect(screen.queryByText(/passou do prazo de concessão/)).not.toBeInTheDocument()
+  })
+
+  it('mostra os avos de 13º e explica o mês que não contou', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => Promise.resolve(rotear(String(url)))))
+
+    renderizar('AdministradorEmpresa')
+
+    // Esperar por algo que só existe DEPOIS do fetch, e não pelo cabeçalho.
+    expect(await screen.findByText('9/12')).toBeInTheDocument()
+
+    // Os doze meses aparecem, inclusive os que não contaram: o valor da tela
+    // está em explicar a ausência.
+    expect(screen.getByText('jan')).toBeInTheDocument()
+    expect(screen.getByText('dez')).toBeInTheDocument()
+
+    // Março não contou, e o motivo fica no title do item.
+    const marco = screen.getByText('mar').closest('li')!
+    expect(marco).toHaveAttribute('title', 'so 14 dias, menos que 15')
   })
 })

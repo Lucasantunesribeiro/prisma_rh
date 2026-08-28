@@ -36,6 +36,7 @@ import { Label } from '@/components/ui/label'
 import { usePagina } from '@/layout/usePagina'
 import { cn } from '@/lib/utils'
 import { SecaoDependentes } from './SecaoDependentes'
+import { SecaoDecimoTerceiro } from './SecaoDecimoTerceiro'
 import { SecaoFerias } from './SecaoFerias'
 
 export default function FuncionarioDetalhe() {
@@ -144,6 +145,11 @@ export default function FuncionarioDetalhe() {
             idContrato={contrato.id}
             administra={administra}
           />
+        ))}
+
+        {/* 13º, como as férias, nasce do CONTRATO: os avos contam meses de vínculo. */}
+        {contratos.map((contrato) => (
+          <SecaoDecimoTerceiro key={`decimo-${contrato.id}`} idContrato={contrato.id} />
         ))}
 
         {/*

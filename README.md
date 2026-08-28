@@ -2,7 +2,7 @@
 
 Plataforma B2B de gestão, cálculo, conferência e auditoria de folha de pagamento brasileira.
 
-> **Estado atual: Fase 4E concluída — férias, do direito ao pagamento.**
+> **Estado atual: Fase 4F, etapa 1 concluída — avos de 13º.**
 >
 > Existe login com JWT, cinco perfis, organizações isoladas entre si, o cadastro de
 > funcionários, contratos e histórico contratual por vigência, e a **primeira folha
@@ -18,6 +18,8 @@ Plataforma B2B de gestão, cálculo, conferência e auditoria de folha de pagame
 > passaram do prazo, a **programação** dos dias — com fracionamento e abono validados pela
 > CLT — e o **pagamento**, numa folha de tipo próprio, com o 1/3 constitucional e as
 > incidências de cada verba conforme o Manual do eSocial.
+> Do **13º salário** existem os **avos** — quantos meses de cada ano contam, e por quê. O
+> pagamento do 13º ainda não existe.
 > Consulte o [ROADMAP.md](ROADMAP.md) para as fases seguintes e o
 > [CLAUDE.md](CLAUDE.md) para as regras do projeto.
 
@@ -172,6 +174,28 @@ Três diferenças em relação ao INSS, cada uma com teste próprio:
 > previdência privada e parcela isenta acima de 65 anos não têm dado de origem no
 > domínio ainda. Não há ajuste anual: o produto retém na fonte.
 
+**Avos de 13º (Fase 4F, etapa 1)**
+
+Fontes: **Lei nº 4.090/1962** (1/12 por mês de serviço; fração **≥ 15 dias** conta como mês
+integral) e **Lei nº 4.749/1965** (pagamento até 20/12, adiantamento entre fevereiro e
+novembro).
+
+- Os avos **não têm tabela**, como os períodos aquisitivos de férias: são função pura da
+  admissão, do desligamento e do calendário.
+- **Reusa `MotorCalculoFolha.PeriodoNaCompetencia`** — a pergunta *"quantos dias o contrato
+  esteve vigente neste mês?"* já era respondida pelo motor da folha mensal, e duas contas
+  separadas para a mesma pergunta acabariam divergindo.
+- O teste dos 15 dias é **`>=`**: admitido em **17 de março** são 15 dias exatos e o mês
+  **conta**; em 18 de março são 14 e não conta. Há teste travando os dois lados da
+  fronteira — um erro de `>=` para `>` tiraria um avo de quem entrou no dia 17.
+- A resposta traz **os doze meses**, cada um com os dias e o **motivo** em português.
+  Mostrar só "9/12" deixaria o analista sem saber se é o mês da admissão, o do
+  desligamento ou um erro de cadastro.
+
+> **Limitação declarada:** **afastamentos não são considerados** — o domínio não tem
+> afastamento, pelo mesmo motivo das faltas nas férias. Um mês com afastamento além do 15º
+> dia não deveria contar, e aqui conta.
+
 **Pagamento de férias (Fase 4E, etapa 2b)**
 
 Fontes: **CLT art. 142** (remuneração devida na data da concessão), **CF art. 7º, XVII**
@@ -280,12 +304,18 @@ subsequentes) e **art. 137** (fora do prazo, remuneração **em dobro**).
 
 ## O que ainda NÃO existe
 
-13º, rescisão, afastamentos, importações, motor de análises, integrações, recursos AWS e
-CI/CD. Tudo isso pertence às fases seguintes do roadmap.
+O **pagamento** do 13º, rescisão, afastamentos, importações, motor de análises,
+integrações, recursos AWS e CI/CD. Tudo isso pertence às fases seguintes do roadmap.
 
-A **folha mensal** e a **de férias** estão completas. Os demais tipos de processamento —
-13º (4F) e rescisão (4G) — continuam fora, e o 13º trará junto a decisão sobre somar
-rendimentos do mesmo mês para o IRRF, que a limitação das férias já registra.
+A **folha mensal** e a **de férias** estão completas. Do 13º existe o direito (os avos),
+não o pagamento.
+
+> ⚠️ O pagamento do 13º está **bloqueado por uma contradição entre fontes oficiais**: uma
+> nota do eSocial/FGTS Digital diz que INSS e IRRF incidem **apenas na apuração anual**,
+> sobre o total, enquanto a página *"Como pagar a primeira parcela do 13º"* manda
+> descontá-los **do adiantamento**. A segunda é provavelmente do regime **doméstico**, mas
+> a página não deixa isso explícito e os PDFs técnicos não são extraíveis. Concluir por
+> eliminação seria interpretação, não implementação.
 
 Cada encargo exige fonte oficial registrada e parâmetro versionado (`CLAUDE.md §29`). A
 Fase 4A criou as bases, a 4B aplicou a primeira alíquota, a 4C acrescentou o depósito do
@@ -488,6 +518,7 @@ Todos usam a senha de `PRISMARH_SEED_SENHA`.
 | `POST /api/contratos/{id}/ferias/concessoes` | Adm. Empresa, Analista | Programa férias de um período |
 | `DELETE /api/contratos/{id}/ferias/concessoes/{idC}` | Adm. Empresa, Analista | Cancela uma programação que não começou |
 | `POST /api/folhas` (campo `tipo`) | Adm. Empresa, Analista | Abre folha **Mensal** ou **Ferias** |
+| `GET /api/contratos/{id}/decimo-terceiro/avos` | todos os 5 | Avos de 13º no ano, mês a mês, com o motivo |
 | `GET /api/folhas` | todos os 5 | Lista, com filtro por empresa e competência |
 | `GET /api/folhas/{id}` | todos os 5 | Folha com os holerites |
 | `GET /api/folhas/{id}/funcionarios/{idHolerite}` | todos os 5 | Holerite, memória de cálculo e bases |

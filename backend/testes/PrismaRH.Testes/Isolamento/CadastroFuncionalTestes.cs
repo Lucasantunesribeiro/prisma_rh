@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Net.Http.Json;
 
 namespace PrismaRH.Testes.Isolamento;
@@ -86,12 +86,20 @@ public class CadastroFuncionalTestes(BancoPostgresFixture banco) : IDisposable
         var (idDeA, _, _) = await MontarCenarioAsync(
             clienteA, banco.IdEmpresaA, banco.IdEstabelecimentoA, BancoPostgresFixture.CpfDeTeste(1), "A1");
 
+        // A listagem e FILTRADA pelo nome, e nao lida inteira: a pagina padrao
+        // e de 25 itens ordenados por nome, e a organizacao A acumula
+        // funcionarios de todas as classes de teste desta colecao. Confiar em
+        // o registro cair nos 25 primeiros faz o teste quebrar quando outra
+        // classe cria alguem alfabeticamente anterior - que foi exatamente o
+        // que aconteceu quando a Fase 4F entrou.
+        const string filtro = "?nome=Pessoa A1";
+
         // PRESENCA: a propria organizacao enxerga.
-        var listaA = await clienteA.GetFromJsonAsync<PaginaFuncionarios>("/api/funcionarios");
+        var listaA = await clienteA.GetFromJsonAsync<PaginaFuncionarios>("/api/funcionarios" + filtro);
         Assert.Contains(listaA!.Itens, f => f.Id == idDeA);
 
         // AUSENCIA: a vizinha nao.
-        var listaB = await clienteB.GetFromJsonAsync<PaginaFuncionarios>("/api/funcionarios");
+        var listaB = await clienteB.GetFromJsonAsync<PaginaFuncionarios>("/api/funcionarios" + filtro);
         Assert.DoesNotContain(listaB!.Itens, f => f.Id == idDeA);
 
         using var direto = await clienteB.GetAsync($"/api/funcionarios/{idDeA}");

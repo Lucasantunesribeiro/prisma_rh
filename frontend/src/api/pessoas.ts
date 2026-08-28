@@ -285,6 +285,52 @@ export const concederFerias = (
 export const cancelarConcessao = (idContrato: string, id: string): Promise<void> =>
   remover(`/api/contratos/${idContrato}/ferias/concessoes/${id}`)
 
+// --------------------------------------------------------- décimo terceiro
+
+export interface MesDoAvo {
+  mes: number
+  diasTrabalhados: number
+  /** Fração ≥ 15 dias conta como mês inteiro (Lei 4.090/1962). */
+  conta: boolean
+  motivo: string
+}
+
+export interface AvosDecimoTerceiro {
+  idContrato: string
+  matricula: string
+  dataAdmissao: string
+  dataDesligamento: string | null
+  ano: number
+  avos: number
+  /** "7/12", pronto para exibir. */
+  fracao: string
+  anoCompleto: boolean
+  meses: MesDoAvo[]
+}
+
+export const obterAvosDecimoTerceiro = (
+  idContrato: string,
+  ano?: number,
+): Promise<AvosDecimoTerceiro> =>
+  obter(
+    `/api/contratos/${idContrato}/decimo-terceiro/avos${ano === undefined ? '' : `?ano=${ano}`}`,
+  )
+
+export const MESES_CURTOS = [
+  'jan',
+  'fev',
+  'mar',
+  'abr',
+  'mai',
+  'jun',
+  'jul',
+  'ago',
+  'set',
+  'out',
+  'nov',
+  'dez',
+] as const
+
 // ---------------------------------------------------------------- formatação
 
 const MOEDA = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' })
