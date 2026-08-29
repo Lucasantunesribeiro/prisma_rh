@@ -2,7 +2,7 @@
 
 Plataforma B2B de gestão, cálculo, conferência e auditoria de folha de pagamento brasileira.
 
-> **Estado atual: Fase 4G, etapa 1 concluída — motivo do desligamento.**
+> **Estado atual: Fase 4G, etapa 2 concluída — simulação das verbas rescisórias.**
 >
 > Existe login com JWT, cinco perfis, organizações isoladas entre si, o cadastro de
 > funcionários, contratos e histórico contratual por vigência, e a **primeira folha
@@ -19,8 +19,11 @@ Plataforma B2B de gestão, cálculo, conferência e auditoria de folha de pagame
 > CLT — e o **pagamento**, numa folha de tipo próprio, com o 1/3 constitucional e as
 > incidências de cada verba conforme o Manual do eSocial.
 > Do **13º salário** existem os **avos** — quantos meses de cada ano contam, e por quê.
-> O desligamento agora exige o **motivo**, que é o campo que decide as verbas rescisórias.
-> O pagamento do 13º e o cálculo da rescisão ainda não existem.
+> O desligamento exige o **motivo**, e a **rescisão é simulada**: saldo de salário, aviso
+> prévio, férias vencidas e proporcionais com 1/3, e a multa do FGTS — cada regra com a
+> norma que a sustenta. **Cinco motivos calculam; três ficam bloqueados** por falta de
+> fonte oficial, e o sistema diz isso em vez de chutar. O pagamento do 13º e a folha de
+> rescisão ainda não existem.
 > Consulte o [ROADMAP.md](ROADMAP.md) para as fases seguintes e o
 > [CLAUDE.md](CLAUDE.md) para as regras do projeto.
 
@@ -174,6 +177,47 @@ Três diferenças em relação ao INSS, cada uma com teste próprio:
 > exclusiva), férias e rescisão pertencem às Fases 4E–4G. Pensão alimentícia,
 > previdência privada e parcela isenta acima de 65 anos não têm dado de origem no
 > domínio ainda. Não há ajuste anual: o produto retém na fonte.
+
+**Simulação da rescisão (Fase 4G, etapa 2)**
+
+Fontes, uma por regra: **Lei 12.506/2011** (aviso proporcional), **TST SDI-1
+E-RR-1964-73.2013.5.09.0009** (a proporcionalidade só se exige da empresa), **CLT art. 146
+§ único** e **Súmula 171 do TST** (férias proporcionais), **Lei 8.036/1990 art. 18** (multa
+de 40% e 20%), **CLT art. 484-A** (acordo: metade) e o **Manual do FGTS Digital**.
+
+| Motivo | Aviso | Metade | Férias prop. | Multa |
+|---|---|:--:|:--:|:--:|
+| Dispensa sem justa causa | empregador | não | sim | **40%** |
+| Rescisão indireta | empregador | não | sim | **40%** |
+| Pedido de demissão | **empregado** | não | sim | 0% |
+| Dispensa por justa causa | ninguém | não | **não** | 0% |
+| Acordo entre as partes | empregador | **sim** | sim | **20%** |
+| ⚠️ Término por prazo determinado | — | — | — | **bloqueado** |
+| ⚠️ Falecimento do empregado | — | — | — | **bloqueado** |
+| ⚠️ Aposentadoria | — | — | — | **bloqueado** |
+
+- **Bloqueado ≠ "gera zero".** Os três sem fonte não são calculados, e a resposta diz a
+  razão. Devolver zero seria pior: um número com cara de exato sobre regra não confirmada.
+  Mas o **contexto vem mesmo assim** — avos, dias, datas —, porque quem lê precisa entender
+  o que falta.
+- **A proporcionalidade do aviso não vale para os dois lados.** A Lei 12.506 lida sozinha
+  sugere reciprocidade; a SDI-1 decidiu que não. Quem pede demissão deve **30 dias fixos** —
+  e como quem deve é o empregado, **não há verba a pagar a ele**.
+- **Justa causa perde as proporcionais, não as vencidas.** A exceção da Súmula 171 alcança
+  o período incompleto; os completos eram direito adquirido antes da falta grave.
+- **Férias proporcionais têm constante própria**: "superior a 14 dias" (CLT art. 146),
+  enquanto o 13º usa "igual ou superior a 15" (Lei 4.090). Dão o mesmo número em dias
+  inteiros — e é por isso que a tentação de reusar existe. São duas leis; se uma mudar, a
+  outra não muda junto. Há teste travando que as constantes diferem.
+- O **13º proporcional aparece em avos, não em dinheiro**: convertê-lo aqui contornaria a
+  pendência da Fase 4F por outro caminho.
+
+> **O valor base do FGTS é informado, não calculado** — como no FGTS Digital. O saldo real
+> da conta vinculada tem correção e juros que o produto não conhece; ele só sabe os
+> depósitos que apurou. Calcular sobre isso daria um número **menor que o devido e com cara
+> de exato**. O que o sistema conhece volta para **comparação**: se o informado ficar
+> abaixo, a tela avisa — aviso, não recusa, porque o sistema não sabe o saldo real. Sem
+> valor informado, **não há linha de multa**.
 
 **Motivo do desligamento (Fase 4G, etapa 1)**
 
@@ -337,10 +381,8 @@ subsequentes) e **art. 137** (fora do prazo, remuneração **em dobro**).
 O **pagamento** do 13º, o **cálculo da rescisão**, afastamentos, importações, motor de
 análises, integrações, recursos AWS e CI/CD. Tudo isso pertence às fases seguintes.
 
-Da rescisão existe o **motivo**, não as verbas. Além da matriz de quais verbas cada motivo
-gera, falta um item que **não é regra legal**: a multa de 40% incide sobre o **saldo da
-conta vinculada do FGTS**, que o produto não conhece — ele só sabe os depósitos que ele
-mesmo apurou. Ou esse saldo vira entrada informada, ou a multa fica fora.
+Da rescisão existe a **simulação**, não a folha: o cálculo definitivo, com rubricas e
+incidências, é a etapa 3 — e as incidências dependem da mesma fonte que a Fase 4F espera.
 
 A **folha mensal** e a **de férias** estão completas. Do 13º existe o direito (os avos),
 não o pagamento.
@@ -555,6 +597,8 @@ Todos usam a senha de `PRISMARH_SEED_SENHA`.
 | `POST /api/folhas` (campo `tipo`) | Adm. Empresa, Analista | Abre folha **Mensal** ou **Ferias** |
 | `GET /api/contratos/{id}/decimo-terceiro/avos` | todos os 5 | Avos de 13º no ano, mês a mês, com o motivo |
 | `POST /api/contratos/{id}/desligamento` (campo `motivo`) | Adm. Empresa, Analista | Encerra o vínculo, com o motivo obrigatório |
+| `GET /api/contratos/{id}/rescisao` | todos os 5 | Simula as verbas; aceita `?valorBaseFgts=` |
+| `GET /api/contratos/{id}/rescisao/matriz` | todos os 5 | O que cada motivo gera, com a fonte |
 | `GET /api/folhas` | todos os 5 | Lista, com filtro por empresa e competência |
 | `GET /api/folhas/{id}` | todos os 5 | Folha com os holerites |
 | `GET /api/folhas/{id}/funcionarios/{idHolerite}` | todos os 5 | Holerite, memória de cálculo e bases |

@@ -356,6 +356,62 @@ export const obterAvosDecimoTerceiro = (
     `/api/contratos/${idContrato}/decimo-terceiro/avos${ano === undefined ? '' : `?ano=${ano}`}`,
   )
 
+// ------------------------------------------------------------------ rescisão
+
+export type DevedorDoAviso = 'Ninguem' | 'Empregador' | 'Empregado'
+
+export interface VerbaRescisoria {
+  codigo: string
+  nome: string
+  valor: number
+  referencia: string
+  memoria: { ordem: number; descricao: string; expressao: string; valor: number }[]
+}
+
+export interface Rescisao {
+  idContrato: string
+  matricula: string
+  motivo: MotivoDesligamento
+  dataDesligamento: string
+  salarioReferencia: number
+  /** Falso quando o motivo não tem fonte oficial: nada é calculado. */
+  suportado: boolean
+  motivoDoBloqueio: string | null
+  fonte: string
+  aviso: {
+    devedor: DevedorDoAviso
+    anosCompletos: number
+    diasBase: number
+    diasAcrescidos: number
+    dias: number
+    reduzido: boolean
+  } | null
+  feriasProporcionais: {
+    inicioPeriodo: string
+    fimPeriodo: string
+    avos: number
+    fracao: string
+    meses: { inicio: string; fim: string; dias: number; conta: boolean; motivo: string }[]
+  } | null
+  diasFeriasVencidas: number
+  avos13: number
+  fracao13: string | null
+  valorBaseFgts: {
+    informado: number
+    conhecidoPeloSistema: number
+    /** Informado abaixo do que o sistema já depositou: a multa sairia menor. */
+    abaixoDoConhecido: boolean
+  } | null
+  total: number
+  verbas: VerbaRescisoria[]
+}
+
+export const apurarRescisao = (idContrato: string, valorBaseFgts?: number): Promise<Rescisao> =>
+  obter(
+    `/api/contratos/${idContrato}/rescisao` +
+      (valorBaseFgts === undefined ? '' : `?valorBaseFgts=${valorBaseFgts}`),
+  )
+
 export const MESES_CURTOS = [
   'jan',
   'fev',

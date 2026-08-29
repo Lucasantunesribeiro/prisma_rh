@@ -42,6 +42,7 @@ import { cn } from '@/lib/utils'
 import { SecaoDependentes } from './SecaoDependentes'
 import { SecaoDecimoTerceiro } from './SecaoDecimoTerceiro'
 import { SecaoFerias } from './SecaoFerias'
+import { SecaoRescisao } from './SecaoRescisao'
 
 export default function FuncionarioDetalhe() {
   const { id } = useParams<{ id: string }>()
@@ -155,6 +156,13 @@ export default function FuncionarioDetalhe() {
         {contratos.map((contrato) => (
           <SecaoDecimoTerceiro key={`decimo-${contrato.id}`} idContrato={contrato.id} />
         ))}
+
+        {/* Só faz sentido para contrato encerrado: sem desligamento não há rescisão. */}
+        {contratos
+          .filter((c) => c.situacao === 'Desligado')
+          .map((contrato) => (
+            <SecaoRescisao key={`rescisao-${contrato.id}`} idContrato={contrato.id} />
+          ))}
 
         {/*
          * Depois dos contratos: dependente pertence à PESSOA, não ao vínculo.

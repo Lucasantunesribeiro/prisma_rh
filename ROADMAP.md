@@ -1191,6 +1191,34 @@ congelar o defeito.
 
 ---
 
+### Security Gate — Fase 4G, etapa 2 (simulação das verbas)
+
+| # | Ponto | Resposta |
+|---|---|---|
+| 1 | Ameaças introduzidas | **A rota mais sensível do produto até aqui**: ela devolve quanto uma pessoa vai receber ao perder o emprego. Uma célula errada na matriz muda esse número para todos os desligamentos daquele motivo. O `valorBaseFgts` vem **do cliente** e multiplica direto por 40%. |
+| 2 | Controles | Contrato resolvido **através do filtro global**. `valorBaseFgts` é `decimal?` tipado, opcional, e **sem ele não há linha de multa**. Motivos sem fonte ficam **bloqueados por dados**, não por `if` espalhado — a matriz é um dicionário com `Suportado`, e o cálculo respeita. Nenhuma escrita: a rota é `GET` e o domínio é função pura. Salário lido da vigência da **data do desligamento**, não de parâmetro. |
+| 3 | Testes de segurança | Contrato de outra organização: **404** (não 403 — um valor de rescisão é dos dados mais sensíveis). Contrato ativo: **409**. Contrato inexistente: **404**. Anônimo: **401**. Os três motivos bloqueados devolvem **zero verbas** e a razão. |
+| 4 | Impacto multiempresa | Nenhuma tabela nova. Quatro consultas — contrato, concessões de férias, lançamentos de FGTS — **todas sob o filtro global**. A soma de FGTS conhecido é filtrada pelo contrato, que já é da organização. |
+| 5 | Exposição de dados | Classe **altamente sensível** (`CLAUDE.md §24.13`): valor de rescisão, salário, motivo do desligamento. Nada é gravado e nada vai para log. O `valorBaseFgts` viaja na **query string** — é valor informado pelo próprio usuário na hora, não dado armazenado, mas fica registrado aqui porque `CLAUDE.md §24` pede não pôr dado pessoal em URL. **A avaliar na Fase 10**: se a rota virar POST quando a etapa 3 gerar folha, o ponto some sozinho. |
+| 6 | Permissões | `LerDadosEmpresariais` para os cinco perfis: conferir uma rescisão é trabalho de Analista e de Auditor igualmente. Nenhuma rota de escrita, nenhuma política nova. |
+| 7 | Logging e auditoria | Não se aplica ainda: nada é alterado. Quando a etapa 3 gerar a folha de rescisão, ela entra na trilha da Fase 7 junto com as demais folhas — e o **valor base informado** deve ser auditado, porque é entrada humana que multiplica dinheiro. |
+| 8 | Dependências | Nenhuma nova. |
+| 9 | Secrets | Não se aplica. |
+| 10 | Superfície pública | Duas rotas novas, ambas autenticadas. A de matriz não recebe identificador algum de dado — devolve a tabela de regras, que é informação pública por natureza. |
+| 11 | Risco de custo/abuso | Três consultas por chamada, todas por chave ou índice. A apuração é aritmética sobre no máximo 12 meses. Sem paginação porque a resposta tem tamanho limitado pelas próprias regras: no máximo 7 verbas. |
+
+#### Ponto de atenção registrado
+
+O `valorBaseFgts` **não é validado contra teto algum** — o analista pode informar qualquer
+valor. Isso é deliberado: o produto não conhece o saldo real e não tem autoridade para
+recusar. O controle é o **aviso** quando o informado fica abaixo do que o sistema
+depositou, e a **memória de cálculo**, que mostra o número usado.
+
+Quando a etapa 3 gravar a rescisão em folha, esse valor passa a ser **dado auditável** e
+não mais parâmetro de consulta.
+
+---
+
 ## FASE 4C — FGTS
 
 > **Status: concluída em 27/08/2026.**
@@ -1948,9 +1976,9 @@ descobri-lo no meio.
 
 ## FASE 4G — RESCISÃO
 
-> **Status: etapa 1 concluída em 28/08/2026 — motivo do desligamento.**
-> **Etapa 2 — as verbas — não iniciada: depende da matriz por motivo, ainda sem
-> fonte confirmada, e do 13º proporcional que a Fase 4F deixou pendente.**
+> **Status: etapas 1 e 2 concluídas em 29/08/2026 — motivo e simulação das verbas.**
+> **Cinco motivos calculam; três ficam BLOQUEADOS por falta de fonte oficial.**
+> **Etapa 3 — a folha de rescisão — não iniciada.**
 
 ### Objetivo
 
@@ -2037,28 +2065,119 @@ há o formulário, com o motivo e o aviso de que não há reabertura.
 
 ---
 
-### Etapa 2 — Verbas rescisórias (não iniciada)
+### Etapa 2 — Simulação das verbas (concluída)
 
-#### O que ela precisa, e o que falta
+#### Fontes, uma por regra
 
-| Verba | Depende de |
+| Regra | Norma |
 |---|---|
-| Saldo de salário | Nada novo — é o que `MotorCalculoFolha` já faz para o mês do desligamento |
-| **13º proporcional** | Os avos da **Fase 4F etapa 1**, que já existem — mas a Fase 4F etapa 2 está bloqueada, e a rescisão herda a mesma dúvida sobre incidências |
-| **Férias proporcionais + 1/3** | Avos de férias do período aquisitivo **incompleto** — estrutura que ainda não existe (a 4E deriva períodos completos) |
-| Férias vencidas + 1/3 | Já existe: `PeriodosAquisitivos.Adquiridos` com saldo |
-| **Aviso prévio** | Lei 12.506/2011 — 30 dias mais 3 por ano de serviço, até 90. Precisa de fonte confirmada |
-| **Multa de 40% do FGTS** | O saldo da conta vinculada, que o produto **não tem** — só os depósitos que ele mesmo calculou |
-| **A matriz de quais verbas cada motivo gera** | Fonte oficial ainda não confirmada |
+| Aviso prévio: 30 dias base, +3 por ano, teto de 60 acrescidos (90 no total) | **Lei nº 12.506/2011**, art. 1º e parágrafo único |
+| A **proporcionalidade só se exige da EMPRESA** | **TST, SDI-1, E-RR-1964-73.2013.5.09.0009** |
+| Férias proporcionais: 1/12 por mês ou **fração superior a 14 dias** | **CLT art. 146, parágrafo único** |
+| Proporcionais devidas **salvo justa causa** | **CLT art. 147** e **Súmula 171 do TST** |
+| Multa do FGTS de **40%** na dispensa sem justa causa | **Lei nº 8.036/1990, art. 18, §1º** |
+| Multa de **20%** em culpa recíproca e força maior | **Lei nº 8.036/1990, art. 18, §2º** |
+| Acordo: aviso e indenização do FGTS **pela metade** | **CLT art. 484-A, §1º, I e II** |
+| A multa de 40% alcança a **dispensa indireta** | **Manual do FGTS Digital** |
+| **Valor base para fins rescisórios** pode ser **informado** | **FGTS Digital** — o sistema oficial permite preenchimento manual |
 
-#### ⚠️ A multa do FGTS é o item mais difícil, e não por regra legal
+#### A matriz, e o que ela cobre
 
-Ela incide sobre o **saldo da conta vinculada** do trabalhador na Caixa — que inclui
-depósitos de contratos anteriores, correção monetária e juros. O Prisma RH conhece apenas
-os depósitos que ele mesmo apurou desde a Fase 4C.
+| Motivo | Aviso | Metade | Férias prop. | Multa |
+|---|---|:--:|:--:|:--:|
+| Dispensa sem justa causa | empregador | não | **sim** | **40%** |
+| Rescisão indireta | empregador | não | **sim** | **40%** |
+| Pedido de demissão | **empregado** | não | **sim** | 0% |
+| Dispensa por justa causa | ninguém | não | **não** | 0% |
+| Acordo entre as partes | empregador | **sim** | **sim** | **20%** |
+| ⚠️ Término de contrato por prazo determinado | — | — | — | **BLOQUEADO** |
+| ⚠️ Falecimento do empregado | — | — | — | **BLOQUEADO** |
+| ⚠️ Aposentadoria | — | — | — | **BLOQUEADO** |
 
-Ou o produto passa a receber esse saldo como **entrada informada**, ou a multa fica fora.
-É decisão de escopo, não de lei, e precisa ser tomada antes de a etapa 2 começar.
+#### Decisões registradas
+
+##### 1. Bloqueado é diferente de "gera zero"
+
+Os três motivos sem fonte **não são calculados**, e a resposta diz isso: `Suportado = false`
+mais a **razão por escrito**. A alternativa — devolver zero — seria pior: um número com
+cara de exato sobre uma regra que ninguém confirmou.
+
+Mas o **contexto vem mesmo assim**: avos de férias, dias vencidos, avos de 13º, datas. Quem
+lê precisa entender **o que falta**, não apenas receber um erro.
+
+##### 2. Por que cada um dos três está bloqueado
+
+**Término de contrato por prazo determinado** — o domínio **não distingue** o término
+normal do prazo da **rescisão antecipada**. O término normal não gera aviso nem multa; a
+rescisão antecipada gera indenização própria (CLT art. 479 e 480), que é outra verba.
+Calcular sem essa distinção erraria um dos dois casos sempre.
+
+**Falecimento do empregado** — nenhuma norma alcançada diz se a multa é devida, e o aviso
+prévio perde sentido (não há a quem avisar nem quem cumpra). Além disso as verbas vão a
+dependentes ou herdeiros (Lei 6.858/1980), o que muda **a quem se paga**, e o produto não
+tem esse cadastro.
+
+**Aposentadoria** — a aposentadoria espontânea **não extingue por si** o contrato, e o
+tratamento das verbas depende do que aconteceu depois dela. Registrar como motivo de
+desligamento não diz qual cenário ocorreu.
+
+##### 3. A proporcionalidade do aviso **não** vale para os dois lados
+
+A Lei 12.506/2011 lida isoladamente sugere reciprocidade. A SDI-1 decidiu que **não**:
+exigir 90 dias de aviso de um trabalhador com 20 anos de casa que pede demissão seria
+alteração prejudicial. No produto isso vira `DevedorDoAviso`: **Empregador** aplica a
+proporcionalidade, **Empregado** são 30 dias fixos.
+
+E quando quem deve é o empregado, **não há verba a pagar a ele** — o aviso aparece na
+apuração como informação, não como linha do total.
+
+##### 4. Ferias proporcionais têm constante **própria**, não a do 13º
+
+O 13º usa "igual ou superior a **15** dias" (Lei 4.090/1962). As férias usam "superior a
+**14**" (CLT art. 146). Em dias inteiros **dão o mesmo número** — e é justamente por isso
+que a tentação de reusar a constante existe.
+
+São duas leis. Se uma mudar, a outra não muda junto. Há teste travando que as constantes
+são diferentes.
+
+##### 5. Justa causa perde as **proporcionais**, não as **vencidas**
+
+A exceção da Súmula 171 alcança o período incompleto. Os períodos já completos eram
+direito adquirido antes da falta grave, e continuam devidos. O teste separa os dois.
+
+##### 6. O 13º proporcional aparece **em avos**, e não em dinheiro
+
+A Fase 4F está bloqueada por contradição entre fontes oficiais sobre quando INSS e IRRF
+incidem no 13º, e a rescisão herda a mesma dúvida. Mostrar os avos é útil; convertê-los em
+reais aqui **contornaria aquela pendência por outro caminho**, que foi explicitamente
+proibido.
+
+#### O valor base do FGTS — decisão registrada
+
+**Não é calculado. É informado**, como no FGTS Digital.
+
+O saldo real da conta vinculada inclui correção monetária e juros que o Prisma RH não
+conhece; ele sabe apenas os depósitos que **ele mesmo** apurou desde a Fase 4C. Calcular a
+multa sobre isso daria um número **menor que o devido, e com cara de exato**.
+
+O que o sistema conhece volta na resposta **para comparação**: quando o informado fica
+**abaixo** dele, a tela avisa — ou o valor foi digitado errado, ou falta competência no
+histórico. É **aviso, não recusa**: o sistema não sabe o saldo real e não pode afirmar que
+o analista errou.
+
+Sem valor informado, **não há linha de multa** — melhor nenhuma linha do que uma calculada
+sobre um número que o produto não tem.
+
+---
+
+### Etapa 3 — Folha de rescisão (não iniciada)
+
+A etapa 2 **simula**: responde quanto vale e por quê, sem gerar holerite. Falta:
+
+1. `TipoFolha.Rescisao` e as rubricas correspondentes;
+2. as **incidências** de cada verba rescisória — que dependem da mesma fonte que a Fase 4F
+   espera;
+3. os três motivos bloqueados, se e quando houver fonte.
 
 ---
 
