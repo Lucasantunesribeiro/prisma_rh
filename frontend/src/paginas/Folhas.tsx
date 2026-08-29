@@ -137,7 +137,7 @@ export default function Folhas() {
       celula: (f) => (
         // Sem badge de propósito: o tipo não é um estado que muda, é o que a
         // folha É. Dois badges lado a lado competiriam por atenção.
-        <span className={f.tipo === 'Ferias' ? 'font-medium' : 'text-muted-foreground'}>
+        <span className={f.tipo === 'Mensal' ? 'text-muted-foreground' : 'font-medium'}>
           {ROTULO_TIPO_FOLHA[f.tipo]}
         </span>
       ),
@@ -221,6 +221,20 @@ export default function Folhas() {
   )
 }
 
+/**
+ * O que cada tipo de folha faz, para o formulário de abertura.
+ *
+ * Record exaustivo de propósito: um tipo novo no backend sem explicação aqui
+ * quebra a compilação, em vez de a tela descrever a folha errada.
+ */
+const EXPLICACAO_TIPO_FOLHA: Record<TipoFolha, string> = {
+  Mensal:
+    'Salário do mês, lançamentos e encargos. Entra quem teve vínculo em qualquer dia.',
+  Ferias: 'Paga as férias que começam nesta competência. Só entra quem sai de férias.',
+  Rescisao:
+    'Paga o acerto de quem foi desligado nesta competência. Motivos sem fonte oficial ficam de fora.',
+}
+
 function AbrirFolha({
   empresas,
   idPadrao,
@@ -273,7 +287,7 @@ function AbrirFolha({
 
       <DrawerContent
         titulo="Abrir folha"
-        descricao="Uma folha por empresa, competência e tipo. A mensal e a de férias do mesmo mês convivem."
+        descricao="Uma folha por empresa, competência e tipo. Os três tipos do mesmo mês convivem."
         className="max-w-md"
       >
         <form onSubmit={aoEnviar} className="space-y-4" noValidate>
@@ -321,9 +335,7 @@ function AbrirFolha({
               ))}
             </select>
             <p className="text-xs text-muted-foreground">
-              {tipo === 'Mensal'
-                ? 'Salário do mês, lançamentos e encargos. Entra quem teve vínculo em qualquer dia.'
-                : 'Paga as férias que começam nesta competência. Só entra quem sai de férias.'}
+              {EXPLICACAO_TIPO_FOLHA[tipo]}
             </p>
           </div>
 

@@ -1423,6 +1423,27 @@ calculada **depois** da de férias, e como reprocessar. É a mesma classe de pro
 **Fase 4F** trará no 13º — que tem tributação exclusiva e regra própria — e a decisão vale
 a pena ser tomada uma vez, para os dois.
 
+### 6. Valor base do FGTS rescisório: sem autor e sem histórico
+
+Registrada em **29/08/2026**, durante a Fase 4G, etapa 3.
+
+O **Valor Base do FGTS para Fins Rescisórios** é entrada humana que **multiplica
+dinheiro**: 40% ou 20% dele viram a indenização compensatória. A entidade
+`ValorBaseFgtsRescisorio` guarda o valor, uma observação e `InformadoEm` — mas **não guarda
+quem informou**, e corrigir o valor **sobrescreve** o anterior sem deixar histórico.
+
+O `CLAUDE.md §24.17` manda auditar exatamente esta classe de evento, e §24.17 também diz
+que registro de auditoria não é alterável. Aqui o dado é alterável por design — corrigir
+uma medida é legítimo —, mas então a **alteração** é que precisa ficar registrada.
+
+**Aceitável enquanto o sistema roda só em `localhost` e a folha de rescisão ainda não é
+fechada.** Resolver na **Fase 7**, junto com a trilha de auditoria de negócio, que é onde o
+fechamento de folha e a alteração de parâmetro legal também entram. Registrar autor, valor
+anterior, valor novo e data — a mesma tabela somente-inserção dos demais eventos.
+
+Até lá, a rastreabilidade disponível é a **memória de cálculo** da verba `MULTAFGTS`, que
+mostra qual número foi usado.
+
 **Bloqueante antes de qualquer uso real.** Registrada também no `README.md` e no bloco da
 Fase 4E do `ROADMAP.md`.
 

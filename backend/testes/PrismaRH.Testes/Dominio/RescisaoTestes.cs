@@ -1,4 +1,4 @@
-using PrismaRH.Dominio.Contratos;
+﻿using PrismaRH.Dominio.Contratos;
 using PrismaRH.Dominio.Rescisao;
 
 namespace PrismaRH.Testes.Dominio;
@@ -347,12 +347,24 @@ public class CalculadoraRescisaoTestes
         Assert.Equal(3000.00m, Valor(r, "FERVEN"));
         Assert.Equal(1000.00m, Valor(r, "FERVEN13"));
 
-        // Proporcionais: periodo comeca 10/01/2026, sai 20/05/2026.
-        // 10/01-09/02, 10/02-09/03, 10/03-09/04, 10/04-09/05 = 4 meses cheios;
-        // 10/05-20/05 = 11 dias, nao conta. 4 avos.
-        Assert.Equal(4, r.FeriasProporcionais!.Avos);
-        Assert.Equal(1000.00m, Valor(r, "FERPROP"));   // 3.000 x 4/12
-        Assert.Equal(333.33m, Valor(r, "FERPROP13"));
+        // O aviso PROJETA a saida (CLT art. 487 par. 1o): 20/05 + 36 dias =
+        // 25/06/2026. Os avos vao ate la, e nao ate a data de desligamento.
+        Assert.Equal(new DateOnly(2026, 6, 25), r.DataProjetada);
+
+        // Periodo comeca 10/01/2026. Cinco meses cheios ate 09/06, mais
+        // 10/06-25/06 = 16 dias, que passa de 14. Seis avos.
+        Assert.Equal(6, r.FeriasProporcionais!.Avos);
+        Assert.Equal(1500.00m, Valor(r, "FERPROP"));   // 3.000 x 6/12
+        Assert.Equal(500.00m, Valor(r, "FERPROP13"));
+
+        // 13o ate o desligamento: jan a mai = 5 avos.
+        Assert.Equal(5, r.Avos13!.Avos);
+        Assert.Equal(1250.00m, Valor(r, "DEC13PROP"));
+
+        // A projecao acrescenta junho: 1 avo, em verba SEPARADA porque nao
+        // integra IRRF.
+        Assert.Equal(1, r.AvosDoAviso);
+        Assert.Equal(250.00m, Valor(r, "DEC13AV"));
 
         // Multa: 40% sobre o valor INFORMADO, nao sobre o conhecido.
         Assert.Equal(4000.00m, Valor(r, "MULTAFGTS"));
@@ -426,20 +438,37 @@ public class CalculadoraRescisaoTestes
     }
 
     [Fact]
-    public void ODecimoTerceiro_APARECE_EmAvos_MasNaoViraDinheiro()
+    public void ODecimoTerceiro_VIRA_Dinheiro_SemDestravarAFase4F()
     {
         var r = Apurar(MotivoDesligamento.DispensaSemJustaCausa);
 
-        // Admitido 10/01/2024, sai 20/05/2026: janeiro tem 20 dias e conta;
-        // maio tem 20 e conta. Janeiro a maio = 5 avos.
-        Assert.Equal(5, r.Avos13!.Avos);
+        // Na etapa 2 o 13o so aparecia em avos. Com a tabela de incidencias do
+        // eSocial ele virou verba - e isso NAO destrava a Fase 4F.
+        //
+        // A contradicao da 4F e sobre QUANDO o INSS e o IRRF incidem no 13o da
+        // FOLHA ANUAL: no adiantamento da 1a parcela ou so na apuracao anual.
+        // Na rescisao nao ha duas parcelas - ha uma verba unica, paga no
+        // acerto. A pergunta que bloqueia a 4F nao se coloca aqui.
+        Assert.Contains(r.Verbas, v => v.Codigo == "DEC13PROP");
+        Assert.Contains(r.Verbas, v => v.Codigo == "DEC13AV");
 
-        // Mas NAO ha verba de 13o: a Fase 4F esta bloqueada por contradicao
-        // entre fontes sobre quando INSS e IRRF incidem, e a rescisao herda a
-        // duvida. Converter em reais aqui contornaria aquela pendencia por
-        // outro caminho.
-        Assert.DoesNotContain(r.Verbas, v => v.Codigo.Contains("13", StringComparison.Ordinal)
-            && !v.Codigo.StartsWith("FER", StringComparison.Ordinal));
+        Assert.Equal(1250.00m, Valor(r, "DEC13PROP"));
+        Assert.Equal(250.00m, Valor(r, "DEC13AV"));
+    }
+
+    [Fact]
+    public void SemProjecao_NaoHaVerbaDe13SobreOAviso()
+    {
+        // Pedido de demissao: quem deve o aviso e o EMPREGADO, e nao ha aviso
+        // indenizado a projetar.
+        var r = Apurar(MotivoDesligamento.PedidoDeDemissao);
+
+        Assert.Equal(r.DataDesligamento, r.DataProjetada);
+        Assert.Equal(0, r.AvosDoAviso);
+        Assert.DoesNotContain(r.Verbas, v => v.Codigo == "DEC13AV");
+
+        // Mas o 13o proporcional continua devido.
+        Assert.Contains(r.Verbas, v => v.Codigo == "DEC13PROP");
     }
 
     [Fact]
@@ -508,7 +537,14 @@ public class CalculadoraRescisaoTestes
     {
         var r = Apurar(MotivoDesligamento.DispensaSemJustaCausa);
 
-        // 2.000 + 3.600 + 3.000 + 1.000 + 1.000 + 333,33 + 4.000
-        Assert.Equal(14933.33m, r.Total);
+        // Conferido a mao, verba por verba:
+        //   saldo ............ 2.000,00   (20 dias x 100)
+        //   aviso ............ 3.600,00   (36 dias x 100)
+        //   ferias vencidas .. 3.000,00 + 1.000,00 de terco
+        //   proporcionais .... 1.500,00 + 500,00 de terco   (6/12)
+        //   13o proporcional . 1.250,00   (5/12)
+        //   13o s/ aviso .....   250,00   (1/12)
+        //   multa FGTS ....... 4.000,00   (40% de 10.000)
+        Assert.Equal(17100.00m, r.Total);
     }
 }

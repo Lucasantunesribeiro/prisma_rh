@@ -1199,7 +1199,7 @@ congelar o defeito.
 | 2 | Controles | Contrato resolvido **através do filtro global**. `valorBaseFgts` é `decimal?` tipado, opcional, e **sem ele não há linha de multa**. Motivos sem fonte ficam **bloqueados por dados**, não por `if` espalhado — a matriz é um dicionário com `Suportado`, e o cálculo respeita. Nenhuma escrita: a rota é `GET` e o domínio é função pura. Salário lido da vigência da **data do desligamento**, não de parâmetro. |
 | 3 | Testes de segurança | Contrato de outra organização: **404** (não 403 — um valor de rescisão é dos dados mais sensíveis). Contrato ativo: **409**. Contrato inexistente: **404**. Anônimo: **401**. Os três motivos bloqueados devolvem **zero verbas** e a razão. |
 | 4 | Impacto multiempresa | Nenhuma tabela nova. Quatro consultas — contrato, concessões de férias, lançamentos de FGTS — **todas sob o filtro global**. A soma de FGTS conhecido é filtrada pelo contrato, que já é da organização. |
-| 5 | Exposição de dados | Classe **altamente sensível** (`CLAUDE.md §24.13`): valor de rescisão, salário, motivo do desligamento. Nada é gravado e nada vai para log. O `valorBaseFgts` viaja na **query string** — é valor informado pelo próprio usuário na hora, não dado armazenado, mas fica registrado aqui porque `CLAUDE.md §24` pede não pôr dado pessoal em URL. **A avaliar na Fase 10**: se a rota virar POST quando a etapa 3 gerar folha, o ponto some sozinho. |
+| 5 | Exposição de dados | Classe **altamente sensível** (`CLAUDE.md §24.13`): valor de rescisão, salário, motivo do desligamento. Nada é gravado e nada vai para log. ⚠️ O `valorBaseFgts` viajava na **query string** — ver a correção abaixo. |
 | 6 | Permissões | `LerDadosEmpresariais` para os cinco perfis: conferir uma rescisão é trabalho de Analista e de Auditor igualmente. Nenhuma rota de escrita, nenhuma política nova. |
 | 7 | Logging e auditoria | Não se aplica ainda: nada é alterado. Quando a etapa 3 gerar a folha de rescisão, ela entra na trilha da Fase 7 junto com as demais folhas — e o **valor base informado** deve ser auditado, porque é entrada humana que multiplica dinheiro. |
 | 8 | Dependências | Nenhuma nova. |
@@ -1216,6 +1216,34 @@ depositou, e a **memória de cálculo**, que mostra o número usado.
 
 Quando a etapa 3 gravar a rescisão em folha, esse valor passa a ser **dado auditável** e
 não mais parâmetro de consulta.
+
+#### ✅ Correção aplicada na etapa 3 — o valor base saiu da query string
+
+**Registrado em 29/08/2026.** O item 5 acima adiava a decisão para a Fase 10, na hipótese
+de "a rota virar POST". Isso estava errado por duas razões, e a etapa 3 corrigiu:
+
+1. **O adiamento era indevido.** `CLAUDE.md §24` pede não pôr dado sensível em URL, e o
+   ponto foi *anotado* em vez de *resolvido*. Query string vaza por lugares que o corpo
+   não alcança: log de servidor, log de proxy, histórico do navegador, cabeçalho
+   `Referer`. Anotar uma pendência não é o mesmo que aceitá-la conscientemente.
+2. **A premissa era falsa.** O valor base **não é** parâmetro da folha: ele é um dado do
+   **contrato**, informado uma vez e reusado por toda apuração seguinte. Fazê-lo viajar
+   junto do cálculo o manteria efêmero para sempre.
+
+A correção: `PUT /api/contratos/{id}/rescisao/valor-base-fgts`, com `{ valor, observacao }`
+**no corpo**, gravando a entidade `ValorBaseFgtsRescisorio` — um registro por contrato, com
+`InformadoEm`. O `GET` da apuração passou a **ler o valor gravado**, e não recebe mais
+parâmetro algum.
+
+**PUT e não POST**: há **um** valor por contrato, e informar duas vezes o mesmo número
+deixa o sistema no mesmo estado. Corrigir a medida é legítimo — ao contrário do **motivo**
+do desligamento, que é a razão do fato e por isso não tem alteração (etapa 1, decisão 4).
+Este é uma *medida* do fato, e medida se corrige.
+
+**Nulo ≠ zero.** A resposta devolve `valorBaseFgts: null` enquanto ninguém informou, e o
+FGTS que o sistema apurou sai em campo separado (`fgtsConhecidoPeloSistema`), sempre
+presente. Um objeto zerado faria "informei zero" e "não informei" ficarem idênticos na
+tela — e o primeiro caso zera a multa de propósito, enquanto o segundo a suprime.
 
 ---
 
@@ -1946,6 +1974,20 @@ ferramentas disponíveis.
 proíbe regra crítica sem fonte oficial inequívoca, e a diferença não é de centavos: ela
 muda o que a pessoa recebe em novembro.
 
+#### A tabela de incidências de 2026 NÃO destrava esta etapa
+
+**Conferido em 29/08/2026**, ao receber do responsável a tabela do eSocial usada na Fase
+4G. Ela confirma que o 13º **compõe** as bases de INSS, IRRF e FGTS — o que nenhuma das
+duas fontes acima negava. A disputa é sobre **quando**: no adiantamento da 1ª parcela ou
+só na apuração anual. A tabela não fala sobre momento.
+
+Perguntas diferentes, portanto **a etapa 2 segue bloqueada**. Ela precisa das duas fontes
+conciliadas, ou de uma terceira que diga qual regime cada uma descreve.
+
+O **13º da rescisão** foi calculado na Fase 4G sem contornar isso: na rescisão não há duas
+parcelas, e sim uma verba única paga no acerto — a pergunta que bloqueia esta etapa não se
+coloca lá. Ver `Fase 4G, etapa 3, decisão 1`.
+
 #### O que a etapa 2 precisa, além dessa resposta
 
 1. **`TipoFolha`** ganha os tipos das duas parcelas — provavelmente
@@ -1976,9 +2018,8 @@ descobri-lo no meio.
 
 ## FASE 4G — RESCISÃO
 
-> **Status: etapas 1 e 2 concluídas em 29/08/2026 — motivo e simulação das verbas.**
+> **Status: concluída em 29/08/2026 — motivo, apuração das verbas e folha de rescisão.**
 > **Cinco motivos calculam; três ficam BLOQUEADOS por falta de fonte oficial.**
-> **Etapa 3 — a folha de rescisão — não iniciada.**
 
 ### Objetivo
 
@@ -2170,14 +2211,135 @@ sobre um número que o produto não tem.
 
 ---
 
-### Etapa 3 — Folha de rescisão (não iniciada)
+### Etapa 3 — Folha de rescisão (concluída)
 
-A etapa 2 **simula**: responde quanto vale e por quê, sem gerar holerite. Falta:
+A etapa 2 **apurava**: respondia quanto vale e por quê, sem gerar holerite. A etapa 3
+transforma essa apuração em **folha**, com holerite, encargos e memória — usando exatamente
+as mesmas verbas, para que a simulação e o pagamento nunca divirjam.
 
-1. `TipoFolha.Rescisao` e as rubricas correspondentes;
-2. as **incidências** de cada verba rescisória — que dependem da mesma fonte que a Fase 4F
-   espera;
-3. os três motivos bloqueados, se e quando houver fonte.
+#### Fonte das incidências
+
+Tabela do **eSocial vigente em 2026**, fornecida pelo responsável em 29/08/2026:
+
+| Verba | INSS | IRRF | FGTS |
+|---|:---:|:---:|:---:|
+| Saldo de salário | Sim | Sim | Sim |
+| Aviso prévio indenizado | Não | Não | **Sim** |
+| Férias vencidas, proporcionais e em dobro, mais o 1/3 | Não | Não | Não |
+| 13º proporcional | Sim | Sim | Sim |
+| 13º sobre o aviso prévio indenizado | Sim | **Não** | Sim |
+
+As duas linhas que mais erram na prática:
+
+- o **aviso indenizado** não é salário-de-contribuição, mas **tem FGTS** — por isso a
+  rubrica `AVISO` declara só `Fgts`;
+- o **13º sobre o aviso** tem INSS e FGTS, mas **não tem IRRF**. É a razão de ele ser uma
+  rubrica **separada** do 13º proporcional: a incidência é atributo da rubrica, e uma
+  rubrica tem uma declaração só. Numa linha única, a base de imposto de renda sairia maior
+  que a devida.
+
+#### Decisões registradas
+
+##### 1. Por que a Fase 4F continua bloqueada
+
+A instrução era destravar a 4F **apenas se** a contradição fosse sobre estas incidências.
+Não é — conferido linha por linha contra o registro de 28/08/2026 acima:
+
+| | A contradição da 4F | O que a tabela de 2026 responde |
+|---|---|---|
+| Pergunta | **Quando** INSS e IRRF incidem: no adiantamento da 1ª parcela ou só na apuração anual? | **Se** o 13º integra as bases. |
+
+São perguntas diferentes. A tabela confirma que o 13º **compõe** INSS, IRRF e FGTS — o que
+nenhuma das duas fontes da 4F negava. Nenhuma delas fala sobre **momento**, que é o ponto
+em disputa.
+
+**Na rescisão a pergunta não se coloca**: não existem duas parcelas. Há uma verba única,
+apurada e paga no acerto. Por isso o 13º proporcional pode virar dinheiro aqui sem
+contornar a pendência da 4F por outro caminho — e há um teste com esse nome
+(`ODecimoTerceiro_VIRA_Dinheiro_SemDestravarAFase4F`) para que a distinção não se perca.
+
+**A Fase 4F segue bloqueada.** Ela precisa das duas fontes conciliadas, ou de uma terceira
+que diga qual regime cada uma descreve.
+
+##### 2. A projeção do aviso prévio indenizado
+
+**Defeito real encontrado e corrigido nesta etapa.** A CLT art. 487 § 1º manda contar o
+aviso indenizado como **tempo de serviço**; a **Súmula 305 do TST** e a **OJ 82 da SDI-1**
+confirmam que a data de saída na CTPS é o **término do aviso**, não o último dia
+trabalhado. Isso acrescenta avos de 13º e de férias proporcionais.
+
+`AvosDecimoTerceiro.Apurar` cortava pela `DataDesligamento` **do contrato**, então a
+projeção nunca chegava ao cálculo — a pessoa perdia o avo que a lei lhe dá. A correção não
+foi uma conta paralela: `MotorCalculoFolha.PeriodoNaCompetencia` ganhou uma **sobrecarga**
+que recebe o fim do vínculo por fora, e continua havendo **uma** implementação da pergunta
+"quanto deste mês está dentro do contrato". Duas cópias acabariam divergindo.
+
+##### 3. Uma estratégia só para as nove verbas
+
+As férias precisaram de quatro estratégias de rubrica; a rescisão usa **uma**
+(`VerbaRescisoria`). Não é inconsistência: na rescisão os nove valores já vêm calculados
+pela `CalculadoraRescisao`, e a folha só precisa saber **em qual rubrica** pousar cada um —
+o casamento é pelo **código**. Criar nove estratégias seria nove maneiras de escrever
+"pegue o valor que já veio pronto".
+
+##### 4. A folha exige as nove rubricas, e recusa com 409
+
+Mesmo critério da folha de férias: faltando uma, a verba correspondente sairia do acerto
+**em silêncio**. A resposta lista quais faltam, pelo código.
+
+##### 5. Motivos bloqueados não entram, e a folha diz quantos ficaram de fora
+
+Um contrato com motivo sem fonte oficial é **pulado**, e `CalcularRescisao` devolve os ids
+ignorados. Um holerite vazio no meio da folha pareceria erro de cálculo; a lista nomeia o
+que é, de fato, ausência de fonte.
+
+#### Entregas
+
+| Camada | O que entrou |
+|---|---|
+| Domínio | `TipoFolha.Rescisao` · `EstrategiaRubrica.VerbaRescisoria` · `ValorBaseFgtsRescisorio` · `Rescisao.DataProjetada` e `AvosDoAviso` · verbas `DEC13PROP` e `DEC13AV` · `FolhaPagamento.CalcularRescisao` · sobrecarga de `PeriodoNaCompetencia` |
+| Persistência | Tabela `valores_base_fgts_rescisorio`, índice único por contrato, check `valor >= 0`, cascade do contrato, filtro global · migration `ValorBaseFgtsRescisorio` |
+| API | `PUT /api/contratos/{id}/rescisao/valor-base-fgts` · apuração sem query string · `POST /api/folhas/{id}/calcular` roteia o tipo Rescisão |
+| Semeadura | As nove rubricas de rescisão, cada uma com a incidência do eSocial no comentário |
+| Frontend | `informarValorBaseFgts` · `SecaoRescisao` grava e reapura · tipo Rescisão em Folhas, com `EXPLICACAO_TIPO_FOLHA` exaustivo |
+
+#### Verificação
+
+609 testes de backend verdes, incluindo `FolhaDeRescisaoTestes` (organização G) e o
+isolamento contra PostgreSQL real. 59 testes de frontend verdes em três execuções
+consecutivas, lint e build limpos.
+
+⚠️ **A conferência manual pelo navegador não foi feita**: a senha da semeadura vem de
+`PRISMARH_SEED_SENHA`, e a do banco de desenvolvimento não é a do `.env.example` — que é o
+comportamento correto. Os testes de integração exercitam a mesma pilha HTTP autenticada
+contra PostgreSQL real, mas não substituem olhar a tela.
+
+---
+
+### Security Gate — Fase 4G, etapa 3 (folha de rescisão)
+
+| # | Ponto | Resposta |
+|---|---|---|
+| 1 | Ameaças introduzidas | Primeira escrita da 4G. O **valor base do FGTS** deixa de ser efêmero e passa a ser dado gravado que multiplica dinheiro — quem o informa decide a multa. A folha de rescisão **persiste** valores de desligamento, a informação mais sensível do produto. |
+| 2 | Controles | Contrato resolvido **através do filtro global** — o `PUT` não alcança contrato de outra organização. `IdOrganizacao` vem do usuário autenticado, nunca do corpo. O record de entrada tem **só** `Valor` e `Observacao`: sem `Id`, sem `IdOrganizacao`, sem campo calculado (anti-overposting, `CLAUDE.md §24.7`). Check constraint `valor >= 0` no banco, além da invariante do domínio. Índice único por contrato impede duplicata sob concorrência. Motivos sem fonte ficam bloqueados **por dados**, e a folha os pula. |
+| 3 | Testes de segurança | `PUT` em contrato de outra organização: **404**. Contrato ativo: **409**. Valor negativo: **400**. Auditor: **403** — a política `AdministrarPessoas` corre **antes** do handler, então ele nem chega ao filtro global; isso não vaza nada sobre o contrato, porque a resposta é idêntica para id existente e inexistente. Folha da organização G não aparece na A. |
+| 4 | Impacto multiempresa | Uma tabela nova, `valores_base_fgts_rescisorio`, **com `id_organizacao` e filtro global** — e teste de isolamento contra PostgreSQL real via Testcontainers, sem o qual o filtro seria só uma linha de configuração não verificada. A folha de rescisão reusa `FolhaPagamento`, já isolada. |
+| 5 | Exposição de dados | Classe **altamente sensível**. ✅ O valor base **saiu da query string** e vai no corpo — correção do ponto que a etapa 2 havia adiado. Nenhum valor de rescisão entra em log: a apuração registra identificadores, não conteúdo. |
+| 6 | Permissões | `AdministrarPessoas` para gravar o valor base — é entrada humana com efeito financeiro, não leitura. `LerDadosEmpresariais` continua na apuração e na matriz: Auditor confere, não informa. Nenhuma rota anônima. |
+| 7 | Logging e auditoria | ⚠️ **Pendência registrada.** `ValorBaseFgtsRescisorio` guarda `InformadoEm`, mas **não guarda quem informou**, e alterar o valor **sobrescreve** o anterior sem histórico. É entrada humana que multiplica dinheiro — exatamente o que `CLAUDE.md §24.17` manda auditar. Entra na trilha formal da **Fase 7**, junto com o fechamento de folha. Até lá, a rastreabilidade é a memória de cálculo, que mostra o número usado. |
+| 8 | Dependências | Nenhuma nova. |
+| 9 | Secrets | Não se aplica: nenhum segredo entra nesta etapa. |
+| 10 | Superfície pública | Uma rota nova, autenticada e com política declarada. Nenhuma rota anônima. |
+| 11 | Risco de custo/abuso | O `PUT` grava uma linha por contrato, por chave única. A folha de rescisão percorre os desligados **da competência**, limitados pelo mês — não é varredura da base. Sem listagem nova, portanto sem paginação nova. A apuração continua limitada a no máximo nove verbas. |
+
+#### Definition of Done de segurança (`CLAUDE.md §40.1`)
+
+Autorização analisada · multi-tenancy analisada e testada · entrada validada no backend ·
+nenhum dado sensível exposto além do necessário · nenhum secret · política declarada na
+rota nova · **upload: não se aplica** — nenhum arquivo nesta etapa · nenhuma dependência
+nova · logs sem conteúdo sensível · testes de isolamento e autorização verdes ·
+**paginação: não se aplica** — nenhuma listagem nova · nenhum controle enfraquecido; ao
+contrário, o item 5 da etapa 2 foi **corrigido**.
 
 ---
 

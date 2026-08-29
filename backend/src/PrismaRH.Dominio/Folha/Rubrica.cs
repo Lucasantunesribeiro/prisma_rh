@@ -54,6 +54,16 @@ public sealed class Rubrica
                 nameof(tipo));
         }
 
+        if (estrategia == EstrategiaRubrica.VerbaRescisoria && tipo != TipoRubrica.Provento)
+        {
+            // Todas as nove verbas rescisorias sao dinheiro que a pessoa
+            // RECEBE. Descontos da rescisao - INSS, IRRF, adiantamentos - sao
+            // apurados pelas rubricas proprias deles, como em qualquer folha.
+            throw new ArgumentException(
+                "As rubricas de rescisao precisam ser provento: sao valores pagos ao funcionario.",
+                nameof(tipo));
+        }
+
         if (EstrategiasDeFerias.Contains(estrategia) && tipo != TipoRubrica.Provento)
         {
             // As quatro rubricas de ferias sao dinheiro que a pessoa RECEBE:

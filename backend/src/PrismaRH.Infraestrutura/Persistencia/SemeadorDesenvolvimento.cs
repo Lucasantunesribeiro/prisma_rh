@@ -372,6 +372,50 @@ public static class SemeadorDesenvolvimento
     }
 
     /// <summary>
+    /// As nove rubricas de rescisao, com as incidencias de cada uma.
+    ///
+    /// FONTE (CLAUDE.md secao 29): tabela de rubricas do eSocial vigente em
+    /// 2026, informada pelo responsavel em 29/08/2026.
+    ///
+    ///   saldo de salario ......... INSS sim | IRRF sim | FGTS sim
+    ///   aviso previo indenizado .. INSS NAO | IRRF NAO | FGTS sim
+    ///   ferias (todas) e 1/3 ..... INSS NAO | IRRF NAO | FGTS NAO
+    ///   13o proporcional ......... INSS sim | IRRF sim | FGTS sim
+    ///   13o sobre o aviso ........ INSS sim | IRRF NAO | FGTS sim
+    ///
+    /// As FERIAS na rescisao nao integram base alguma - diferente das ferias
+    /// GOZADAS da Fase 4E, que integram as tres. Sao situacoes distintas: la a
+    /// pessoa esta em gozo e o vinculo continua; aqui e verba indenizatoria de
+    /// contrato encerrado. Copiar a incidencia de uma para a outra descontaria
+    /// INSS sobre verba que a lei nao alcanca.
+    ///
+    /// A MULTA do FGTS nao consta da tabela informada. Ela e indenizacao
+    /// compensatoria e nao integra base alguma - fica com Nenhuma, e a decisao
+    /// esta registrada no ROADMAP como pendente de confirmacao.
+    /// </summary>
+    private static Rubrica[] RubricasDeRescisao(Guid idOrganizacao, DateTimeOffset agora)
+    {
+        const BaseCalculo tudo = BaseCalculo.Inss | BaseCalculo.Fgts | BaseCalculo.Irrf;
+
+        (string Codigo, string Nome, BaseCalculo Bases)[] linhas =
+        [
+            ("SALDO", "Saldo de salario", tudo),
+            ("AVISO", "Aviso previo indenizado", BaseCalculo.Fgts),
+            ("FERVEN", "Ferias vencidas na rescisao", BaseCalculo.Nenhuma),
+            ("FERVEN13", "1/3 sobre ferias vencidas", BaseCalculo.Nenhuma),
+            ("FERPROP", "Ferias proporcionais", BaseCalculo.Nenhuma),
+            ("FERPROP13", "1/3 sobre ferias proporcionais", BaseCalculo.Nenhuma),
+            ("DEC13PROP", "13o salario proporcional", tudo),
+            ("DEC13AV", "13o sobre o aviso previo indenizado", BaseCalculo.Inss | BaseCalculo.Fgts),
+            ("MULTAFGTS", "Indenizacao compensatoria do FGTS", BaseCalculo.Nenhuma),
+        ];
+
+        return [.. linhas.Select(l => new Rubrica(
+            idOrganizacao, l.Codigo, l.Nome,
+            TipoRubrica.Provento, EstrategiaRubrica.VerbaRescisoria, l.Bases, agora))];
+    }
+
+    /// <summary>
     /// Acrescenta ao catalogo existente as rubricas calculadas que uma fase
     /// posterior introduziu.
     ///
@@ -424,6 +468,21 @@ public static class SemeadorDesenvolvimento
                 TipoRubrica.Desconto, EstrategiaRubrica.IrrfMensal, BaseCalculo.Nenhuma, agora));
 
             acrescentadas.Add("IRRF");
+        }
+
+        // Fase 4G: as nove de rescisao.
+        foreach (var rubrica in RubricasDeRescisao(prisma.Id, agora))
+        {
+            var codigo = rubrica.Codigo;
+
+            if (await contexto.Rubricas.IgnoreQueryFilters().AnyAsync(
+                    r => r.IdOrganizacao == prisma.Id && r.Ativa && r.Codigo == codigo, ct))
+            {
+                continue;
+            }
+
+            contexto.Rubricas.Add(rubrica);
+            acrescentadas.Add(codigo);
         }
 
         // Fase 4E: as quatro de ferias, cada uma com a sua incidencia.
@@ -511,6 +570,7 @@ public static class SemeadorDesenvolvimento
         [
             salario, comissao, valeTransporte, adiantamento, inss, fgts, irrf,
             .. RubricasDeFerias(prisma.Id, agora),
+            .. RubricasDeRescisao(prisma.Id, agora),
         ];
 
         contexto.Rubricas.AddRange(catalogo);

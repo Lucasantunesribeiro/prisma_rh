@@ -14,6 +14,7 @@ export type EstrategiaRubrica =
   | 'TercoFerias'
   | 'AbonoPecuniario'
   | 'TercoAbono'
+  | 'VerbaRescisoria'
 
 /**
  * De onde sai o valor da rubrica, para a coluna da listagem.
@@ -31,6 +32,7 @@ export const ORIGEM_DO_VALOR: Record<EstrategiaRubrica, string> = {
   TercoFerias: 'calculado na folha de férias',
   AbonoPecuniario: 'calculado na folha de férias',
   TercoAbono: 'calculado na folha de férias',
+  VerbaRescisoria: 'calculado na folha de rescisão',
   ValorInformado: 'digitado no lançamento',
 }
 export type BaseCalculo = 'Inss' | 'Fgts' | 'Irrf'
@@ -97,11 +99,12 @@ export const inativarRubrica = (id: string): Promise<void> => remover(`/api/rubr
 
 export type SituacaoFolha = 'Rascunho' | 'Calculada' | 'Fechada'
 
-export type TipoFolha = 'Mensal' | 'Ferias'
+export type TipoFolha = 'Mensal' | 'Ferias' | 'Rescisao'
 
 export const ROTULO_TIPO_FOLHA: Record<TipoFolha, string> = {
   Mensal: 'Mensal',
   Ferias: 'Férias',
+  Rescisao: 'Rescisão',
 }
 export type OrigemLancamento = 'Calculado' | 'Manual'
 

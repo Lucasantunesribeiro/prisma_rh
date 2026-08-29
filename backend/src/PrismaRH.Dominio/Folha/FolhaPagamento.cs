@@ -1,6 +1,7 @@
 ﻿using PrismaRH.Dominio.Contratos;
 
 using PrismaRH.Dominio.Ferias;
+using PrismaRH.Dominio.Rescisao;
 using PrismaRH.Dominio.Parametros;
 
 namespace PrismaRH.Dominio.Folha;
@@ -251,6 +252,96 @@ public sealed class FolhaPagamento
         Situacao = SituacaoFolha.Calculada;
 
         RecalcularTotais();
+    }
+
+    /// <summary>
+    /// Calcula a folha de RESCISAO: paga os acertos dos contratos desligados
+    /// na competencia.
+    ///
+    /// O criterio e a DATA DO DESLIGAMENTO, e nao a elegibilidade normal: uma
+    /// folha de rescisao so tem quem saiu.
+    ///
+    /// Contrato cujo motivo esta BLOQUEADO nao entra - a apuracao devolve zero
+    /// verbas, e um holerite vazio no meio da folha pareceria erro de calculo
+    /// em vez de motivo sem fonte. Quem chama recebe a lista dos ignorados.
+    /// </summary>
+    public IReadOnlyList<Guid> CalcularRescisao(
+        IEnumerable<ContratoTrabalho> contratosDaEmpresa,
+        IReadOnlyDictionary<string, Rubrica> rubricasDeRescisao,
+        IReadOnlyDictionary<Guid, int> diasFeriasVencidasPorContrato,
+        IReadOnlyDictionary<Guid, ValorBaseFgts> valoresBaseFgts,
+        ParametrosEncargos encargos,
+        IReadOnlyDictionary<Guid, int> dependentesPorFuncionario,
+        DateTimeOffset agora)
+    {
+        ArgumentNullException.ThrowIfNull(contratosDaEmpresa);
+        ArgumentNullException.ThrowIfNull(rubricasDeRescisao);
+        ArgumentNullException.ThrowIfNull(diasFeriasVencidasPorContrato);
+        ArgumentNullException.ThrowIfNull(valoresBaseFgts);
+        ArgumentNullException.ThrowIfNull(encargos);
+        ArgumentNullException.ThrowIfNull(dependentesPorFuncionario);
+
+        GarantirAberta("calcular");
+
+        if (Tipo != TipoFolha.Rescisao)
+        {
+            throw new InvalidOperationException(
+                "Esta folha nao e de rescisao: use o calculo do tipo dela.");
+        }
+
+        var desligados = contratosDaEmpresa
+            .Where(c => c.IdEmpresa == IdEmpresa
+                        && c.DataDesligamento is { } d && Competencia.Contem(d))
+            .ToList();
+
+        var ignorados = new List<Guid>();
+        var calculados = new HashSet<Guid>();
+
+        foreach (var contrato in desligados)
+        {
+            var desligamento = contrato.DataDesligamento!.Value;
+
+            // CLT art. 477: a remuneracao da data da saida.
+            var salario = (contrato.VigenciaEm(desligamento) ?? contrato.VigenciaAtual)?.Salario ?? 0m;
+
+            diasFeriasVencidasPorContrato.TryGetValue(contrato.Id, out var vencidas);
+            valoresBaseFgts.TryGetValue(contrato.Id, out var baseFgts);
+
+            var apuracao = CalculadoraRescisao.Apurar(contrato, salario, vencidas, baseFgts);
+
+            if (!apuracao.Suportado || apuracao.Verbas.Count == 0)
+            {
+                ignorados.Add(contrato.Id);
+                continue;
+            }
+
+            var holerite = _funcionarios.SingleOrDefault(f => f.IdContrato == contrato.Id);
+
+            if (holerite is null)
+            {
+                holerite = new FolhaFuncionario(IdOrganizacao, Id, contrato.Id, contrato.IdFuncionario);
+                _funcionarios.Add(holerite);
+            }
+
+            dependentesPorFuncionario.TryGetValue(contrato.IdFuncionario, out var dependentes);
+
+            holerite.AplicarCalculoRescisao(
+                apuracao.Verbas, rubricasDeRescisao, salario, encargos, dependentes);
+
+            calculados.Add(contrato.Id);
+        }
+
+        // Quem deixou de ser calculado sai da folha - mesmo motivo do
+        // recalculo da mensal.
+        _funcionarios.RemoveAll(f => !calculados.Contains(f.IdContrato));
+
+        VersaoCalculo++;
+        CalculadaEm = agora;
+        Situacao = SituacaoFolha.Calculada;
+
+        RecalcularTotais();
+
+        return ignorados;
     }
 
     public LancamentoFolha AdicionarLancamentoManual(

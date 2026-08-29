@@ -1,6 +1,8 @@
+﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PrismaRH.Api.Identidade;
 using PrismaRH.Aplicacao.Comum;
+using PrismaRH.Aplicacao.Identidade;
 using PrismaRH.Dominio.Contratos;
 using PrismaRH.Dominio.Ferias;
 using PrismaRH.Dominio.Folha;
@@ -24,14 +26,25 @@ public sealed record FeriasProporcionaisResposta(
     DateOnly InicioPeriodo, DateOnly FimPeriodo, int Avos, string Fracao,
     IReadOnlyList<MesProporcionalResposta> Meses);
 
+/// <summary>
+/// Entrada do valor base. Vai no CORPO de um POST, e nao na query string.
+///
+/// Corrigido em 29/08/2026 por decisao registrada no Security Gate: e valor
+/// que multiplica dinheiro, precisa ficar gravado e auditavel, e nao trafegar
+/// numa URL que vai para log de servidor e historico de navegador.
+/// </summary>
+public sealed record InformarValorBaseRequisicao(decimal Valor, string? Observacao);
+
 public sealed record ValorBaseFgtsResposta(
-    decimal Informado, decimal ConhecidoPeloSistema, bool AbaixoDoConhecido);
+    decimal Informado, decimal ConhecidoPeloSistema, bool AbaixoDoConhecido,
+    string? Observacao, DateTimeOffset? InformadoEm);
 
 public sealed record RescisaoResposta(
     Guid IdContrato,
     string Matricula,
     MotivoDesligamento Motivo,
     DateOnly DataDesligamento,
+    DateOnly DataProjetada,
     decimal SalarioReferencia,
     bool Suportado,
     string? MotivoDoBloqueio,
@@ -41,21 +54,32 @@ public sealed record RescisaoResposta(
     int DiasFeriasVencidas,
     int Avos13,
     string? Fracao13,
+    int AvosDoAviso,
+    /// <summary>
+    /// Nulo quando o valor base ainda NAO foi informado. Zero informado e
+    /// coisa diferente de nao informado, e a tela precisa distinguir os dois.
+    /// </summary>
     ValorBaseFgtsResposta? ValorBaseFgts,
+    /// <summary>
+    /// O FGTS que o sistema apurou, sempre presente - inclusive antes de
+    /// alguem informar o valor base. E o numero de comparacao.
+    /// </summary>
+    decimal FgtsConhecidoPeloSistema,
     decimal Total,
     IReadOnlyList<VerbaResposta> Verbas);
 
 /// <summary>
 /// A rescisao de um contrato desligado.
 ///
-/// SIMULACAO, nao folha. Ela responde "quanto esta rescisao vale e por que",
-/// e nao gera holerite - a folha de rescisao e a etapa seguinte. Por isso a
-/// rota e GET e nao grava nada.
+/// APURACAO, e nao folha: ela responde "quanto esta rescisao vale e por que".
+/// A folha de rescisao usa exatamente as mesmas verbas, e e aberta com
+/// TipoFolha.Rescisao.
 ///
-/// O VALOR BASE DO FGTS entra por parametro, informado pelo analista. Ele NAO
-/// e calculado: o saldo real da conta vinculada inclui correcao e juros que o
-/// Prisma RH nao conhece. O que o sistema sabe - a soma dos depositos que ele
-/// mesmo apurou - volta na resposta para comparacao, nunca como substituto.
+/// O VALOR BASE DO FGTS e GRAVADO por PUT, e nao passa por query string. Ele
+/// NAO e calculado: o saldo real da conta vinculada inclui correcao e juros
+/// que o Prisma RH nao conhece. O que o sistema sabe - a soma dos depositos que
+/// ele mesmo apurou - volta na resposta para comparacao, nunca como
+/// substituto.
 ///
 /// TRES MOTIVOS SAO BLOQUEADOS. Para eles a resposta vem com Suportado=false e
 /// a razao por escrito, mas COM o contexto (avos, dias, datas): quem le
@@ -69,8 +93,12 @@ public static class RescisaoEndpoints
             .WithTags("Rescisao");
 
         grupo.MapGet("/", ApurarAsync)
-            .WithSummary("Simula as verbas rescisorias do contrato desligado")
+            .WithSummary("Apura as verbas rescisorias do contrato desligado")
             .RequireAuthorization(PoliticasAutorizacao.LerDadosEmpresariais);
+
+        grupo.MapPut("/valor-base-fgts", InformarValorBaseAsync)
+            .WithSummary("Informa o valor base do FGTS para fins rescisorios")
+            .RequireAuthorization(PoliticasAutorizacao.AdministrarPessoas);
 
         grupo.MapGet("/matriz", MatrizAsync)
             .WithSummary("O que cada motivo de desligamento gera, com a fonte")
@@ -95,9 +123,66 @@ public static class RescisaoEndpoints
             })
             .ToList());
 
+    /// <summary>
+    /// Grava o valor base do FGTS deste contrato.
+    ///
+    /// PUT e nao POST porque e idempotente: ha UM valor por contrato, e chamar
+    /// duas vezes com o mesmo numero deixa o sistema no mesmo estado.
+    /// Corrigir o valor e legitimo - ao contrario do motivo do desligamento,
+    /// que e a razao do fato; este e uma medida dele, e medida se corrige.
+    /// </summary>
+    private static async Task<IResult> InformarValorBaseAsync(
+        Guid idContrato,
+        [FromBody] InformarValorBaseRequisicao requisicao,
+        PrismaRhDbContext db,
+        IContextoUsuario usuario,
+        IRelogio relogio,
+        CancellationToken ct)
+    {
+        var contrato = await db.ContratosTrabalho
+            .FirstOrDefaultAsync(c => c.Id == idContrato, ct);
+
+        if (contrato is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (contrato.DataDesligamento is null)
+        {
+            return Results.Conflict(new
+            {
+                detalhe = "Contrato ainda esta ativo: nao ha rescisao a informar."
+            });
+        }
+
+        var existente = await db.ValoresBaseFgts
+            .FirstOrDefaultAsync(v => v.IdContrato == idContrato, ct);
+
+        try
+        {
+            if (existente is null)
+            {
+                db.ValoresBaseFgts.Add(new ValorBaseFgtsRescisorio(
+                    usuario.IdOrganizacao, idContrato,
+                    requisicao.Valor, requisicao.Observacao, relogio.Agora));
+            }
+            else
+            {
+                existente.Informar(requisicao.Valor, requisicao.Observacao, relogio.Agora);
+            }
+        }
+        catch (ArgumentException erro)
+        {
+            return RespostasValidacao.De(erro);
+        }
+
+        await db.SaveChangesAsync(ct);
+
+        return Results.NoContent();
+    }
+
     private static async Task<IResult> ApurarAsync(
         Guid idContrato,
-        decimal? valorBaseFgts,
         PrismaRhDbContext db,
         IRelogio relogio,
         CancellationToken ct)
@@ -148,9 +233,15 @@ public static class RescisaoEndpoints
                                                          && f.IdContrato == idContrato))
             .SumAsync(l => (decimal?)l.Valor, ct) ?? 0m;
 
-        var baseFgts = valorBaseFgts is { } informado
-            ? new ValorBaseFgts(informado, conhecido)
-            : null;
+        // O valor base vem do que foi GRAVADO, e nao mais de parametro: e
+        // entrada humana que multiplica dinheiro, e precisa ser auditavel.
+        var gravado = await db.ValoresBaseFgts
+            .AsNoTracking()
+            .FirstOrDefaultAsync(v => v.IdContrato == idContrato, ct);
+
+        var baseFgts = gravado is null
+            ? null
+            : new ValorBaseFgts(gravado.Valor, conhecido);
 
         Dominio.Rescisao.Rescisao apuracao;
 
@@ -168,6 +259,7 @@ public static class RescisaoEndpoints
             contrato.Matricula,
             apuracao.Motivo,
             apuracao.DataDesligamento,
+            apuracao.DataProjetada,
             apuracao.SalarioReferencia,
             apuracao.Suportado,
             apuracao.MotivoDoBloqueio,
@@ -183,9 +275,13 @@ public static class RescisaoEndpoints
             apuracao.DiasFeriasVencidas,
             apuracao.Avos13?.Avos ?? 0,
             apuracao.Avos13?.Fracao,
+            apuracao.AvosDoAviso,
             apuracao.ValorBaseFgts is { } b
-                ? new ValorBaseFgtsResposta(b.Informado, b.ConhecidoPeloSistema, b.AbaixoDoConhecido)
+                ? new ValorBaseFgtsResposta(
+                    b.Informado, b.ConhecidoPeloSistema, b.AbaixoDoConhecido,
+                    gravado?.Observacao, gravado?.InformadoEm)
                 : null,
+            conhecido,
             apuracao.Total,
             [.. apuracao.Verbas.Select(v => new VerbaResposta(
                 v.Codigo, v.Nome, v.Valor, v.Referencia,

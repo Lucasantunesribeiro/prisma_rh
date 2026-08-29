@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 
 using PrismaRH.Dominio.Contratos;
 
@@ -57,11 +57,28 @@ public static class MotorCalculoFolha
     {
         ArgumentNullException.ThrowIfNull(contrato);
 
-        var inicio = contrato.DataAdmissao > competencia.PrimeiroDia
-            ? contrato.DataAdmissao
-            : competencia.PrimeiroDia;
+        return PeriodoNaCompetencia(
+            contrato.DataAdmissao, contrato.DataDesligamento, competencia);
+    }
 
-        var fim = contrato.DataDesligamento is { } saida && saida < competencia.UltimoDia
+    /// <summary>
+    /// A mesma conta, com o fim do vinculo informado por fora.
+    ///
+    /// Existe por causa da PROJECAO do aviso previo indenizado: a CLT art. 487
+    /// par. 1o manda contar o aviso como tempo de servico, entao os avos vao
+    /// ate uma data POSTERIOR ao desligamento gravado no contrato. Sem esta
+    /// sobrecarga, o calculo pararia na data de saida e a pessoa perderia o
+    /// avo que a lei lhe da.
+    ///
+    /// Sobrecarga, e nao copia da formula: duas implementacoes da mesma
+    /// pergunta acabariam divergindo.
+    /// </summary>
+    public static (DateOnly Inicio, DateOnly Fim)? PeriodoNaCompetencia(
+        DateOnly admissao, DateOnly? fimDoVinculo, Competencia competencia)
+    {
+        var inicio = admissao > competencia.PrimeiroDia ? admissao : competencia.PrimeiroDia;
+
+        var fim = fimDoVinculo is { } saida && saida < competencia.UltimoDia
             ? saida
             : competencia.UltimoDia;
 

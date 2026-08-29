@@ -1,4 +1,4 @@
-using PrismaRH.Dominio.Contratos;
+﻿using PrismaRH.Dominio.Contratos;
 using PrismaRH.Dominio.DecimoTerceiro;
 using PrismaRH.Dominio.Ferias;
 using PrismaRH.Dominio.Folha;
@@ -46,6 +46,15 @@ public sealed record VerbaRescisoria(
 public sealed record Rescisao(
     MotivoDesligamento Motivo,
     DateOnly DataDesligamento,
+    /// <summary>
+    /// A data que vale para contar avos: o fim do aviso previo indenizado.
+    ///
+    /// CLT art. 487 par. 1o, OJ 82 da SDI-1 e Sumula 305 do TST: o aviso
+    /// indenizado INTEGRA o tempo de servico, e a data de saida anotada na
+    /// CTPS e a do termino dele. Sem projetar, quem sai em 20/05 com 36 dias
+    /// de aviso perderia o avo de junho que a lei lhe da.
+    /// </summary>
+    DateOnly DataProjetada,
     decimal SalarioReferencia,
     bool Suportado,
     string? MotivoDoBloqueio,
@@ -54,6 +63,8 @@ public sealed record Rescisao(
     ApuracaoFeriasProporcionais? FeriasProporcionais,
     int DiasFeriasVencidas,
     ApuracaoAvos? Avos13,
+    /// <summary>Avos de 13o que a projecao do aviso indenizado acrescentou.</summary>
+    int AvosDoAviso,
     ValorBaseFgts? ValorBaseFgts,
     IReadOnlyList<VerbaRescisoria> Verbas)
 {
@@ -66,11 +77,15 @@ public sealed record Rescisao(
 /// SIMULACAO, nao folha: esta etapa responde "quanto esta rescisao vale e por
 /// que", sem gerar holerite. A folha de rescisao e a etapa seguinte.
 ///
-/// O 13o PROPORCIONAL aparece em avos, mas NAO vira verba em dinheiro: a Fase
-/// 4F esta bloqueada por contradicao entre fontes oficiais sobre quando INSS e
-/// IRRF incidem no 13o, e a rescisao herda a mesma duvida. Mostrar os avos e
-/// util; converte-los em reais sem resolver aquela pendencia seria contorna-la
-/// por outro caminho.
+/// O 13o PROPORCIONAL vira verba aqui, e isso NAO destrava a Fase 4F.
+///
+/// A contradicao da 4F e sobre QUANDO o INSS e o IRRF incidem no 13o da folha
+/// anual - no adiantamento da 1a parcela ou so na apuracao anual. Na rescisao
+/// nao ha duas parcelas: ha uma verba unica, paga no acerto. A pergunta que
+/// bloqueia a 4F simplesmente nao se coloca aqui, e a incidencia desta verba
+/// esta na tabela do eSocial.
+///
+/// A folha ANUAL do 13o continua bloqueada.
 ///
 /// Funcao pura: sem banco, sem relogio, sem HTTP.
 /// </summary>
@@ -108,8 +123,27 @@ public static class CalculadoraRescisao
 
         var regra = MatrizVerbasRescisorias.De(motivo);
 
-        var proporcionais = AvosFeriasProporcionais.Apurar(contrato, desligamento);
+        var regraDoAviso = AvisoPrevio.Apurar(
+            contrato, desligamento, regra.DevedorDoAviso, regra.AvisoPelaMetade);
+
+        // A projecao so acontece quando o aviso e INDENIZADO pelo empregador.
+        // Quando quem deve e o empregado, nao ha indenizacao a projetar.
+        var projetada = regra.DevedorDoAviso == DevedorDoAviso.Empregador
+            ? desligamento.AddDays(regraDoAviso.Dias)
+            : desligamento;
+
+        // Ferias proporcionais contam ate a data PROJETADA (art. 487 par. 1o).
+        var proporcionais = AvosFeriasProporcionais.Apurar(contrato, projetada);
+
+        // O 13o e apurado nas duas datas: a diferenca entre elas e o avo que a
+        // projecao gerou, e ele tem incidencia PROPRIA - por isso e verba
+        // separada, e nao um numero maior na mesma linha.
         var avos13 = AvosDecimoTerceiro.Apurar(contrato, desligamento.Year);
+        var avos13Projetado = AvosDecimoTerceiro.Apurar(contrato, projetada.Year, projetada);
+
+        var avosDoAviso = projetada.Year == desligamento.Year
+            ? avos13Projetado.Avos - avos13.Avos
+            : avos13Projetado.Avos;
 
         if (!regra.Suportado)
         {
@@ -117,13 +151,13 @@ public static class CalculadoraRescisao
             // verba em dinheiro. Quem le precisa entender o que falta, nao so
             // receber um erro.
             return new Rescisao(
-                motivo, desligamento, salarioReferencia,
+                motivo, desligamento, desligamento, salarioReferencia,
                 Suportado: false, regra.MotivoDoBloqueio, regra.Fonte,
-                Aviso: null, proporcionais, diasFeriasVencidas, avos13, valorBaseFgts,
+                Aviso: null, proporcionais, diasFeriasVencidas, avos13, 0, valorBaseFgts,
                 Verbas: []);
         }
 
-        var aviso = AvisoPrevio.Apurar(contrato, desligamento, regra.DevedorDoAviso, regra.AvisoPelaMetade);
+        var aviso = regraDoAviso;
         var diario = salarioReferencia / Divisor;
         var verbas = new List<VerbaRescisoria>();
 
@@ -211,6 +245,44 @@ public static class CalculadoraRescisao
                 [new("Um terco constitucional", $"{Moeda(valor)} / 3", terco)]));
         }
 
+        // ------------------------------------------------------ 13o proporcional
+        if (avos13.Avos > 0)
+        {
+            var valor = Dinheiro.Arredondar(
+                salarioReferencia * avos13.Avos / AvosDecimoTerceiro.MesesDoAno);
+
+            verbas.Add(new VerbaRescisoria(
+                "DEC13PROP", "13o salario proporcional", valor, avos13.Fracao,
+                [
+                    new($"Avos de {desligamento.Year} ate o desligamento", avos13.Fracao, avos13.Avos),
+                    new("Remuneracao proporcional",
+                        $"{Moeda(salarioReferencia)} x {avos13.Avos} / {AvosDecimoTerceiro.MesesDoAno}",
+                        valor),
+                ]));
+        }
+
+        // ------------------------------------------- 13o sobre o aviso indenizado
+        if (avosDoAviso > 0)
+        {
+            // Verba SEPARADA porque a incidencia e diferente: o 13o
+            // proporcional integra IRRF, este nao (tabela do eSocial). Somar os
+            // dois numa linha so obrigaria a escolher uma das incidencias e
+            // errar a outra.
+            var valor = Dinheiro.Arredondar(
+                salarioReferencia * avosDoAviso / AvosDecimoTerceiro.MesesDoAno);
+
+            verbas.Add(new VerbaRescisoria(
+                "DEC13AV", "13o sobre o aviso previo indenizado", valor,
+                $"{avosDoAviso}/{AvosDecimoTerceiro.MesesDoAno}",
+                [
+                    new($"O aviso projeta a saida para {projetada:dd/MM/yyyy} (CLT art. 487 par. 1o)",
+                        $"{desligamento:dd/MM/yyyy} + {aviso.Dias} dias", aviso.Dias),
+                    new($"Avo(s) que a projecao acrescenta",
+                        $"{Moeda(salarioReferencia)} x {avosDoAviso} / {AvosDecimoTerceiro.MesesDoAno}",
+                        valor),
+                ]));
+        }
+
         // ----------------------------------------------------------- multa FGTS
         if (regra.PercentualMultaFgts > 0 && valorBaseFgts is { } baseFgts)
         {
@@ -228,9 +300,9 @@ public static class CalculadoraRescisao
         }
 
         return new Rescisao(
-            motivo, desligamento, salarioReferencia,
+            motivo, desligamento, projetada, salarioReferencia,
             Suportado: true, MotivoDoBloqueio: null, regra.Fonte,
-            aviso, proporcionais, diasFeriasVencidas, avos13, valorBaseFgts,
+            aviso, proporcionais, diasFeriasVencidas, avos13, avosDoAviso, valorBaseFgts,
             verbas);
     }
 

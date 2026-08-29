@@ -83,4 +83,21 @@ public enum EstrategiaRubrica
     /// a escolher uma das duas tabelas de incidencia e errar a outra.
     /// </summary>
     TercoAbono = 9,
+
+    /// <summary>
+    /// O sistema calcula: uma verba de rescisao, identificada pelo CODIGO da
+    /// rubrica (Fase 4G).
+    ///
+    /// Aqui basta UMA estrategia, ao contrario das quatro de ferias, e a razao
+    /// e concreta: nas ferias a estrategia dizia QUAL CONTA FAZER, e as contas
+    /// eram diferentes. Na rescisao todas as verbas ja vem calculadas por
+    /// CalculadoraRescisao - a rubrica so recebe o valor e empresta a sua
+    /// incidencia.
+    ///
+    /// O casamento e por codigo: SALDO, AVISO, FERVEN, FERVEN13, FERPROP,
+    /// FERPROP13, DEC13PROP, DEC13AV e MULTAFGTS. O calculo EXIGE as nove
+    /// cadastradas e recusa se faltar alguma - uma verba sem rubrica sairia
+    /// silenciosamente do acerto.
+    /// </summary>
+    VerbaRescisoria = 10,
 }

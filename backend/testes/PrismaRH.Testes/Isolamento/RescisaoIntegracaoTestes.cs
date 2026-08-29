@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Net.Http.Json;
 
 namespace PrismaRH.Testes.Isolamento;
@@ -45,7 +45,8 @@ public class RescisaoIntegracaoTestes(BancoPostgresFixture banco) : IDisposable
         Guid IdContrato, string Matricula, string Motivo, DateOnly DataDesligamento,
         decimal SalarioReferencia, bool Suportado, string? MotivoDoBloqueio, string Fonte,
         AvisoItem? Aviso, FeriasProporcionaisItem? FeriasProporcionais, int DiasFeriasVencidas,
-        int Avos13, string? Fracao13, ValorBaseItem? ValorBaseFgts,
+        int Avos13, string? Fracao13, DateOnly DataProjetada, int AvosDoAviso,
+        ValorBaseItem? ValorBaseFgts, decimal FgtsConhecidoPeloSistema,
         decimal Total, List<VerbaItem> Verbas);
 
     private sealed record MatrizItem(
@@ -99,11 +100,28 @@ public class RescisaoIntegracaoTestes(BancoPostgresFixture banco) : IDisposable
         return contrato.Id;
     }
 
-    private static Task<RescisaoItem?> ApurarAsync(
-        HttpClient cliente, Guid idContrato, decimal? valorBaseFgts = null) =>
-        cliente.GetFromJsonAsync<RescisaoItem>(
-            $"/api/contratos/{idContrato}/rescisao"
-            + (valorBaseFgts is { } v ? $"?valorBaseFgts={v.ToString(System.Globalization.CultureInfo.InvariantCulture)}" : ""));
+    /// <summary>
+    /// Apura a rescisao, GRAVANDO antes o valor base do FGTS quando informado.
+    ///
+    /// O valor deixou de viajar na query string na etapa 3: ele e um dado que o
+    /// analista informa e que precisa ficar registrado com autor e data, e nao
+    /// um parametro de leitura. Por isso vai por PUT, no corpo.
+    /// </summary>
+    private static async Task<RescisaoItem?> ApurarAsync(
+        HttpClient cliente, Guid idContrato, decimal? valorBaseFgts = null)
+    {
+        if (valorBaseFgts is { } v)
+        {
+            using var gravacao = await cliente.PutAsJsonAsync(
+                $"/api/contratos/{idContrato}/rescisao/valor-base-fgts",
+                new { valor = v, observacao = "Extrato do FGTS Digital" });
+
+            gravacao.EnsureSuccessStatusCode();
+        }
+
+        return await cliente.GetFromJsonAsync<RescisaoItem>(
+            $"/api/contratos/{idContrato}/rescisao");
+    }
 
     // --------------------------------------------------------------- matriz
 
@@ -153,9 +171,21 @@ public class RescisaoIntegracaoTestes(BancoPostgresFixture banco) : IDisposable
         Assert.Equal(2000.00m, Valor("SALDO"));      // 01/05 a 20/05 = 20 dias
         Assert.Equal(36, r.Aviso!.Dias);             // 30 + 2 anos x 3
         Assert.Equal(3600.00m, Valor("AVISO"));
-        Assert.Equal(4, r.FeriasProporcionais!.Avos);
-        Assert.Equal(1000.00m, Valor("FERPROP"));    // 3.000 x 4/12
+        // O aviso PROJETA a saida (CLT art. 487 par. 1o, OJ 82 SDI-1): a data
+        // de saida na CTPS e o fim do aviso, e os avos vao ate la.
+        Assert.Equal(new DateOnly(2026, 6, 25), r.DataProjetada);  // 20/05 + 36
+
+        Assert.Equal(6, r.FeriasProporcionais!.Avos);
+        Assert.Equal(1500.00m, Valor("FERPROP"));    // 3.000 x 6/12
+        Assert.Equal(500.00m, Valor("FERPROP13"));
         Assert.Equal(4000.00m, Valor("MULTAFGTS"));  // 40% de 10.000
+
+        // 13o: cinco avos ate a saida, mais um pela projecao do aviso - em
+        // verbas SEPARADAS, porque o 13o sobre o aviso nao integra IRRF.
+        Assert.Equal(5, r.Avos13);
+        Assert.Equal(1250.00m, Valor("DEC13PROP"));
+        Assert.Equal(1, r.AvosDoAviso);
+        Assert.Equal(250.00m, Valor("DEC13AV"));
 
         // As ferias VENCIDAS saem do saldo real: dois periodos completos
         // (2024 e 2025), nenhum gozado, 60 dias.
@@ -180,6 +210,7 @@ public class RescisaoIntegracaoTestes(BancoPostgresFixture banco) : IDisposable
         // Este contrato nunca entrou em folha: o sistema conhece zero. E
         // exatamente por isso o valor informado nao pode ser substituido.
         Assert.Equal(0m, r.ValorBaseFgts.ConhecidoPeloSistema);
+        Assert.Equal(0m, r.FgtsConhecidoPeloSistema);
         Assert.False(r.ValorBaseFgts.AbaixoDoConhecido);
 
         Assert.Equal(10000.00m, r.Verbas.Single(v => v.Codigo == "MULTAFGTS").Valor);
@@ -199,7 +230,11 @@ public class RescisaoIntegracaoTestes(BancoPostgresFixture banco) : IDisposable
         // Melhor nenhuma linha do que uma calculada sobre um numero que o
         // produto nao tem.
         Assert.DoesNotContain(r.Verbas, v => v.Codigo == "MULTAFGTS");
+
+        // NULO, e nao um objeto zerado: "zero informado" e coisa diferente de
+        // "nao informado", e a tela precisa distinguir os dois.
         Assert.Null(r.ValorBaseFgts);
+
         Assert.Contains(r.Verbas, v => v.Codigo == "SALDO");
     }
 

@@ -396,21 +396,49 @@ export interface Rescisao {
   diasFeriasVencidas: number
   avos13: number
   fracao13: string | null
+  /**
+   * A data de saída depois da projeção do aviso prévio indenizado.
+   *
+   * A CLT art. 487 § 1º manda contar o aviso como tempo de serviço, e a
+   * Súmula 305 do TST diz que é essa a data que vai para a CTPS. Quando o
+   * aviso não é indenizado, ela é igual à data de desligamento.
+   */
+  dataProjetada: string
+  /** Avos de 13º ganhos só pela projeção do aviso. Zero quando não há aviso. */
+  avosDoAviso: number
+  /** Nulo enquanto ninguém informou: zero informado é outra coisa. */
   valorBaseFgts: {
     informado: number
     conhecidoPeloSistema: number
     /** Informado abaixo do que o sistema já depositou: a multa sairia menor. */
     abaixoDoConhecido: boolean
+    observacao: string | null
+    informadoEm: string | null
   } | null
+  /** O FGTS que o sistema apurou — sempre presente, para comparação. */
+  fgtsConhecidoPeloSistema: number
   total: number
   verbas: VerbaRescisoria[]
 }
 
-export const apurarRescisao = (idContrato: string, valorBaseFgts?: number): Promise<Rescisao> =>
-  obter(
-    `/api/contratos/${idContrato}/rescisao` +
-      (valorBaseFgts === undefined ? '' : `?valorBaseFgts=${valorBaseFgts}`),
-  )
+export const apurarRescisao = (idContrato: string): Promise<Rescisao> =>
+  obter(`/api/contratos/${idContrato}/rescisao`)
+
+/**
+ * Grava o Valor Base do FGTS para fins rescisórios.
+ *
+ * PUT, e não POST: informar de novo o mesmo valor tem o mesmo efeito de
+ * informá-lo uma vez. É um dado por contrato, não uma coleção.
+ *
+ * O valor saiu da query string na etapa 4G-3: ele fica registrado com autor e
+ * data, e um número que entra no cálculo da multa não pertence a um parâmetro
+ * de leitura.
+ */
+export const informarValorBaseFgts = (
+  idContrato: string,
+  dados: { valor: number; observacao?: string },
+): Promise<void> =>
+  enviar(`/api/contratos/${idContrato}/rescisao/valor-base-fgts`, dados, 'PUT')
 
 export const MESES_CURTOS = [
   'jan',

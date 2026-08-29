@@ -3,6 +3,7 @@ using PrismaRH.Aplicacao.Identidade;
 using PrismaRH.Dominio.Contratos;
 using PrismaRH.Dominio.Empresas;
 using PrismaRH.Dominio.Ferias;
+using PrismaRH.Dominio.Rescisao;
 using PrismaRH.Dominio.Folha;
 using PrismaRH.Dominio.Identidade;
 using PrismaRH.Dominio.Parametros;
@@ -38,6 +39,7 @@ public sealed class PrismaRhDbContext(
     public DbSet<Funcionario> Funcionarios => Set<Funcionario>();
     public DbSet<Dependente> Dependentes => Set<Dependente>();
     public DbSet<ConcessaoFerias> ConcessoesFerias => Set<ConcessaoFerias>();
+    public DbSet<ValorBaseFgtsRescisorio> ValoresBaseFgts => Set<ValorBaseFgtsRescisorio>();
     public DbSet<Cargo> Cargos => Set<Cargo>();
     public DbSet<ContratoTrabalho> ContratosTrabalho => Set<ContratoTrabalho>();
     public DbSet<VigenciaContrato> VigenciasContrato => Set<VigenciaContrato>();
@@ -86,6 +88,7 @@ public sealed class PrismaRhDbContext(
         construtor.Entity<Funcionario>().HasQueryFilter(f => f.IdOrganizacao == IdOrganizacaoAtual);
         construtor.Entity<Dependente>().HasQueryFilter(d => d.IdOrganizacao == IdOrganizacaoAtual);
         construtor.Entity<ConcessaoFerias>().HasQueryFilter(c => c.IdOrganizacao == IdOrganizacaoAtual);
+        construtor.Entity<ValorBaseFgtsRescisorio>().HasQueryFilter(v => v.IdOrganizacao == IdOrganizacaoAtual);
         construtor.Entity<Cargo>().HasQueryFilter(c => c.IdOrganizacao == IdOrganizacaoAtual);
         construtor.Entity<ContratoTrabalho>().HasQueryFilter(c => c.IdOrganizacao == IdOrganizacaoAtual);
         construtor.Entity<VigenciaContrato>().HasQueryFilter(v => v.IdOrganizacao == IdOrganizacaoAtual);

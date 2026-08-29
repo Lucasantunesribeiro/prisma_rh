@@ -1,4 +1,4 @@
-using PrismaRH.Dominio.Contratos;
+﻿using PrismaRH.Dominio.Contratos;
 using PrismaRH.Dominio.Folha;
 
 namespace PrismaRH.Dominio.DecimoTerceiro;
@@ -67,7 +67,15 @@ public static class AvosDecimoTerceiro
     /// doenca alem do 15o dia nao deveria contar, e aqui contaria - a mesma
     /// limitacao ja declarada nas ferias sobre faltas.
     /// </summary>
-    public static ApuracaoAvos Apurar(ContratoTrabalho contrato, int ano)
+    /// <param name="ateProjetada">
+    /// Quando informada, substitui a data de desligamento como fim do vinculo.
+    ///
+    /// Serve a PROJECAO do aviso previo indenizado (CLT art. 487 par. 1o): o
+    /// aviso conta como tempo de servico, e os avos vao ate o fim dele - uma
+    /// data POSTERIOR a saida gravada no contrato.
+    /// </param>
+    public static ApuracaoAvos Apurar(
+        ContratoTrabalho contrato, int ano, DateOnly? ateProjetada = null)
     {
         ArgumentNullException.ThrowIfNull(contrato);
 
@@ -87,7 +95,10 @@ public static class AvosDecimoTerceiro
             // Reusa a mesma funcao que decide quem entra na folha mensal: o
             // trecho do contrato dentro do mes. Duas contas separadas para a
             // mesma pergunta acabariam divergindo.
-            var periodo = MotorCalculoFolha.PeriodoNaCompetencia(contrato, competencia);
+            var periodo = MotorCalculoFolha.PeriodoNaCompetencia(
+                contrato.DataAdmissao,
+                ateProjetada ?? contrato.DataDesligamento,
+                competencia);
 
             var dias = periodo is { } p ? p.Fim.DayNumber - p.Inicio.DayNumber + 1 : 0;
 

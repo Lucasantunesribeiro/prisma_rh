@@ -1,4 +1,5 @@
 ﻿using PrismaRH.Dominio.Ferias;
+using PrismaRH.Dominio.Rescisao;
 using PrismaRH.Dominio.Parametros;
 
 namespace PrismaRH.Dominio.Folha;
@@ -110,6 +111,55 @@ public sealed class FolhaFuncionario
     /// as rubricas de ferias compuserem - e quem declara isso e o catalogo,
     /// nao este metodo.
     /// </summary>
+    /// <summary>
+    /// Aplica o calculo de RESCISAO: as verbas apuradas viram lancamentos.
+    ///
+    /// Nao ha avos nem divisor de mes aqui - a rescisao junta verbas de
+    /// naturezas diferentes, cada uma com a sua propria referencia.
+    /// </summary>
+    internal void AplicarCalculoRescisao(
+        IReadOnlyList<VerbaRescisoria> verbas,
+        IReadOnlyDictionary<string, Rubrica> rubricas,
+        decimal salarioReferencia,
+        ParametrosEncargos encargos,
+        int quantidadeDependentesIrrf)
+    {
+        ArgumentNullException.ThrowIfNull(verbas);
+        ArgumentNullException.ThrowIfNull(rubricas);
+        ArgumentNullException.ThrowIfNull(encargos);
+
+        QuantidadeDependentesIrrf = Math.Max(0, quantidadeDependentesIrrf);
+
+        _lancamentos.RemoveAll(l => l.Origem == OrigemLancamento.Calculado);
+
+        Avos = 0;
+        Divisor = CalculadoraRescisao.Divisor;
+        SalarioReferencia = salarioReferencia;
+        IdVigenciaReferencia = null;
+
+        var ordem = 1;
+
+        foreach (var verba in verbas)
+        {
+            if (!rubricas.TryGetValue(verba.Codigo, out var rubrica))
+            {
+                continue;
+            }
+
+            var lancamento = new LancamentoFolha(
+                IdOrganizacao, Id, rubrica, OrigemLancamento.Calculado,
+                verba.Valor, verba.Referencia, ordem++);
+
+            lancamento.RegistrarMemoria(verba.Passos);
+
+            _lancamentos.Add(lancamento);
+        }
+
+        Reordenar();
+        RecalcularTotais();
+        ApurarEncargos(encargos);
+    }
+
     internal void AplicarCalculoFerias(
         IReadOnlyList<(ApuracaoFerias Apuracao, IReadOnlyDictionary<EstrategiaRubrica, Rubrica> Rubricas)> concessoes,
         ParametrosEncargos encargos,

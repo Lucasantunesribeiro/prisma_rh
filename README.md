@@ -2,7 +2,7 @@
 
 Plataforma B2B de gestão, cálculo, conferência e auditoria de folha de pagamento brasileira.
 
-> **Estado atual: Fase 4G, etapa 2 concluída — simulação das verbas rescisórias.**
+> **Estado atual: Fase 4G concluída — folha de rescisão, com holerite e encargos.**
 >
 > Existe login com JWT, cinco perfis, organizações isoladas entre si, o cadastro de
 > funcionários, contratos e histórico contratual por vigência, e a **primeira folha
@@ -141,8 +141,8 @@ obrigatório da tabela.
 
 > **Limitações declaradas:** a alíquota de **2% do contrato de aprendizagem** não é
 > suportada — o contrato não tem campo que identifique aprendizagem, e criá-lo sairia do
-> escopo da subfase. A **multa rescisória de 40%** e o FGTS sobre 13º e férias pertencem
-> às Fases 4E, 4F e 4G, que introduzem essas verbas.
+> escopo da subfase. O FGTS sobre **férias** veio na Fase 4E e a **multa rescisória** na
+> 4G; o FGTS sobre o **13º** depende da Fase 4F, ainda bloqueada.
 
 **IRRF (Fase 4D)**
 
@@ -178,7 +178,7 @@ Três diferenças em relação ao INSS, cada uma com teste próprio:
 > previdência privada e parcela isenta acima de 65 anos não têm dado de origem no
 > domínio ainda. Não há ajuste anual: o produto retém na fonte.
 
-**Simulação da rescisão (Fase 4G, etapa 2)**
+**Rescisão (Fase 4G)**
 
 Fontes, uma por regra: **Lei 12.506/2011** (aviso proporcional), **TST SDI-1
 E-RR-1964-73.2013.5.09.0009** (a proporcionalidade só se exige da empresa), **CLT art. 146
@@ -209,8 +209,17 @@ de 40% e 20%), **CLT art. 484-A** (acordo: metade) e o **Manual do FGTS Digital*
   enquanto o 13º usa "igual ou superior a 15" (Lei 4.090). Dão o mesmo número em dias
   inteiros — e é por isso que a tentação de reusar existe. São duas leis; se uma mudar, a
   outra não muda junto. Há teste travando que as constantes diferem.
-- O **13º proporcional aparece em avos, não em dinheiro**: convertê-lo aqui contornaria a
-  pendência da Fase 4F por outro caminho.
+- O **13º proporcional vira dinheiro**, em **duas** verbas: o proporcional e o que decorre
+  da projeção do aviso. Separadas porque o 13º sobre o aviso indenizado tem INSS e FGTS mas
+  **não tem IRRF** — numa linha só, a base do imposto sairia maior que a devida.
+- Isso **não destrava a Fase 4F**. A contradição de lá é sobre **quando** INSS e IRRF
+  incidem no 13º — no adiantamento ou só na apuração anual. Na rescisão não há duas
+  parcelas: há uma verba única, paga no acerto. A pergunta que bloqueia a 4F não se coloca
+  aqui.
+- **O aviso indenizado projeta a data de saída.** A CLT art. 487 § 1º manda contá-lo como
+  tempo de serviço, e a Súmula 305 do TST diz que é o **término do aviso** que vai para a
+  CTPS. Isso acrescenta avos de 13º e de férias — e era um defeito real: o cálculo parava
+  na data de desligamento e a pessoa perdia o avo que a lei lhe dá.
 
 > **O valor base do FGTS é informado, não calculado** — como no FGTS Digital. O saldo real
 > da conta vinculada tem correção e juros que o produto não conhece; ele só sabe os
@@ -218,6 +227,28 @@ de 40% e 20%), **CLT art. 484-A** (acordo: metade) e o **Manual do FGTS Digital*
 > de exato**. O que o sistema conhece volta para **comparação**: se o informado ficar
 > abaixo, a tela avisa — aviso, não recusa, porque o sistema não sabe o saldo real. Sem
 > valor informado, **não há linha de multa**.
+>
+> Ele é **gravado no contrato** por `PUT`, com o valor no corpo — não é parâmetro de
+> consulta. É um dado informado uma vez e reusado por toda apuração seguinte, e um número
+> que multiplica dinheiro não pertence à query string, que vaza para log de servidor, log
+> de proxy, histórico do navegador e cabeçalho `Referer`. Enquanto ninguém informa, a
+> resposta traz `null` — "informei zero" e "não informei" são coisas diferentes.
+
+**Incidências das verbas rescisórias**, conforme a tabela do **eSocial vigente em 2026**:
+
+| Verba | INSS | IRRF | FGTS |
+|---|:---:|:---:|:---:|
+| Saldo de salário | Sim | Sim | Sim |
+| Aviso prévio indenizado | Não | Não | **Sim** |
+| Férias vencidas, proporcionais e em dobro, mais o 1/3 | Não | Não | Não |
+| 13º proporcional | Sim | Sim | Sim |
+| 13º sobre o aviso prévio indenizado | Sim | **Não** | Sim |
+
+A folha de rescisão paga quem foi desligado na competência e **exige as nove rubricas
+cadastradas** — faltando uma, a verba correspondente sairia do acerto em silêncio, então a
+API recusa com **409** listando as que faltam. Contratos com motivo bloqueado são pulados,
+e a resposta diz quantos ficaram de fora: um holerite vazio no meio da folha pareceria erro
+de cálculo.
 
 **Motivo do desligamento (Fase 4G, etapa 1)**
 
@@ -396,8 +427,9 @@ não o pagamento.
 
 Cada encargo exige fonte oficial registrada e parâmetro versionado (`CLAUDE.md §29`). A
 Fase 4A criou as bases, a 4B aplicou a primeira alíquota, a 4C acrescentou o depósito do
-empregador e a 4D fechou o imposto de renda. **A folha mensal está completa**; os demais
-tipos de processamento — férias (4E), 13º (4F) e rescisão (4G) — continuam fora.
+empregador e a 4D fechou o imposto de renda. **A folha mensal está completa**, e as folhas
+de **férias (4E)** e de **rescisão (4G)** também. O **13º (4F)** continua bloqueado por
+contradição entre fontes oficiais sobre o momento da incidência.
 
 ### Camada de IA — planejada, não implementada
 
@@ -594,10 +626,11 @@ Todos usam a senha de `PRISMARH_SEED_SENHA`.
 | `GET /api/contratos/{id}/ferias/periodos` | todos os 5 | Períodos aquisitivos, com saldo e concessões |
 | `POST /api/contratos/{id}/ferias/concessoes` | Adm. Empresa, Analista | Programa férias de um período |
 | `DELETE /api/contratos/{id}/ferias/concessoes/{idC}` | Adm. Empresa, Analista | Cancela uma programação que não começou |
-| `POST /api/folhas` (campo `tipo`) | Adm. Empresa, Analista | Abre folha **Mensal** ou **Ferias** |
+| `POST /api/folhas` (campo `tipo`) | Adm. Empresa, Analista | Abre folha **Mensal**, **Ferias** ou **Rescisao** |
 | `GET /api/contratos/{id}/decimo-terceiro/avos` | todos os 5 | Avos de 13º no ano, mês a mês, com o motivo |
 | `POST /api/contratos/{id}/desligamento` (campo `motivo`) | Adm. Empresa, Analista | Encerra o vínculo, com o motivo obrigatório |
-| `GET /api/contratos/{id}/rescisao` | todos os 5 | Simula as verbas; aceita `?valorBaseFgts=` |
+| `GET /api/contratos/{id}/rescisao` | todos os 5 | Apura as verbas, usando o valor base gravado |
+| `PUT /api/contratos/{id}/rescisao/valor-base-fgts` | Adm. Empresa, Analista | Grava o valor base do FGTS rescisório |
 | `GET /api/contratos/{id}/rescisao/matriz` | todos os 5 | O que cada motivo gera, com a fonte |
 | `GET /api/folhas` | todos os 5 | Lista, com filtro por empresa e competência |
 | `GET /api/folhas/{id}` | todos os 5 | Folha com os holerites |

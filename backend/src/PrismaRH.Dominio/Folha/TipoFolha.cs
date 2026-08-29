@@ -1,4 +1,4 @@
-namespace PrismaRH.Dominio.Folha;
+﻿namespace PrismaRH.Dominio.Folha;
 
 /// <summary>
 /// Que processamento esta folha representa.
@@ -21,5 +21,14 @@ public enum TipoFolha
     /// O pagamento das ferias concedidas na competencia: remuneracao, terco
     /// constitucional e abono pecuniario.
     /// </summary>
-    Ferias = 2
+    Ferias = 2,
+
+    /// <summary>
+    /// O acerto do desligamento: saldo, aviso, ferias e 13o proporcionais e a
+    /// indenizacao do FGTS.
+    ///
+    /// Diferente das outras duas em algo importante: ela nao percorre os
+    /// contratos ATIVOS da empresa, e sim os DESLIGADOS na competencia.
+    /// </summary>
+    Rescisao = 3
 }

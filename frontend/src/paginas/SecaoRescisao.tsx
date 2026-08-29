@@ -3,6 +3,7 @@ import {
   apurarRescisao,
   formatarData,
   formatarSalario,
+  informarValorBaseFgts,
   ROTULO_MOTIVO_DESLIGAMENTO,
   type Rescisao,
 } from '@/api/pessoas'
@@ -15,14 +16,17 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
 /**
- * A simulação das verbas rescisórias.
+ * A apuração das verbas rescisórias.
  *
- * **Simulação, não folha**: responde "quanto esta rescisão vale e por quê", e
- * não gera holerite. Por isso não há botão de confirmar.
+ * **Apuração, não folha**: responde "quanto esta rescisão vale e por quê". A
+ * folha de rescisão usa exatamente estas verbas e é aberta em Folhas, com o
+ * tipo Rescisão — por isso não há botão de confirmar aqui.
  *
- * O **valor base do FGTS** é digitado pelo analista, e não calculado — o saldo
- * real da conta vinculada tem correção e juros que o produto não conhece. O que
- * o sistema sabe aparece ao lado, para comparação.
+ * O **valor base do FGTS** é digitado pelo analista e **gravado** (PUT), não
+ * calculado: o saldo real da conta vinculada tem correção e juros que o produto
+ * não conhece. Fica registrado com data e observação, porque é um número que
+ * entra na multa. O que o sistema apurou aparece ao lado, para comparação —
+ * nunca como substituto.
  *
  * Três motivos são **bloqueados** por falta de fonte oficial. Para eles a tela
  * mostra a razão e o contexto, sem nenhum número — o contrário seria pior:
@@ -30,28 +34,57 @@ import { Label } from '@/components/ui/label'
  */
 export function SecaoRescisao({ idContrato }: { idContrato: string }) {
   const [valorBase, definirValorBase] = useState('')
-  const [aplicado, definirAplicado] = useState<number | undefined>(undefined)
   const [rescisao, definirRescisao] = useState<Rescisao | null>(null)
   const [carregando, definirCarregando] = useState(true)
+  const [salvando, definirSalvando] = useState(false)
   const [erro, definirErro] = useState<string | null>(null)
 
   const carregar = useCallback(async () => {
     definirErro(null)
 
     try {
-      definirRescisao(await apurarRescisao(idContrato, aplicado))
+      const apurada = await apurarRescisao(idContrato)
+      definirRescisao(apurada)
+
+      // Preenche a caixa com o que está gravado. Só acontece na carga e depois
+      // de salvar, nunca no meio da digitação.
+      definirValorBase(
+        apurada.valorBaseFgts === null ? '' : apurada.valorBaseFgts.informado.toFixed(2),
+      )
     } catch (falha) {
       definirErro(falha instanceof Error ? falha.message : 'Não foi possível apurar a rescisão.')
     } finally {
       definirCarregando(false)
     }
-  }, [idContrato, aplicado])
+  }, [idContrato])
 
   useEffect(() => {
     // O estado só muda DEPOIS do await, quando a resposta da API chega.
     // oxlint-disable-next-line react/set-state-in-effect
     void carregar()
   }, [carregar])
+
+  async function salvarValorBase() {
+    const valor = Number(valorBase.replace(',', '.'))
+
+    if (!Number.isFinite(valor) || valor < 0) {
+      definirErro('Informe o valor base do FGTS como um número não negativo.')
+      return
+    }
+
+    definirSalvando(true)
+
+    try {
+      await informarValorBaseFgts(idContrato, { valor })
+      await carregar()
+    } catch (falha) {
+      definirErro(
+        falha instanceof Error ? falha.message : 'Não foi possível gravar o valor base do FGTS.',
+      )
+    } finally {
+      definirSalvando(false)
+    }
+  }
 
   const colunas: Coluna<Rescisao['verbas'][number]>[] = [
     {
@@ -73,11 +106,13 @@ export function SecaoRescisao({ idContrato }: { idContrato: string }) {
     },
   ]
 
+  const projetou = rescisao !== null && rescisao.dataProjetada !== rescisao.dataDesligamento
+
   return (
     <section>
       <CabecalhoSecao
         titulo="Rescisão"
-        descricao="Simulação das verbas. Não gera folha — o cálculo definitivo é a etapa seguinte."
+        descricao="Apuração das verbas. A folha de rescisão é aberta em Folhas, com estas mesmas verbas."
       />
 
       {erro && (
@@ -96,6 +131,16 @@ export function SecaoRescisao({ idContrato }: { idContrato: string }) {
             <span className="tabular font-medium text-foreground">
               {formatarSalario(rescisao.salarioReferencia)}
             </span>
+            {projetou && (
+              <>
+                {' '}
+                · saída na CTPS{' '}
+                <span className="tabular font-medium text-foreground">
+                  {formatarData(rescisao.dataProjetada)}
+                </span>{' '}
+                pela projeção do aviso
+              </>
+            )}
           </p>
 
           {!rescisao.suportado && (
@@ -127,21 +172,34 @@ export function SecaoRescisao({ idContrato }: { idContrato: string }) {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => definirAplicado(Number(valorBase.replace(',', '.')) || undefined)}
+                  disabled={salvando}
+                  onClick={() => void salvarValorBase()}
                 >
-                  Aplicar
+                  {salvando ? 'Salvando...' : 'Salvar'}
                 </Button>
 
                 <p className="w-full text-xs text-muted-foreground">
-                  Informado por você, como no FGTS Digital. O saldo real da conta vinculada tem
-                  correção e juros que este sistema não conhece — ele só sabe os depósitos que
-                  apurou:{' '}
+                  Informado por você, como no FGTS Digital, e gravado no contrato. O saldo real da
+                  conta vinculada tem correção e juros que este sistema não conhece — ele só sabe os
+                  depósitos que apurou:{' '}
                   <span className="tabular font-medium text-foreground">
-                    {formatarSalario(rescisao.valorBaseFgts?.conhecidoPeloSistema ?? 0)}
+                    {formatarSalario(rescisao.fgtsConhecidoPeloSistema)}
                   </span>
                   .
+                  {rescisao.valorBaseFgts?.informadoEm && (
+                    <> Informado em {formatarData(rescisao.valorBaseFgts.informadoEm)}.</>
+                  )}
                 </p>
               </div>
+
+              {rescisao.valorBaseFgts === null && (
+                <Alert>
+                  <AlertDescription>
+                    Sem o valor base informado, a <strong>multa do FGTS não é calculada</strong> —
+                    melhor nenhuma linha do que uma sobre um número que o sistema não tem.
+                  </AlertDescription>
+                </Alert>
+              )}
 
               {rescisao.valorBaseFgts?.abaixoDoConhecido && (
                 <Alert variant="destructive">
@@ -214,7 +272,12 @@ export function SecaoRescisao({ idContrato }: { idContrato: string }) {
               <dt className="rotulo-secao">13º proporcional</dt>
               <dd className="mt-0.5">
                 <span className="tabular font-medium">{rescisao.fracao13 ?? '0/12'}</span>
-                <span className="text-muted-foreground"> · não calculado ainda</span>
+                {rescisao.avosDoAviso > 0 && (
+                  <span className="text-muted-foreground">
+                    {' '}
+                    · + <span className="tabular">{rescisao.avosDoAviso}/12</span> pelo aviso
+                  </span>
+                )}
               </dd>
             </div>
           </dl>

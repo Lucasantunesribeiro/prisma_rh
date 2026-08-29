@@ -3,6 +3,8 @@ using Microsoft.EntityFrameworkCore;
 using PrismaRH.Api.Identidade;
 using PrismaRH.Aplicacao.Comum;
 using PrismaRH.Aplicacao.Identidade;
+using PrismaRH.Dominio.Ferias;
+using PrismaRH.Dominio.Rescisao;
 using PrismaRH.Dominio.Folha;
 using PrismaRH.Dominio.Parametros;
 using PrismaRH.Infraestrutura.Persistencia;
@@ -316,6 +318,11 @@ public static class FolhasEndpoints
             return await CalcularFeriasAsync(folha, db, relogio, ct);
         }
 
+        if (folha.Tipo == TipoFolha.Rescisao)
+        {
+            return await CalcularRescisaoAsync(folha, db, relogio, ct);
+        }
+
         var rubricaSalario = await db.Rubricas.FirstOrDefaultAsync(
             r => r.Ativa && r.Estrategia == EstrategiaRubrica.SalarioBaseProporcional, ct);
 
@@ -480,6 +487,122 @@ public static class FolhasEndpoints
     /// a folha calcula sem o desconto - e o comportamento da Fase 3, que
     /// continua valido para quem nao configurou encargo.
     /// </summary>
+    /// <summary>
+    /// Calcula a folha de RESCISAO: paga os acertos dos desligados na
+    /// competencia.
+    ///
+    /// Exige as NOVE rubricas de rescisao cadastradas, pelo mesmo motivo das
+    /// ferias: faltando alguma, uma verba sairia em silencio do acerto.
+    ///
+    /// Contratos com motivo BLOQUEADO nao entram, e a resposta diz quantos
+    /// ficaram de fora - um holerite vazio no meio da folha pareceria erro de
+    /// calculo em vez de motivo sem fonte.
+    /// </summary>
+    private static async Task<IResult> CalcularRescisaoAsync(
+        FolhaPagamento folha, PrismaRhDbContext db, IRelogio relogio, CancellationToken ct)
+    {
+        var rubricas = await db.Rubricas
+            .Where(r => r.Ativa && r.Estrategia == EstrategiaRubrica.VerbaRescisoria)
+            .ToDictionaryAsync(r => r.Codigo, ct);
+
+        string[] exigidas =
+        [
+            "SALDO", "AVISO", "FERVEN", "FERVEN13", "FERPROP",
+            "FERPROP13", "DEC13PROP", "DEC13AV", "MULTAFGTS",
+        ];
+
+        var faltando = exigidas.Where(c => !rubricas.ContainsKey(c)).ToList();
+
+        if (faltando.Count > 0)
+        {
+            return Results.Conflict(new
+            {
+                detalhe = "Faltam rubricas de rescisao ativas: " + string.Join(", ", faltando)
+                    + ". Cadastre-as antes de calcular."
+            });
+        }
+
+        var primeiro = folha.Competencia.PrimeiroDia;
+        var ultimo = folha.Competencia.UltimoDia;
+
+        var contratos = await db.ContratosTrabalho
+            .Include(c => c.Vigencias)
+            .Where(c => c.IdEmpresa == folha.IdEmpresa
+                        && c.DataDesligamento != null
+                        && c.DataDesligamento >= primeiro
+                        && c.DataDesligamento <= ultimo)
+            .ToListAsync(ct);
+
+        var ids = contratos.Select(c => c.Id).ToList();
+
+        var concessoes = await db.ConcessoesFerias
+            .AsNoTracking()
+            .Where(c => ids.Contains(c.IdContrato))
+            .ToListAsync(ct);
+
+        // Dias de ferias vencidas por contrato, na data de saida de cada um.
+        var vencidas = contratos.ToDictionary(
+            c => c.Id,
+            c => PeriodosAquisitivos.Adquiridos(c, c.DataDesligamento!.Value)
+                .Select(p => new PeriodoComSaldo(p, [.. concessoes.Where(x => x.EDoPeriodo(p))]))
+                .Sum(p => p.Saldo));
+
+        var informados = await db.ValoresBaseFgts
+            .AsNoTracking()
+            .Where(v => ids.Contains(v.IdContrato))
+            .ToListAsync(ct);
+
+        // O FGTS que o sistema conhece, por contrato - so para comparacao.
+        var conhecidos = await db.LancamentosFolha
+            .AsNoTracking()
+            .Where(l => l.Estrategia == EstrategiaRubrica.FgtsMensal)
+            .Join(db.FolhasFuncionario, l => l.IdFolhaFuncionario, f => f.Id,
+                (l, f) => new { f.IdContrato, l.Valor })
+            .Where(x => ids.Contains(x.IdContrato))
+            .GroupBy(x => x.IdContrato)
+            .Select(g => new { IdContrato = g.Key, Total = g.Sum(x => x.Valor) })
+            .ToListAsync(ct);
+
+        var conhecidoPorContrato = conhecidos.ToDictionary(c => c.IdContrato, c => c.Total);
+
+        var basesFgts = informados.ToDictionary(
+            v => v.IdContrato,
+            v => new ValorBaseFgts(
+                v.Valor,
+                conhecidoPorContrato.TryGetValue(v.IdContrato, out var c) ? c : 0m));
+
+        IReadOnlyList<Guid> ignorados;
+
+        try
+        {
+            ignorados = folha.CalcularRescisao(
+                contratos, rubricas, vencidas, basesFgts,
+                await EncargosAsync(db, folha.Competencia, ct),
+                await DependentesPorFuncionarioAsync(db, folha.Competencia, ct),
+                relogio.Agora);
+        }
+        catch (InvalidOperationException erro)
+        {
+            return RespostasValidacao.De(erro);
+        }
+
+        await db.SaveChangesAsync(ct);
+
+        var detalhe = new FolhaDetalheResposta(
+            (await ResumoAsync(db, folha.Id, ct))!, await HoleritesAsync(db, folha.Id, ct));
+
+        return ignorados.Count == 0
+            ? Results.Ok(detalhe)
+            : Results.Ok(new
+            {
+                detalhe.Folha,
+                detalhe.Funcionarios,
+                // Quantos ficaram de fora por motivo bloqueado. Nao e erro -
+                // e informacao que a tela precisa mostrar.
+                ContratosIgnorados = ignorados,
+            });
+    }
+
     /// <summary>
     /// Calcula a folha de FERIAS: paga as concessoes que comecam na
     /// competencia.
