@@ -806,6 +806,21 @@ Depois do fechamento:
 
 # FASE 4 — REGRAS BRASILEIRAS DE FOLHA
 
+> **Status: CONCLUÍDA em 29/08/2026.** As sete subfases entregues:
+> **4A** incidências e bases · **4B** INSS · **4C** FGTS · **4D** dependentes e IRRF ·
+> **4E** férias · **4F** 13º salário · **4G** rescisão.
+>
+> Os cinco tipos de folha calculam: mensal, férias, rescisão, adiantamento de 13º e
+> a folha anual de 13º. Todos os Security Gates das subfases foram respondidos.
+>
+> **Pendências registradas, nenhuma bloqueante em `localhost`:** `CLAUDE.md §24.19`
+> itens 4 (400 vs 500), 5 (IRRF de férias somado à mensal) e 6 (auditoria do valor base
+> do FGTS rescisório, que vence na Fase 7).
+>
+> **Fora do escopo aprovado, e por isso não implementado:** médias de remuneração
+> variável para 13º e férias. A lista de entregas da 4F não as inclui, e acrescentá-las
+> seria ampliar escopo por conta própria.
+
 ## Objetivo
 
 Evoluir o cálculo para se aproximar de um sistema brasileiro real.
@@ -1888,9 +1903,8 @@ antes de feriado) continuam fora, pelos motivos da etapa 2a.
 
 ## FASE 4F — 13º SALÁRIO
 
-> **Status: etapa 1 concluída em 28/08/2026 — avos.**
-> **Etapa 2 — o pagamento — BLOQUEADA: duas fontes `gov.br` se contradizem sobre
-> quando INSS e IRRF incidem.**
+> **Status: concluída em 29/08/2026 — avos, adiantamento e folha anual.**
+> **O bloqueio de 28/08 foi DESFEITO em 29/08: não havia contradição. Ver abaixo.**
 
 ### Objetivo
 
@@ -1953,42 +1967,85 @@ não deveria contar, e aqui conta.
 
 ---
 
-### Etapa 2 — Pagamento (bloqueada)
+### Etapa 2 — Pagamento (concluída)
 
-#### ⚠️ A contradição que bloqueia
+#### ✅ A contradição de 28/08/2026, e por que ela não existia
 
-Duas fontes **oficiais** consultadas em 28/08/2026 dizem coisas diferentes sobre quando
-INSS e IRRF incidem no 13º:
+**Resolvida em 29/08/2026.** O registro anterior está preservado abaixo, porque o
+diagnóstico errado é a parte que ensina.
 
-| Fonte | O que diz |
+##### O que estava registrado
+
+| Fonte | O que se entendeu que ela dizia |
 |---|---|
-| Nota orientativa do **FGTS Digital** / eSocial (regime geral) | INSS e IRRF são apurados **apenas na folha anual do 13º**, sobre o **valor total**. O **FGTS** incide no mês do pagamento de cada parcela — inclusive no adiantamento. |
-| Página do eSocial *"Como pagar a primeira parcela do 13º salário"* | Manda **descontar INSS e IRRF do adiantamento**, com exemplo numérico. |
+| Nota orientativa do **FGTS Digital** / eSocial | INSS e IRRF apurados **apenas na folha anual**, sobre o total. FGTS no mês de cada parcela. |
+| Página do eSocial *"Como pagar a primeira parcela do 13º salário"* | Mandava **descontar INSS e IRRF do adiantamento**, com exemplo numérico. |
 
-A segunda é, muito provavelmente, do **empregador doméstico**, que tem regime próprio
-(DAE / Simples Doméstico) — mas a página não deixa isso explícito no trecho alcançado, e
-os dois PDFs técnicos (Nota Orientativa 2018.13 e FD 11/2025) **não são extraíveis** pelas
-ferramentas disponíveis.
+A hipótese registrada era que a segunda fosse do **empregador doméstico**. Estava errada,
+e a causa do bloqueio não era jurídica.
 
-**Concluir por eliminação seria interpretação, não implementação.** O `CLAUDE.md §29`
-proíbe regra crítica sem fonte oficial inequívoca, e a diferença não é de centavos: ela
-muda o que a pessoa recebe em novembro.
+##### A causa real: ferramenta, não norma
 
-#### A tabela de incidências de 2026 NÃO destrava esta etapa
+Os dois PDFs oficiais foram declarados **"não extraíveis pelas ferramentas disponíveis"**.
+Não eram. A máquina tem `pdftotext` (`/mingw64/bin/pdftotext`), e ele lê os dois
+integralmente. **O bloqueio de uma fase inteira nasceu de uma tentativa que faltou**, não de
+um conflito entre normas.
 
-**Conferido em 29/08/2026**, ao receber do responsável a tabela do eSocial usada na Fase
-4G. Ela confirma que o 13º **compõe** as bases de INSS, IRRF e FGTS — o que nenhuma das
-duas fontes acima negava. A disputa é sobre **quando**: no adiantamento da 1ª parcela ou
-só na apuração anual. A tabela não fala sobre momento.
+Fica a lição registrada: *"a fonte oficial não pôde ser lida"* é uma afirmação sobre a
+ferramenta, e precisa ser verificada como tal antes de virar bloqueio de escopo.
 
-Perguntas diferentes, portanto **a etapa 2 segue bloqueada**. Ela precisa das duas fontes
-conciliadas, ou de uma terceira que diga qual regime cada uma descreve.
+##### O que as fontes oficiais dizem, textualmente
 
-O **13º da rescisão** foi calculado na Fase 4G sem contornar isso: na rescisão não há duas
-parcelas, e sim uma verba única paga no acerto — a pergunta que bloqueia esta etapa não se
-coloca lá. Ver `Fase 4G, etapa 3, decisão 1`.
+**MOS eSocial S-1.3**, consolidado até a NO S-1.3 – 10.2026, item 10.3.4 — e a **Nota
+Orientativa 2018.13** repete a mesma frase, quase palavra por palavra:
 
-#### O que a etapa 2 precisa, além dessa resposta
+> "A apuração da CP e do IRRF incidentes sobre o 13º salário é feita apenas na folha de
+> 13º (anual)."
+
+> "o FGTS, ao contrário da CP e do IRRF, incide sobre a parcela do adiantamento do 13º
+> salário no mês em que for paga. Por exemplo, um adiantamento feito em novembro tem
+> incidência de FGTS, mas não de CP ou IRRF. Assim, o FGTS incidente sobre a folha do 13º
+> salário é calculado apenas sobre a diferença entre o valor da gratificação natalina e a
+> primeira parcela."
+
+As duas fontes **concordam**. A regra é uma só.
+
+##### A distinção que a dúvida escondia, para que ela não volte
+
+A página *"Como pagar a primeira parcela"* não trata da **primeira parcela normal**. Ela
+trata do caso excepcional do **MOS S-1.3, item 10.3.4.1 — "Adiantamento integral do décimo
+terceiro salário antes do mês de dezembro"**. São dois casos diferentes:
+
+| | **1ª parcela normal** (fev–nov) | **Antecipação integral** antes de dezembro |
+|---|---|---|
+| O que se paga | metade do 13º devido | o 13º inteiro, adiantado |
+| INSS/IRRF **apurados** quando | folha anual, sobre o total | **folha anual, sobre o total** |
+| INSS/IRRF **descontados do caixa** quando | não são | o empregador paga o **líquido**, já deduzido |
+| FGTS | na competência do pagamento | na competência do pagamento |
+
+O ponto que dissolve tudo, no próprio item 10.3.4.1:
+
+> "na competência em que o valor do adiantamento for declarado, há a incidência do FGTS
+> (nesse caso calculado sobre o valor do adiantamento) e **na folha anual há a incidência
+> da contribuição previdenciária e do imposto de renda, calculados sobre o valor total**"
+
+Ou seja: **mesmo na antecipação integral, a apuração continua sendo anual.** O que muda é
+apenas quanto dinheiro sai do caixa antes. A página falava de **fluxo de caixa**; o manual
+fala de **apuração**. Nunca discordaram — respondiam perguntas diferentes.
+
+E o MOS ainda enquadra a antecipação integral como o que ela é:
+
+> "o que ocorre nesses casos não é o pagamento integral e sim um adiantamento superior ao
+> valor devido"
+
+##### O que o Prisma RH implementa
+
+A **primeira parcela normal**, que é o caso do escopo. A antecipação integral **não** é um
+tipo próprio de folha: ela é um adiantamento maior, e o produto a suporta pelo mesmo
+caminho — se o adiantamento superar o total, a folha anual compensa o que foi pago e a base
+de FGTS restante é zero, nunca negativa.
+
+#### O que a etapa 2 precisa, além dessa resposta#### O que a etapa 2 precisa, além dessa resposta
 
 1. **`TipoFolha`** ganha os tipos das duas parcelas — provavelmente
    `DecimoTerceiroAdiantamento` e `DecimoTerceiro`, dois tipos e não um com campo
@@ -2013,6 +2070,140 @@ rubricas diferentes, provavelmente com uma **informativa** carregando a base que
 
 Registrado agora para que a etapa 2 comece com o problema já enunciado, em vez de
 descobri-lo no meio.
+
+#### ✅ Como as três bases foram resolvidas
+
+O problema enunciado acima era real, e a solução usa uma peça que a **Fase 4A** já tinha
+construído sem saber que serviria para isto: **rubrica informativa compõe base sem entrar
+no líquido**.
+
+A folha anual usa **três rubricas**, e não uma:
+
+| Rubrica | Tipo | Valor | Incidência |
+|---|---|---|---|
+| `DEC13` | Provento | o **total** do 13º | `Inss, Irrf` — **e não Fgts** |
+| `DEC13ADTD` | Desconto | o adiantamento já pago | `Nenhuma` |
+| `DEC13FG` | **Informativa** | total − adiantamento | `Fgts` |
+
+O resultado é exatamente o do MOS:
+
+```text
+base de INSS = total          (DEC13)
+base de IRRF = total          (DEC13)
+base de FGTS = a diferença    (DEC13FG, informativa)
+líquido      = total − adiantamento − INSS − IRRF
+```
+
+Três decisões sustentam isso, e cada uma tem invariante no domínio e teste:
+
+1. **`DEC13` não declara FGTS.** Se declarasse, o Fundo incidiria sobre o 13º inteiro e o
+   adiantamento seria tributado duas vezes.
+2. **`DEC13ADTD` é desconto e não compõe base.** A invariante da Fase 4A já recusava
+   desconto com incidência — e está certa: desconto não reduz base de INSS.
+3. **`DEC13FG` é informativa, obrigatoriamente.** Como provento pagaria o 13º duas vezes;
+   como desconto, a invariante da 4A a proibiria de compor base — que é a única coisa que
+   ela faz.
+
+#### Decisões registradas
+
+##### 1. Dois tipos de folha, e não um com campo "parcela"
+
+`TipoFolha.DecimoTerceiroAdiantamento` e `TipoFolha.DecimoTerceiro`. O índice único que a
+Fase 4E compôs é `(empresa, competência, tipo)` — dois tipos cabem nele sem alteração
+alguma. Um campo "parcela" exigiria mexer no índice.
+
+##### 2. O adiantamento já pago é **estado derivado**
+
+Ele não é digitado nem guardado num campo: a folha anual **soma os lançamentos** de
+`DecimoTerceiroAdiantamento` das folhas do mesmo ano e da mesma empresa. Quarta vez que a
+mesma decisão aparece — períodos aquisitivos, avos, avos de férias proporcionais e agora
+isto.
+
+A soma é feita pela **estratégia congelada no lançamento**, nunca pela rubrica atual: se o
+catálogo mudar depois do pagamento, o número histórico continua certo.
+
+##### 3. O adiantamento é metade do 13º **proporcional**, não metade do salário cheio
+
+A Lei 4.749/1965, art. 2º, diz "metade do salário recebido pelo empregado no mês anterior".
+Ao pé da letra, quem foi admitido em outubro receberia meio salário tendo direito a 3/12 do
+13º — um adiantamento **maior que a gratificação inteira**.
+
+Isso não é ilegal: o MOS 10.3.4.1 admite a hipótese expressamente. Mas produz **líquido
+negativo** em dezembro, e um produto não deve ter isso como padrão. O padrão do Prisma RH é
+o conservador — metade do 13º devido até ali —, e o sistema **suporta** o caso maior sem
+quebrar: a base de FGTS restante é limitada a zero, nunca negativa.
+
+**Não é contradição entre as duas leis**: a 4.090 define quanto se deve, a 4.749 define
+quando e quanto se antecipa. A proporcionalização apenas impede que a antecipação ultrapasse
+o direito.
+
+##### 4. O 13º **não** herda a pendência do IRRF por folha (`CLAUDE.md §24.19 item 5`)
+
+Aquela pendência diz que a folha de férias e a mensal do mesmo mês são tributadas em
+separado quando deveriam somar. O item 5 previa que "a Fase 4F trará a mesma classe de
+problema". **Não traz** — e a diferença é de direito, não de implementação:
+
+o 13º tem **tributação exclusiva na fonte**, apurada em separado dos demais rendimentos do
+mês. A folha anual do 13º é uma folha própria, transmitida à DCTFWeb de forma independente
+da de dezembro — o MOS é explícito: *"no mês de dezembro são geradas duas folhas pelo
+eSocial: dezembro e 13º salário (...) o contribuinte deve transmiti-las de forma
+independente"*.
+
+Ou seja: no 13º, apurar em separado **é o comportamento correto**. Nas férias é defeito.
+O item 5 do `CLAUDE.md` foi corrigido para dizer isso.
+
+#### Entregas
+
+| Camada | O que entrou |
+|---|---|
+| Domínio | `CalculadoraDecimoTerceiro` · `TipoFolha` ganha dois tipos · `EstrategiaRubrica` ganha quatro · três invariantes novas em `Rubrica` · `FolhaPagamento.Calcular13` · `FolhaFuncionario.AplicarCalculo13` |
+| Persistência | **Nenhuma migration** — os enums são `int` sem *check constraint*, e `dotnet ef migrations has-pending-model-changes` confirma: *"No changes have been made to the model since the last migration"* |
+| API | `POST /api/folhas/{id}/calcular` roteia os dois tipos novos · exige as quatro rubricas (409) |
+| Semeadura | As quatro rubricas do 13º, com a incidência do MOS no comentário |
+| Frontend | Cinco tipos de folha no seletor, com `EXPLICACAO_TIPO_FOLHA` exaustivo |
+
+#### Verificação
+
+642 testes de backend verdes — 22 novos de domínio e 13 de integração contra PostgreSQL
+real, na organização H. 60 de frontend em três execuções consecutivas. Lint e build limpos,
+zero avisos.
+
+---
+
+### Security Gate — Fase 4F (13º salário)
+
+| # | Ponto | Resposta |
+|---|---|---|
+| 1 | Ameaças introduzidas | Duas folhas novas que **retêm imposto**. O erro caro aqui não é vazamento: é a base de FGTS sair sobre o 13º inteiro em vez da diferença — a folha fecharia certa no líquido e a empresa recolheria a **mais**; ou o inverso, `DEC13` declarando FGTS e o adiantamento sendo tributado duas vezes. Nenhum dos dois apareceria no holerite. |
+| 2 | Controles | As incidências são **dados do catálogo**, não `if` no código. Três invariantes de domínio impedem montar o catálogo errado: as duas rubricas de provento recusam outro tipo, a compensação exige desconto, a base de FGTS exige informativa. A folha **exige as quatro** e recusa com 409. Números legais nenhum: o 13º usa as tabelas versionadas de INSS e IRRF que a 4B e a 4D já trouxeram. |
+| 3 | Testes de segurança | Folha da organização H na G: **404**, não 403. Anônimo calculando: **401**. Rubrica de base de FGTS como provento: **400**. Sem as quatro rubricas: **409**, nomeando as que faltam. Isolamento contra PostgreSQL real via Testcontainers. |
+| 4 | Impacto multiempresa | **Nenhuma tabela nova** — e por isso nenhum filtro global novo a esquecer. Todas as consultas partem de entidades já filtradas. A soma do adiantamento é restrita à **empresa da folha** e ao ano, e passa pelo filtro global das três tabelas que ela junta. Teste de isolamento existe. |
+| 5 | Exposição de dados | Classe **altamente sensível**: salário e retenções. Nada novo é exposto — o holerite do 13º usa a mesma rota e o mesmo formato dos demais. Nada vai para log. |
+| 6 | Permissões | `ProcessarFolha` para calcular, `LerDadosEmpresariais` para ler. Idênticas às das outras folhas: processar 13º é o mesmo trabalho que processar a mensal. **Nenhuma política nova**, nenhuma rota nova. |
+| 7 | Logging e auditoria | Abrir, calcular e fechar folha de 13º são os mesmos eventos das demais folhas, e entram na trilha da **Fase 7** junto com elas. Nenhum evento auditável novo. |
+| 8 | Dependências | Nenhuma nova. |
+| 9 | Secrets | **Não se aplica**: nenhum segredo entra nesta fase. |
+| 10 | Superfície pública | **Não se aplica**: nenhuma rota nova. Os dois tipos entram pela rota de cálculo que já existia, autenticada e com política declarada. |
+| 11 | Risco de custo/abuso | O cálculo percorre os contratos **de uma empresa** e apura no máximo 12 meses por contrato. A soma do adiantamento é uma consulta agregada no banco, por índice. **Não se aplica** paginação: nenhuma listagem nova. |
+
+#### Definition of Done de segurança (`CLAUDE.md §40.1`)
+
+Autorização analisada · multi-tenancy analisada e testada contra PostgreSQL real · entrada
+validada no backend (competência e tipo são enum fechado; nada mais entra) · nenhum dado
+sensível exposto além do necessário · nenhum secret · **endpoint novo: não se aplica** ·
+**upload: não se aplica** · nenhuma dependência nova · logs sem conteúdo sensível · testes
+de isolamento e autorização verdes · **paginação: não se aplica** — nenhuma listagem nova ·
+nenhum controle enfraquecido.
+
+#### Ponto de atenção registrado
+
+Na folha de **adiantamento**, o holerite traz linhas de **INSS e IRRF valendo R$ 0,00**. O
+valor está certo — o MOS manda não descontar nada ali —, mas a linha é ruído: ela sugere
+que houve apuração onde não houve.
+
+É comportamento do motor desde a **Fase 4B**, comum a todas as folhas, e suprimi-lo mudaria
+o holerite das fases anteriores. **Não é dinheiro errado e não foi alterado aqui.** Fica
+registrado para a Fase 10, junto com os demais itens de acabamento da API.
 
 ---
 
@@ -2606,7 +2797,29 @@ Registrar eventos importantes como:
 - justificativa;
 - mudança de status;
 - alteração de regra;
-- alteração de parâmetro.
+- alteração de parâmetro;
+- **alteração do Valor Base do FGTS rescisório** — ver abaixo.
+
+### Herdado da Fase 4G: o Valor Base do FGTS rescisório
+
+**Pendência registrada em `CLAUDE.md §24.19 item 6`, em 29/08/2026.** Ela nasceu na Fase
+4G etapa 3 e **vence aqui** — este é o item que a resolve.
+
+A entidade `ValorBaseFgtsRescisorio` é entrada humana que **multiplica dinheiro**: 40% ou
+20% dela viram a indenização compensatória. Hoje ela guarda `InformadoEm`, mas **não guarda
+quem informou**, e corrigir o valor **sobrescreve** o anterior sem histórico.
+
+O registro precisa conter:
+
+| Campo | Por quê |
+|---|---|
+| **quem alterou** | `CLAUDE.md §24.17` exige usuário em todo evento sensível. Hoje é o único dos quatro que não existe. |
+| **valor anterior** | Sem ele não se sabe o que mudou — só que mudou. |
+| **valor novo** | O número que passou a multiplicar a multa. |
+| **quando** | Já existe como `InformadoEm`, mas hoje é sobrescrito: precisa virar uma linha por alteração. |
+
+Tabela **somente-inserção**, como os demais eventos: o dado de origem continua alterável —
+corrigir uma medida é legítimo —, mas a **alteração** passa a ser fato registrado.
 
 ## Dashboard
 

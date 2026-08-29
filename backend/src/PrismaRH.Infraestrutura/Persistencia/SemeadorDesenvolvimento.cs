@@ -347,6 +347,60 @@ public static class SemeadorDesenvolvimento
     /// abono pela do terco sobre ferias gozadas faria o INSS incidir sobre uma
     /// verba que a lei exclui, em todo holerite com abono.
     /// </summary>
+    /// <summary>
+    /// As quatro rubricas do 13o salario, com as incidencias de cada uma.
+    ///
+    /// FONTE (CLAUDE.md secao 29): **MOS eSocial S-1.3**, consolidado ate a
+    /// NO S-1.3 - 10.2026, item 10.3.4, e **Nota Orientativa 2018.13**.
+    ///
+    /// O manual e literal quanto ao momento de cada encargo:
+    ///
+    /// > "A apuracao da CP e do IRRF incidentes sobre o 13o salario e feita
+    /// > apenas na folha de 13o (anual)."
+    ///
+    /// > "o FGTS, ao contrario da CP e do IRRF, incide sobre a parcela do
+    /// > adiantamento do 13o salario no mes em que for paga. (...) o FGTS
+    /// > incidente sobre a folha do 13o salario e calculado apenas sobre a
+    /// > diferenca entre o valor da gratificacao natalina e a primeira parcela."
+    ///
+    /// Dai as quatro linhas abaixo, e o porque de serem quatro e nao duas:
+    ///
+    ///   DEC13ADT .... adiantamento ..... INSS nao | IRRF nao | FGTS SIM
+    ///   DEC13 ....... total ............ INSS SIM | IRRF SIM | FGTS nao
+    ///   DEC13ADTD ... compensacao ...... desconto, sem incidencia
+    ///   DEC13FG ..... diferenca ........ INFORMATIVA, so FGTS
+    ///
+    /// O total NAO declara FGTS de proposito: se declarasse, a base do Fundo
+    /// sairia sobre o 13o inteiro, e o adiantamento seria tributado duas vezes.
+    /// </summary>
+    private static Rubrica[] RubricasDe13(Guid idOrganizacao, DateTimeOffset agora)
+    {
+        return
+        [
+            // Natureza eSocial 5504.
+            new Rubrica(
+                idOrganizacao, "DEC13ADT", "13o salario - adiantamento",
+                TipoRubrica.Provento, EstrategiaRubrica.DecimoTerceiroAdiantamento,
+                BaseCalculo.Fgts, agora),
+
+            // Natureza eSocial 5001.
+            new Rubrica(
+                idOrganizacao, "DEC13", "13o salario",
+                TipoRubrica.Provento, EstrategiaRubrica.DecimoTerceiroTotal,
+                BaseCalculo.Inss | BaseCalculo.Irrf, agora),
+
+            new Rubrica(
+                idOrganizacao, "DEC13ADTD", "Adiantamento de 13o ja pago",
+                TipoRubrica.Desconto, EstrategiaRubrica.DecimoTerceiroAdiantamentoDescontado,
+                BaseCalculo.Nenhuma, agora),
+
+            new Rubrica(
+                idOrganizacao, "DEC13FG", "Base de FGTS do 13o (diferenca)",
+                TipoRubrica.Informativo, EstrategiaRubrica.DecimoTerceiroBaseFgts,
+                BaseCalculo.Fgts, agora),
+        ];
+    }
+
     private static Rubrica[] RubricasDeFerias(Guid idOrganizacao, DateTimeOffset agora)
     {
         const BaseCalculo integraTudo = BaseCalculo.Inss | BaseCalculo.Fgts | BaseCalculo.Irrf;
@@ -485,6 +539,21 @@ public static class SemeadorDesenvolvimento
             acrescentadas.Add(codigo);
         }
 
+        // Fase 4F: as quatro do 13o salario.
+        foreach (var rubrica in RubricasDe13(prisma.Id, agora))
+        {
+            var codigo = rubrica.Codigo;
+
+            if (await contexto.Rubricas.IgnoreQueryFilters().AnyAsync(
+                    r => r.IdOrganizacao == prisma.Id && r.Ativa && r.Codigo == codigo, ct))
+            {
+                continue;
+            }
+
+            contexto.Rubricas.Add(rubrica);
+            acrescentadas.Add(codigo);
+        }
+
         // Fase 4E: as quatro de ferias, cada uma com a sua incidencia.
         foreach (var rubrica in RubricasDeFerias(prisma.Id, agora))
         {
@@ -571,6 +640,7 @@ public static class SemeadorDesenvolvimento
             salario, comissao, valeTransporte, adiantamento, inss, fgts, irrf,
             .. RubricasDeFerias(prisma.Id, agora),
             .. RubricasDeRescisao(prisma.Id, agora),
+            .. RubricasDe13(prisma.Id, agora),
         ];
 
         contexto.Rubricas.AddRange(catalogo);

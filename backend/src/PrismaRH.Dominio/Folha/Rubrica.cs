@@ -75,6 +75,36 @@ public sealed class Rubrica
                 nameof(tipo));
         }
 
+        if (EstrategiasDe13ProventoObrigatorio.Contains(estrategia) && tipo != TipoRubrica.Provento)
+        {
+            // O adiantamento e o total do 13o sao dinheiro que a pessoa RECEBE.
+            throw new ArgumentException(
+                "O adiantamento e o total do 13o precisam ser provento: sao valores pagos ao funcionario.",
+                nameof(tipo));
+        }
+
+        if (estrategia == EstrategiaRubrica.DecimoTerceiroAdiantamentoDescontado
+            && tipo != TipoRubrica.Desconto)
+        {
+            // Compensar o adiantamento na folha anual e desconto, por
+            // definicao. Como provento, a folha pagaria o 13o duas vezes.
+            throw new ArgumentException(
+                "A rubrica de compensacao do adiantamento de 13o precisa ser um desconto.",
+                nameof(tipo));
+        }
+
+        if (estrategia == EstrategiaRubrica.DecimoTerceiroBaseFgts
+            && tipo != TipoRubrica.Informativo)
+        {
+            // Ela existe SO para carregar a base de FGTS da diferenca. Como
+            // provento, pagaria o 13o duas vezes; como desconto, a invariante
+            // da Fase 4A a proibiria de compor base - que e a unica coisa que
+            // ela faz.
+            throw new ArgumentException(
+                "A rubrica da base de FGTS do 13o precisa ser informativa: ela compoe base sem pagar nada.",
+                nameof(tipo));
+        }
+
         if (estrategia == EstrategiaRubrica.FgtsMensal && basesIncidentes != BaseCalculo.Nenhuma)
         {
             // Se o FGTS compusesse a base de FGTS, cada calculo aumentaria a
@@ -172,6 +202,35 @@ public sealed class Rubrica
         EstrategiaRubrica.TercoFerias,
         EstrategiaRubrica.AbonoPecuniario,
         EstrategiaRubrica.TercoAbono,
+    ];
+
+    /// <summary>
+    /// As duas estrategias de 13o que precisam ser PROVENTO.
+    ///
+    /// As outras duas da Fase 4F nao entram aqui de proposito: a compensacao do
+    /// adiantamento e desconto e a base de FGTS e informativa. Cada uma tem a
+    /// sua propria recusa, com o motivo escrito.
+    ///
+    /// ARRAY pelo mesmo motivo de EstrategiasDeFerias: o EF Core nao traduz
+    /// Contains de IReadOnlySet.
+    /// </summary>
+    public static readonly EstrategiaRubrica[] EstrategiasDe13ProventoObrigatorio =
+    [
+        EstrategiaRubrica.DecimoTerceiroAdiantamento,
+        EstrategiaRubrica.DecimoTerceiroTotal,
+    ];
+
+    /// <summary>
+    /// As quatro estrategias que so existem em folha de 13o salario.
+    ///
+    /// Usada pela API para carregar o catalogo do 13o de uma vez.
+    /// </summary>
+    public static readonly EstrategiaRubrica[] EstrategiasDe13 =
+    [
+        EstrategiaRubrica.DecimoTerceiroAdiantamento,
+        EstrategiaRubrica.DecimoTerceiroTotal,
+        EstrategiaRubrica.DecimoTerceiroAdiantamentoDescontado,
+        EstrategiaRubrica.DecimoTerceiroBaseFgts,
     ];
 
     private static BaseCalculo ValidarIncidencias(BaseCalculo bases, TipoRubrica tipo, string parametro)

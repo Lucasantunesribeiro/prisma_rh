@@ -318,6 +318,11 @@ public static class FolhasEndpoints
             return await CalcularFeriasAsync(folha, db, relogio, ct);
         }
 
+        if (folha.Tipo is TipoFolha.DecimoTerceiroAdiantamento or TipoFolha.DecimoTerceiro)
+        {
+            return await Calcular13Async(folha, db, relogio, ct);
+        }
+
         if (folha.Tipo == TipoFolha.Rescisao)
         {
             return await CalcularRescisaoAsync(folha, db, relogio, ct);
@@ -611,6 +616,104 @@ public static class FolhasEndpoints
     /// folha sairia incompleta em silencio - e o funcionario receberia menos
     /// do que deveria sem nada parecer errado.
     /// </summary>
+    /// <summary>
+    /// Calcula a folha do 13o SALARIO - o adiantamento ou a anual.
+    ///
+    /// Exige as QUATRO rubricas do 13o cadastradas, pelo mesmo motivo das
+    /// ferias e da rescisao: faltando uma, a parcela correspondente sairia do
+    /// holerite em silencio. E aqui o silencio seria pior - faltando a
+    /// informativa DEC13FG, a folha anual fecharia certinho no liquido e
+    /// recolheria FGTS a MENOS, sem nada parecer errado.
+    ///
+    /// ## De onde vem o adiantamento ja pago
+    ///
+    /// Das folhas de ADIANTAMENTO do mesmo ano, ja calculadas. E estado
+    /// derivado, nao um campo que alguem digita - mesma decisao dos periodos
+    /// aquisitivos e dos avos.
+    ///
+    /// A soma e feita no BANCO, por estrategia congelada no lancamento. Ler a
+    /// rubrica atual traria o valor errado se o catalogo tiver mudado depois do
+    /// pagamento.
+    /// </summary>
+    private static async Task<IResult> Calcular13Async(
+        FolhaPagamento folha, PrismaRhDbContext db, IRelogio relogio, CancellationToken ct)
+    {
+        var rubricas = await db.Rubricas
+            .Where(r => r.Ativa && Rubrica.EstrategiasDe13.Contains(r.Estrategia))
+            .ToDictionaryAsync(r => r.Estrategia, ct);
+
+        var faltando = Rubrica.EstrategiasDe13
+            .Where(e => !rubricas.ContainsKey(e))
+            .ToList();
+
+        if (faltando.Count > 0)
+        {
+            return Results.Conflict(new
+            {
+                detalhe = "Faltam rubricas de 13o salario ativas: " + string.Join(", ", faltando)
+                    + ". Cadastre-as antes de calcular."
+            });
+        }
+
+        var contratos = await db.ContratosTrabalho
+            .Include(c => c.Vigencias)
+            .Where(c => c.IdEmpresa == folha.IdEmpresa)
+            .ToListAsync(ct);
+
+        var adiantamentos = new Dictionary<Guid, decimal>();
+
+        if (folha.Tipo == TipoFolha.DecimoTerceiro)
+        {
+            // As doze competencias do ano, e nao "Competencia.Ano == ano".
+            //
+            // Competencia e gravada como o inteiro 202611 por um value
+            // converter (ver FolhaPagamentoConfiguracao): para o EF Core a
+            // propriedade e opaca, e ler .Ano dela nao tem traducao para SQL -
+            // a consulta estourava com 500. Mesma licao do Contains de
+            // IReadOnlySet na Fase 4E.
+            //
+            // ARRAY, pelo mesmo motivo de sempre: o EF traduz Contains de array
+            // para IN (...), com os inteiros ja convertidos.
+            var competenciasDoAno = Enumerable.Range(1, 12)
+                .Select(mes => new Competencia(folha.Competencia.Ano, mes))
+                .ToArray();
+
+            var pagos = await db.LancamentosFolha
+                .AsNoTracking()
+                .Where(l => l.Estrategia == EstrategiaRubrica.DecimoTerceiroAdiantamento)
+                .Join(db.FolhasFuncionario, l => l.IdFolhaFuncionario, f => f.Id,
+                    (l, f) => new { f.IdContrato, f.IdFolha, l.Valor })
+                .Join(db.Folhas, x => x.IdFolha, f => f.Id,
+                    (x, f) => new { x.IdContrato, x.Valor, f.Competencia, f.IdEmpresa, f.Tipo })
+                .Where(x => x.IdEmpresa == folha.IdEmpresa
+                            && x.Tipo == TipoFolha.DecimoTerceiroAdiantamento
+                            && competenciasDoAno.Contains(x.Competencia))
+                .GroupBy(x => x.IdContrato)
+                .Select(g => new { IdContrato = g.Key, Total = g.Sum(x => x.Valor) })
+                .ToListAsync(ct);
+
+            adiantamentos = pagos.ToDictionary(x => x.IdContrato, x => x.Total);
+        }
+
+        try
+        {
+            folha.Calcular13(
+                contratos, rubricas, adiantamentos,
+                await EncargosAsync(db, folha.Competencia, ct),
+                await DependentesPorFuncionarioAsync(db, folha.Competencia, ct),
+                relogio.Agora);
+        }
+        catch (InvalidOperationException erro)
+        {
+            return RespostasValidacao.De(erro);
+        }
+
+        await db.SaveChangesAsync(ct);
+
+        return Results.Ok(new FolhaDetalheResposta(
+            (await ResumoAsync(db, folha.Id, ct))!, await HoleritesAsync(db, folha.Id, ct)));
+    }
+
     private static async Task<IResult> CalcularFeriasAsync(
         FolhaPagamento folha, PrismaRhDbContext db, IRelogio relogio, CancellationToken ct)
     {

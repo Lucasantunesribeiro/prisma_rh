@@ -91,6 +91,9 @@ public sealed class BancoPostgresFixture : IAsyncLifetime
     public Guid IdOrganizacaoG { get; private set; }
     public Guid IdEmpresaG { get; private set; }
     public Guid IdEstabelecimentoG { get; private set; }
+    public Guid IdOrganizacaoH { get; private set; }
+    public Guid IdEmpresaH { get; private set; }
+    public Guid IdEstabelecimentoH { get; private set; }
 
     public const string Senha = "SenhaDeTeste#2026";
 
@@ -144,6 +147,13 @@ public sealed class BancoPostgresFixture : IAsyncLifetime
     /// anteriores: as nove rubricas de rescisao sao da ORGANIZACAO.
     /// </summary>
     public const string EmailAdminG = "admin@g.teste";
+
+    /// <summary>
+    /// Organizacao H existe so para a FOLHA DE 13o SALARIO (Fase 4F), pela
+    /// mesma razao das anteriores: as quatro rubricas do 13o sao da
+    /// ORGANIZACAO, e cadastra-las na A mudaria as folhas das fases anteriores.
+    /// </summary>
+    public const string EmailAdminH = "admin@h.teste";
 
     /// <summary>
     /// CPF valido e unico por semente. Os testes desta colecao compartilham o
@@ -205,7 +215,8 @@ public sealed class BancoPostgresFixture : IAsyncLifetime
         var orgE = new Organizacao("Organizacao E", agora);
         var orgF = new Organizacao("Organizacao F", agora);
         var orgG = new Organizacao("Organizacao G", agora);
-        db.Organizacoes.AddRange(orgA, orgB, orgC, orgD, orgE, orgF, orgG);
+        var orgH = new Organizacao("Organizacao H", agora);
+        db.Organizacoes.AddRange(orgA, orgB, orgC, orgD, orgE, orgF, orgG, orgH);
 
         db.Usuarios.AddRange(
             new Usuario(orgA.Id, "Admin A", EmailAdminA, hash, Perfil.AdministradorEmpresa, agora),
@@ -218,7 +229,8 @@ public sealed class BancoPostgresFixture : IAsyncLifetime
             new Usuario(orgD.Id, "Admin D", EmailAdminD, hash, Perfil.AdministradorEmpresa, agora),
             new Usuario(orgE.Id, "Admin E", EmailAdminE, hash, Perfil.AdministradorEmpresa, agora),
             new Usuario(orgF.Id, "Admin F", EmailAdminF, hash, Perfil.AdministradorEmpresa, agora),
-            new Usuario(orgG.Id, "Admin G", EmailAdminG, hash, Perfil.AdministradorEmpresa, agora));
+            new Usuario(orgG.Id, "Admin G", EmailAdminG, hash, Perfil.AdministradorEmpresa, agora),
+            new Usuario(orgH.Id, "Admin H", EmailAdminH, hash, Perfil.AdministradorEmpresa, agora));
 
         var empresaA = new Empresa(orgA.Id, "Empresa da A", Cnpj.Criar("11222333000181"), agora);
         var empresaB = new Empresa(orgB.Id, "Empresa da B", Cnpj.Criar("11444777000161"), agora);
@@ -227,7 +239,9 @@ public sealed class BancoPostgresFixture : IAsyncLifetime
         var empresaE = new Empresa(orgE.Id, "Empresa da E", Cnpj.Criar("33000167000101"), agora);
         var empresaF = new Empresa(orgF.Id, "Empresa da F", Cnpj.Criar("00000000000191"), agora);
         var empresaG = new Empresa(orgG.Id, "Empresa da G", Cnpj.Criar("47960950000121"), agora);
-        db.Empresas.AddRange(empresaA, empresaB, empresaC, empresaD, empresaE, empresaF, empresaG);
+        var empresaH = new Empresa(orgH.Id, "Empresa da H", Cnpj.Criar("02558157000162"), agora);
+        db.Empresas.AddRange(
+            empresaA, empresaB, empresaC, empresaD, empresaE, empresaF, empresaG, empresaH);
 
         var estabA = new Estabelecimento(orgA.Id, empresaA.Id, "001", "Matriz A", agora);
         var estabC = new Estabelecimento(orgC.Id, empresaC.Id, "001", "Matriz C", agora);
@@ -235,7 +249,8 @@ public sealed class BancoPostgresFixture : IAsyncLifetime
         var estabE = new Estabelecimento(orgE.Id, empresaE.Id, "001", "Matriz E", agora);
         var estabF = new Estabelecimento(orgF.Id, empresaF.Id, "001", "Matriz F", agora);
         var estabG = new Estabelecimento(orgG.Id, empresaG.Id, "001", "Matriz G", agora);
-        db.Estabelecimentos.AddRange(estabA, estabC, estabD, estabE, estabF, estabG);
+        var estabH = new Estabelecimento(orgH.Id, empresaH.Id, "001", "Matriz H", agora);
+        db.Estabelecimentos.AddRange(estabA, estabC, estabD, estabE, estabF, estabG, estabH);
 
         // Parametro legal FEDERAL: nao pertence a organizacao alguma, entao
         // entra uma vez so e vale para as duas. Mesma tabela da semeadura de
@@ -299,6 +314,9 @@ public sealed class BancoPostgresFixture : IAsyncLifetime
         IdOrganizacaoG = orgG.Id;
         IdEmpresaG = empresaG.Id;
         IdEstabelecimentoG = estabG.Id;
+        IdOrganizacaoH = orgH.Id;
+        IdEmpresaH = empresaH.Id;
+        IdEstabelecimentoH = estabH.Id;
     }
 
     /// <summary>

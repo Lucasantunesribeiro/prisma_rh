@@ -233,6 +233,10 @@ const EXPLICACAO_TIPO_FOLHA: Record<TipoFolha, string> = {
   Ferias: 'Paga as férias que começam nesta competência. Só entra quem sai de férias.',
   Rescisao:
     'Paga o acerto de quem foi desligado nesta competência. Motivos sem fonte oficial ficam de fora.',
+  DecimoTerceiroAdiantamento:
+    'A 1ª parcela, entre fevereiro e novembro. Incide FGTS e só ele — INSS e IRRF ficam para a folha anual.',
+  DecimoTerceiro:
+    'A folha anual, em dezembro. Apura INSS e IRRF sobre o total e desconta o adiantamento já pago.',
 }
 
 function AbrirFolha({

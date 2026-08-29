@@ -15,6 +15,10 @@ export type EstrategiaRubrica =
   | 'AbonoPecuniario'
   | 'TercoAbono'
   | 'VerbaRescisoria'
+  | 'DecimoTerceiroAdiantamento'
+  | 'DecimoTerceiroTotal'
+  | 'DecimoTerceiroAdiantamentoDescontado'
+  | 'DecimoTerceiroBaseFgts'
 
 /**
  * De onde sai o valor da rubrica, para a coluna da listagem.
@@ -33,6 +37,10 @@ export const ORIGEM_DO_VALOR: Record<EstrategiaRubrica, string> = {
   AbonoPecuniario: 'calculado na folha de férias',
   TercoAbono: 'calculado na folha de férias',
   VerbaRescisoria: 'calculado na folha de rescisão',
+  DecimoTerceiroAdiantamento: 'calculado na folha de 13º',
+  DecimoTerceiroTotal: 'calculado na folha de 13º',
+  DecimoTerceiroAdiantamentoDescontado: 'calculado na folha de 13º',
+  DecimoTerceiroBaseFgts: 'calculado na folha de 13º',
   ValorInformado: 'digitado no lançamento',
 }
 export type BaseCalculo = 'Inss' | 'Fgts' | 'Irrf'
@@ -99,12 +107,19 @@ export const inativarRubrica = (id: string): Promise<void> => remover(`/api/rubr
 
 export type SituacaoFolha = 'Rascunho' | 'Calculada' | 'Fechada'
 
-export type TipoFolha = 'Mensal' | 'Ferias' | 'Rescisao'
+export type TipoFolha =
+  | 'Mensal'
+  | 'Ferias'
+  | 'Rescisao'
+  | 'DecimoTerceiroAdiantamento'
+  | 'DecimoTerceiro'
 
 export const ROTULO_TIPO_FOLHA: Record<TipoFolha, string> = {
   Mensal: 'Mensal',
   Ferias: 'Férias',
   Rescisao: 'Rescisão',
+  DecimoTerceiroAdiantamento: '13º — adiantamento',
+  DecimoTerceiro: '13º — anual',
 }
 export type OrigemLancamento = 'Calculado' | 'Manual'
 

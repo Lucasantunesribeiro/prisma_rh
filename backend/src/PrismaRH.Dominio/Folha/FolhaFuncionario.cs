@@ -1,4 +1,5 @@
-﻿using PrismaRH.Dominio.Ferias;
+﻿using PrismaRH.Dominio.DecimoTerceiro;
+using PrismaRH.Dominio.Ferias;
 using PrismaRH.Dominio.Rescisao;
 using PrismaRH.Dominio.Parametros;
 
@@ -151,6 +152,69 @@ public sealed class FolhaFuncionario
                 verba.Valor, verba.Referencia, ordem++);
 
             lancamento.RegistrarMemoria(verba.Passos);
+
+            _lancamentos.Add(lancamento);
+        }
+
+        Reordenar();
+        RecalcularTotais();
+        ApurarEncargos(encargos);
+    }
+
+    /// <summary>
+    /// Aplica o calculo do 13o SALARIO, nas duas folhas.
+    ///
+    /// Serve ao adiantamento e a folha anual, e a diferenca entre eles nao esta
+    /// aqui: esta nas PARCELAS que a calculadora produziu e nas incidencias que
+    /// cada rubrica declara. Este metodo so pousa cada parcela na sua rubrica.
+    ///
+    /// Os encargos rodam no fim, como em toda folha. E e ai que a mecanica das
+    /// TRES BASES se resolve sozinha: o total compos INSS e IRRF, a informativa
+    /// compos so o FGTS da diferenca, e o desconto do adiantamento nao compos
+    /// nada. Nenhum imposto de 13o precisa de calculadora propria.
+    /// </summary>
+    internal void AplicarCalculo13(
+        IReadOnlyList<ParcelaDecimoTerceiro> parcelas,
+        IReadOnlyDictionary<EstrategiaRubrica, Rubrica> rubricas,
+        int avos,
+        decimal salarioReferencia,
+        ParametrosEncargos encargos,
+        int quantidadeDependentesIrrf)
+    {
+        ArgumentNullException.ThrowIfNull(parcelas);
+        ArgumentNullException.ThrowIfNull(rubricas);
+        ArgumentNullException.ThrowIfNull(encargos);
+
+        if (quantidadeDependentesIrrf < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(quantidadeDependentesIrrf), quantidadeDependentesIrrf,
+                "Quantidade de dependentes nao pode ser negativa.");
+        }
+
+        QuantidadeDependentesIrrf = quantidadeDependentesIrrf;
+
+        _lancamentos.RemoveAll(l => l.Origem == OrigemLancamento.Calculado);
+
+        Avos = avos;
+        Divisor = CalculadoraDecimoTerceiro.Divisor;
+        SalarioReferencia = salarioReferencia;
+        IdVigenciaReferencia = null;
+
+        var ordem = 1;
+
+        foreach (var parcela in parcelas)
+        {
+            if (!rubricas.TryGetValue(parcela.Estrategia, out var rubrica))
+            {
+                continue;
+            }
+
+            var lancamento = new LancamentoFolha(
+                IdOrganizacao, Id, rubrica, OrigemLancamento.Calculado,
+                parcela.Valor, parcela.Referencia, ordem++);
+
+            lancamento.RegistrarMemoria(parcela.Passos);
 
             _lancamentos.Add(lancamento);
         }

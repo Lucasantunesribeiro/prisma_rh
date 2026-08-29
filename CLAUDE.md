@@ -1419,9 +1419,20 @@ mais R$ 4.000 de férias não é tributado como R$ 8.000.
 do contribuinte na retenção e contra ele no ajuste anual.
 
 Resolver exige decidir em qual folha o imposto é retido, o que fazer quando a mensal é
-calculada **depois** da de férias, e como reprocessar. É a mesma classe de problema que a
-**Fase 4F** trará no 13º — que tem tributação exclusiva e regra própria — e a decisão vale
-a pena ser tomada uma vez, para os dois.
+calculada **depois** da de férias, e como reprocessar.
+
+> **Correção registrada em 29/08/2026, ao concluir a Fase 4F.**
+>
+> O texto original dizia que a Fase 4F traria "a mesma classe de problema" no 13º. **Não
+> traz, e a diferença é de direito.**
+>
+> O 13º tem **tributação exclusiva na fonte**, apurada em separado dos demais rendimentos
+> do mês por determinação legal. O MOS eSocial S-1.3, item 10.3.4, é explícito: *"no mês de
+> dezembro são geradas duas folhas pelo eSocial: dezembro e 13º salário (...) o contribuinte
+> deve transmiti-las de forma independente"*.
+>
+> Ou seja: **no 13º, apurar em separado é o comportamento correto**; nas férias é defeito.
+> Esta pendência alcança **férias e mensal do mesmo mês**, e nada mais.
 
 ### 6. Valor base do FGTS rescisório: sem autor e sem histórico
 

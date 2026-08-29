@@ -2,7 +2,7 @@
 
 Plataforma B2B de gestão, cálculo, conferência e auditoria de folha de pagamento brasileira.
 
-> **Estado atual: Fase 4G concluída — folha de rescisão, com holerite e encargos.**
+> **Estado atual: FASE 4 CONCLUÍDA — 4A a 4G. Os cinco tipos de folha calculam.**
 >
 > Existe login com JWT, cinco perfis, organizações isoladas entre si, o cadastro de
 > funcionários, contratos e histórico contratual por vigência, e a **primeira folha
@@ -142,7 +142,7 @@ obrigatório da tabela.
 > **Limitações declaradas:** a alíquota de **2% do contrato de aprendizagem** não é
 > suportada — o contrato não tem campo que identifique aprendizagem, e criá-lo sairia do
 > escopo da subfase. O FGTS sobre **férias** veio na Fase 4E e a **multa rescisória** na
-> 4G; o FGTS sobre o **13º** depende da Fase 4F, ainda bloqueada.
+> 4G; o FGTS sobre o **13º** veio na 4F, e incide na competência de cada parcela.
 
 **IRRF (Fase 4D)**
 
@@ -212,7 +212,8 @@ de 40% e 20%), **CLT art. 484-A** (acordo: metade) e o **Manual do FGTS Digital*
 - O **13º proporcional vira dinheiro**, em **duas** verbas: o proporcional e o que decorre
   da projeção do aviso. Separadas porque o 13º sobre o aviso indenizado tem INSS e FGTS mas
   **não tem IRRF** — numa linha só, a base do imposto sairia maior que a devida.
-- Isso **não destrava a Fase 4F**. A contradição de lá é sobre **quando** INSS e IRRF
+- Isso **não destravou a Fase 4F** na época — ela foi resolvida depois, por outro
+  caminho (ver adiante). A dúvida de lá era sobre **quando** INSS e IRRF
   incidem no 13º — no adiantamento ou só na apuração anual. Na rescisão não há duas
   parcelas: há uma verba única, paga no acerto. A pergunta que bloqueia a 4F não se coloca
   aqui.
@@ -279,6 +280,52 @@ Fontes: **CLT art. 482** (justa causa), **art. 483** (rescisão indireta), **art
 > página alguma, e o endpoint só era exercitado por teste desde a Fase 2. Agora há o
 > formulário, com o motivo e o aviso de que não há reabertura.
 
+**13º salário (Fase 4F)**
+
+Fonte: **MOS eSocial S-1.3**, consolidado até a **NO S-1.3 – 10.2026**, itens 10.3.4 e
+10.3.4.1, e a **Nota Orientativa 2018.13**. As duas dizem a mesma coisa:
+
+> "A apuração da CP e do IRRF incidentes sobre o 13º salário é feita apenas na folha de 13º
+> (anual)."
+
+> "o FGTS, ao contrário da CP e do IRRF, incide sobre a parcela do adiantamento do 13º
+> salário no mês em que for paga. (...) o FGTS incidente sobre a folha do 13º salário é
+> calculado apenas sobre a diferença entre o valor da gratificação natalina e a primeira
+> parcela."
+
+São **duas folhas**, e não uma com duas etapas:
+
+| | 1ª parcela (fev–nov) | Folha anual (dezembro) |
+|---|---|---|
+| INSS | não | **sim, sobre o total** |
+| IRRF | não | **sim, sobre o total** |
+| FGTS | **sim, sobre o adiantamento** | sim, **só sobre a diferença** |
+
+Daí o problema mais interessante da fase: **três bases diferentes num holerite só**.
+Incidência é atributo da rubrica, e uma rubrica tem uma declaração. A folha anual resolve
+com três rubricas — o **total** (provento, INSS e IRRF), o **adiantamento compensado**
+(desconto, sem incidência) e a **diferença** (informativa, só FGTS). Rubrica informativa
+compõe base sem entrar no líquido: é exatamente para isso que o tipo existe, e a peça já
+estava pronta desde a Fase 4A.
+
+- **O total não declara FGTS de propósito.** Se declarasse, o Fundo incidiria sobre o 13º
+  inteiro e o adiantamento seria tributado duas vezes — e a folha fecharia certa no
+  líquido, sem nada parecer errado.
+- **O adiantamento é metade do 13º proporcional**, não metade do salário cheio. A Lei
+  4.749 diz "metade do salário do mês anterior", e ao pé da letra quem entrou em outubro
+  receberia mais do que o 13º inteiro. O MOS admite esse caso, mas ele deixa o líquido de
+  dezembro negativo — o padrão do produto é o conservador, e o caso maior continua
+  suportado sem quebrar.
+- **O adiantamento já pago é estado derivado**: a folha anual soma os lançamentos das
+  folhas de adiantamento do mesmo ano. Nada é digitado.
+
+> **A "contradição" que bloqueou esta fase por um dia não existia.** Duas páginas oficiais
+> pareciam discordar sobre descontar INSS do adiantamento. Uma falava da **1ª parcela
+> normal**; a outra, do caso excepcional de **antecipação integral antes de dezembro**, em
+> que o empregador paga o **líquido** — mas onde a *apuração* continua sendo anual. Uma
+> tratava de fluxo de caixa, a outra de apuração. A causa real do bloqueio foi um PDF
+> declarado "não extraível" que `pdftotext` lê sem dificuldade.
+
 **Avos de 13º (Fase 4F, etapa 1)**
 
 Fontes: **Lei nº 4.090/1962** (1/12 por mês de serviço; fração **≥ 15 dias** conta como mês
@@ -334,8 +381,12 @@ Fontes: **CLT art. 142** (remuneração devida na data da concessão), **CF art.
 > calculado sobre ela mesma, sem somar a folha mensal do mesmo mês. Quando as duas
 > coexistem, isso **subestima o imposto**: a tabela é progressiva, e dois rendimentos
 > separados caem em faixas mais baixas do que a soma cairia. Somar as duas exige decidir
-> em qual folha o imposto é retido e como reprocessar — a mesma classe de problema que o
-> 13º da Fase 4F traz. **Resolver antes de qualquer uso real.**
+> em qual folha o imposto é retido e como reprocessar. **Resolver antes de qualquer uso
+> real.**
+>
+> Isso **não alcança o 13º**, ao contrário do que este texto dizia antes: o 13º tem
+> **tributação exclusiva na fonte** e é apurado em separado por determinação legal — ali,
+> separar é o certo.
 
 > **Outras limitações:** a **dobra do art. 137** não é calculada — o período vencido é
 > identificado e a tela avisa, mas o pagamento em dobro não é aplicado, porque falta
@@ -409,11 +460,11 @@ subsequentes) e **art. 137** (fora do prazo, remuneração **em dobro**).
 
 ## O que ainda NÃO existe
 
-O **pagamento** do 13º, o **cálculo da rescisão**, afastamentos, importações, motor de
-análises, integrações, recursos AWS e CI/CD. Tudo isso pertence às fases seguintes.
+Afastamentos, importações, motor de análises, integrações, recursos AWS e CI/CD. Tudo isso
+pertence às fases seguintes.
 
-Da rescisão existe a **simulação**, não a folha: o cálculo definitivo, com rubricas e
-incidências, é a etapa 3 — e as incidências dependem da mesma fonte que a Fase 4F espera.
+Os **cinco tipos de folha** calculam: mensal, férias, rescisão, adiantamento de 13º e a
+folha anual de 13º.
 
 A **folha mensal** e a **de férias** estão completas. Do 13º existe o direito (os avos),
 não o pagamento.

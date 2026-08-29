@@ -310,7 +310,7 @@ public class FolhaDeRescisaoTestes(BancoPostgresFixture banco) : IDisposable
         // nao integram nenhuma. Copiar a incidencia de uma para a outra
         // descontaria INSS sobre verba que a lei nao alcanca.
         Assert.Equal("Nenhuma", rubricas!.Single(r => r.Codigo == "FERVEN" && r.Ativa).BasesIncidentes);
-        Assert.Equal("Nenhuma", rubricas.Single(r => r.Codigo == "FERPROP" && r.Ativa).BasesIncidentes);
+        Assert.Equal("Nenhuma", rubricas!.Single(r => r.Codigo == "FERPROP" && r.Ativa).BasesIncidentes);
     }
 
     [Fact]
@@ -322,7 +322,7 @@ public class FolhaDeRescisaoTestes(BancoPostgresFixture banco) : IDisposable
         var rubricas = await admin.GetFromJsonAsync<List<RubricaItem>>("/api/rubricas");
 
         var proporcional = rubricas!.Single(r => r.Codigo == "DEC13PROP" && r.Ativa);
-        var sobreAviso = rubricas.Single(r => r.Codigo == "DEC13AV" && r.Ativa);
+        var sobreAviso = rubricas!.Single(r => r.Codigo == "DEC13AV" && r.Ativa);
 
         // A razao de serem duas rubricas: o 13o proporcional integra IRRF, o
         // 13o sobre o aviso nao. Uma rubrica so obrigaria a errar uma das duas.

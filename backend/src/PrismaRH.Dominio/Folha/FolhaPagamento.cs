@@ -1,5 +1,6 @@
 ﻿using PrismaRH.Dominio.Contratos;
 
+using PrismaRH.Dominio.DecimoTerceiro;
 using PrismaRH.Dominio.Ferias;
 using PrismaRH.Dominio.Rescisao;
 using PrismaRH.Dominio.Parametros;
@@ -245,6 +246,120 @@ public sealed class FolhaPagamento
             dependentesPorFuncionario.TryGetValue(contrato.IdFuncionario, out var dependentes);
 
             holerite.AplicarCalculoFerias(apuracoes, encargos, dependentes);
+        }
+
+        VersaoCalculo++;
+        CalculadaEm = agora;
+        Situacao = SituacaoFolha.Calculada;
+
+        RecalcularTotais();
+    }
+
+    /// <summary>
+    /// Calcula a folha do 13o SALARIO - o adiantamento ou a anual.
+    ///
+    /// UM metodo para os dois tipos, porque o que muda entre eles e a conta,
+    /// nao a mecanica: quem entra na folha, como o holerite e montado e como os
+    /// encargos rodam sao identicos. Dois metodos seriam duas copias da mesma
+    /// varredura de contratos.
+    ///
+    /// ## Quem entra
+    ///
+    /// Todo contrato da empresa com pelo menos UM avo no ano. Nao e a
+    /// elegibilidade da folha mensal: quem foi admitido em marco e saiu em
+    /// setembro nao aparece na mensal de dezembro, mas tem 13o a receber.
+    ///
+    /// ## O ano, e nao a competencia
+    ///
+    /// Os avos sao do ANO CALENDARIO. A competencia da folha diz apenas quando
+    /// se paga - novembro para o adiantamento, dezembro para a anual. Por isso
+    /// o ano vem de Competencia.Ano e a apuracao dos avos nao usa o mes.
+    ///
+    /// ## Salario de referencia
+    ///
+    /// Lei 4.090/1962, art. 1o: 1/12 da remuneracao DEVIDA EM DEZEMBRO. Por
+    /// isso a vigencia e procurada pela data de pagamento desta folha - que na
+    /// anual e dezembro. Reajuste em dezembro alcanca o 13o inteiro, inclusive
+    /// os avos de janeiro.
+    /// </summary>
+    /// <param name="adiantamentosPorContrato">
+    /// Quanto de adiantamento cada contrato ja recebeu no ano. Vem das folhas
+    /// de adiantamento ja calculadas - estado DERIVADO, nao um campo digitado.
+    /// Vazio na folha de adiantamento.
+    /// </param>
+    public void Calcular13(
+        IEnumerable<ContratoTrabalho> contratosDaEmpresa,
+        IReadOnlyDictionary<EstrategiaRubrica, Rubrica> rubricasDe13,
+        IReadOnlyDictionary<Guid, decimal> adiantamentosPorContrato,
+        ParametrosEncargos encargos,
+        IReadOnlyDictionary<Guid, int> dependentesPorFuncionario,
+        DateTimeOffset agora)
+    {
+        ArgumentNullException.ThrowIfNull(contratosDaEmpresa);
+        ArgumentNullException.ThrowIfNull(rubricasDe13);
+        ArgumentNullException.ThrowIfNull(adiantamentosPorContrato);
+        ArgumentNullException.ThrowIfNull(encargos);
+        ArgumentNullException.ThrowIfNull(dependentesPorFuncionario);
+
+        GarantirAberta("calcular");
+
+        var adiantamento = Tipo == TipoFolha.DecimoTerceiroAdiantamento;
+
+        if (!adiantamento && Tipo != TipoFolha.DecimoTerceiro)
+        {
+            throw new InvalidOperationException(
+                "Esta folha nao e de 13o salario: use o calculo do tipo dela.");
+        }
+
+        var contratos = contratosDaEmpresa
+            .Where(c => c.IdEmpresa == IdEmpresa)
+            .ToList();
+
+        var comDireito = new List<(ContratoTrabalho Contrato, int Avos, decimal Salario)>();
+
+        foreach (var contrato in contratos)
+        {
+            var avos = AvosDecimoTerceiro.Apurar(contrato, Competencia.Ano).Avos;
+
+            if (avos == 0)
+            {
+                continue;
+            }
+
+            var vigencia = contrato.VigenciaEm(Competencia.UltimoDia) ?? contrato.VigenciaAtual;
+
+            comDireito.Add((contrato, avos, vigencia?.Salario ?? 0m));
+        }
+
+        var elegiveis = comDireito.Select(x => x.Contrato.Id).ToHashSet();
+
+        // Quem perdeu o direito sai da folha no recalculo - mesmo motivo da
+        // mensal: manter o holerite produziria pagamento indevido.
+        _funcionarios.RemoveAll(f => !elegiveis.Contains(f.IdContrato));
+
+        foreach (var (contrato, avos, salario) in comDireito)
+        {
+            var holerite = _funcionarios.SingleOrDefault(f => f.IdContrato == contrato.Id);
+
+            if (holerite is null)
+            {
+                holerite = new FolhaFuncionario(
+                    IdOrganizacao, Id, contrato.Id, contrato.IdFuncionario);
+
+                _funcionarios.Add(holerite);
+            }
+
+            adiantamentosPorContrato.TryGetValue(contrato.Id, out var jaPago);
+
+            var parcelas = adiantamento
+                ? CalculadoraDecimoTerceiro
+                    .ApurarAdiantamento(Competencia.Ano, avos, salario).Parcelas
+                : CalculadoraDecimoTerceiro
+                    .ApurarAnual(Competencia.Ano, avos, salario, jaPago).Parcelas;
+
+            dependentesPorFuncionario.TryGetValue(contrato.IdFuncionario, out var dependentes);
+
+            holerite.AplicarCalculo13(parcelas, rubricasDe13, avos, salario, encargos, dependentes);
         }
 
         VersaoCalculo++;

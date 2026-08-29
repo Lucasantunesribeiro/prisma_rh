@@ -1,5 +1,6 @@
 import { render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
+import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import Folhas from './Folhas'
 import type { UsuarioAutenticado } from '@/api/autenticacao'
@@ -133,6 +134,34 @@ describe('Folhas', () => {
 
     expect(await screen.findAllByText('08/2026')).toHaveLength(2)
     expect(screen.getByRole('button', { name: /abrir folha/i })).toBeInTheDocument()
+  })
+
+  it('o seletor traz os CINCO tipos de folha, com a explicação de cada um', async () => {
+    const usuario = userEvent.setup()
+    renderizar('AnalistaRh')
+
+    await usuario.click(await screen.findByRole('button', { name: /abrir folha/i }))
+
+    const seletor = await screen.findByLabelText('Tipo')
+
+    // Cinco tipos ao fim da Fase 4: mensal, férias, rescisão e as DUAS folhas
+    // de 13º. Elas são dois tipos, e não um com campo "parcela", porque o
+    // índice único é (empresa, competência, tipo).
+    expect(within(seletor).getByRole('option', { name: 'Mensal' })).toBeInTheDocument()
+    expect(within(seletor).getByRole('option', { name: 'Férias' })).toBeInTheDocument()
+    expect(within(seletor).getByRole('option', { name: 'Rescisão' })).toBeInTheDocument()
+    expect(
+      within(seletor).getByRole('option', { name: '13º — adiantamento' }),
+    ).toBeInTheDocument()
+    expect(within(seletor).getByRole('option', { name: '13º — anual' })).toBeInTheDocument()
+
+    // A explicação muda com o tipo, e ela é o que impede confundir as duas
+    // folhas de 13º - que é o erro caro desta fase.
+    await usuario.selectOptions(seletor, 'DecimoTerceiroAdiantamento')
+    expect(screen.getByText(/Incide FGTS e só ele/)).toBeInTheDocument()
+
+    await usuario.selectOptions(seletor, 'DecimoTerceiro')
+    expect(screen.getByText(/Apura INSS e IRRF sobre o total/)).toBeInTheDocument()
   })
 
   it('visualizador não abre folha', async () => {

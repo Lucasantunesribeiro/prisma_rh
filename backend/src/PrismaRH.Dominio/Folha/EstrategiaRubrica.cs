@@ -100,4 +100,43 @@ public enum EstrategiaRubrica
     /// silenciosamente do acerto.
     /// </summary>
     VerbaRescisoria = 10,
+
+    /// <summary>
+    /// O sistema calcula: o adiantamento do 13o (Fase 4F).
+    ///
+    /// Natureza eSocial **5504 - 13o salario adiantamento**, com incidencia
+    /// APENAS de FGTS.
+    /// </summary>
+    DecimoTerceiroAdiantamento = 11,
+
+    /// <summary>
+    /// O sistema calcula: o 13o INTEGRAL, na folha anual (Fase 4F).
+    ///
+    /// Natureza eSocial **5001**. Declara INSS e IRRF - e **nao** FGTS, porque
+    /// o FGTS da folha anual incide so sobre a diferenca, que viaja na
+    /// informativa <see cref="DecimoTerceiroBaseFgts"/>.
+    /// </summary>
+    DecimoTerceiroTotal = 12,
+
+    /// <summary>
+    /// O sistema calcula: o adiantamento ja pago, descontado na folha anual.
+    ///
+    /// Desconto, e portanto **sem incidencia alguma** - a invariante da Fase 4A
+    /// recusa desconto que componha base, e esta certa: desconto nao reduz a
+    /// base de INSS nem a de IRRF.
+    /// </summary>
+    DecimoTerceiroAdiantamentoDescontado = 13,
+
+    /// <summary>
+    /// O sistema calcula: a base de FGTS que ainda nao foi tributada.
+    ///
+    /// **Informativa**, e e a unica forma correta de resolver o problema das
+    /// tres bases num holerite so. MOS S-1.3, item 10.3.4: "o FGTS incidente
+    /// sobre a folha do 13o salario e calculado apenas sobre a diferenca entre
+    /// o valor da gratificacao natalina e a primeira parcela".
+    ///
+    /// Informativa nao entra no liquido mas COMPOE base (Fase 4A) - entao ela
+    /// carrega a diferenca para o FGTS sem pagar nada duas vezes.
+    /// </summary>
+    DecimoTerceiroBaseFgts = 14,
 }
