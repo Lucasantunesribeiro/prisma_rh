@@ -23,6 +23,24 @@ Antes de qualquer tarefa:
 9. Ao concluir uma fase, parar.
 10. A próxima fase só começa quando o responsável pelo projeto autorizar explicitamente.
 
+## Uma autorização de fase vale para a fase inteira
+
+> **Decisão do responsável, registrada em 30/08/2026.** Antes, cada etapa de uma fase era
+> apresentada e aprovada separadamente.
+
+Autorizar uma fase é autorizar **concluí-la**. O agente planeja as etapas, implementa,
+testa, corrige, executa os Security Gates, atualiza a documentação, faz os commits locais
+e apresenta **um** relatório final — sem parar entre etapas para pedir aprovação.
+
+O que continua interrompendo o trabalho está na tabela do `CLAUDE.md §0.1`: conflito real
+entre fontes oficiais sobre a mesma regra legal, mudança de arquitetura ou stack, ação
+destrutiva irreversível, segredo que o agente não tem, infraestrutura paga, deploy,
+`git push`, custo AWS relevante e requisito de negócio impossível de determinar com
+segurança.
+
+**O item 9 não mudou.** Ao concluir a fase, parar. A fase seguinte continua exigindo
+autorização explícita.
+
 ## Regra principal
 
 Conhecer o destino do projeto **não autoriza antecipá-lo**.
@@ -2572,9 +2590,8 @@ Antes de implementar qualquer regra legal:
 
 # FASE 5 — IMPORTAÇÃO CSV/XLSX
 
-> **Status: etapas 1 a 3 concluídas em 30/08/2026 — leitura de CSV, persistência e
-> as rotas de upload, preview e confirmação.** Etapas 4 (XLSX) e 5 (frontend) não
-> iniciadas.
+> **Status: CONCLUÍDA em 30/08/2026.** Cinco etapas: leitura de CSV · persistência ·
+> upload, preview e confirmação · XLSX com ClosedXML · tela de importação.
 
 ## Objetivo
 
@@ -2913,6 +2930,18 @@ A rota recusa antes, no pipeline. A extensão `.csv` é conferida por conveniên
 `.exe` evita ler 5 MB de um arquivo sem chance —, mas **quem valida é o conteúdo**, no
 `LeitorCsv`.
 
+> ⚠️ **Correção registrada em 30/08/2026, na etapa 4.** O texto acima descrevia a intenção,
+> não o que estava no ar: a constante `TamanhoMaximoRequisicao` existia, mas **não estava
+> aplicada a rota nenhuma**. Na prática valia o padrão do Kestrel, e o arquivo grande só
+> era recusado **depois** de o corpo inteiro ter sido recebido — exatamente o que o segundo
+> teto existia para evitar.
+>
+> O teto agora é metadado das duas rotas de envio, e um arquivo de 7 MB leva **413**,
+> verificado ao vivo. A lição fica registrada: **um Security Gate afirma o que está
+> implementado, e não o que se pretendia implementar.** Constante declarada não é controle
+> aplicado, e a diferença entre as duas coisas não aparece em revisão de código — só num
+> teste que exercite o caminho.
+
 ##### 9. `Path.GetFileName` no nome recebido
 
 Nada é salvo em disco, então o nome nunca vira caminho. Mas guardar `../../etc/passwd` no
@@ -2961,7 +2990,7 @@ não quatro nem três.
 | # | Ponto | Resposta |
 |---|---|---|
 | 1 | Ameaças introduzidas | **A primeira superfície externa que recebe arquivo** — a entrada menos confiável que existe. Ameaças: cliente afirmando que um arquivo inválido é válido; troca do arquivo entre preview e confirmação; `IdOrganizacao` forjado no corpo; importação parcial deixando o cadastro pela metade; duplicata silenciosa; CPF vazando em resposta, mensagem de erro ou log; exaustão por arquivo grande. |
-| 2 | Controles | **Nada do preview é aproveitado na confirmação** — o arquivo é relido e revalidado do zero. `IdOrganizacao` e `IdUsuario` vêm do `IContextoUsuario`, nunca do corpo; o `ImportadorFuncionarios` **não conhece organização**, então não há onde confiar no cliente por engano. Transação única cobrindo importação, linhas, funcionários e vínculo de origem. Duplicata detectada na validação, dentro e fora do arquivo. CPF mascarado na resposta e ausente das mensagens de erro. Dois tetos de tamanho. `Path.GetFileName` no nome. |
+| 2 | Controles | **Nada do preview é aproveitado na confirmação** — o arquivo é relido e revalidado do zero. `IdOrganizacao` e `IdUsuario` vêm do `IContextoUsuario`, nunca do corpo; o `ImportadorFuncionarios` **não conhece organização**, então não há onde confiar no cliente por engano. Transação única cobrindo importação, linhas, funcionários e vínculo de origem. Duplicata detectada na validação, dentro e fora do arquivo. CPF mascarado na resposta e ausente das mensagens de erro. Dois tetos de tamanho — ⚠️ o do corpo da requisição só passou a valer de fato na **etapa 4**, ver a correção na decisão 8. `Path.GetFileName` no nome. |
 | 3 | Testes de segurança | Vinte e um, contra PostgreSQL real — a tabela acima lista os nove pedidos. Vale destacar o de campos forjados (`importavel=true` + hash inventado → `Recusada`) e o de concorrência, que é o único que exercita o rollback. |
 | 4 | Impacto multiempresa | Nenhuma tabela nova — as da etapa 2 já têm filtro global e teste. Aqui o ponto é a **consulta de CPFs existentes**, que passa pelo filtro: sem isso, um CPF do vizinho recusaria a linha e o erro revelaria que aquele documento existe em outro tenant. Importação da vizinha devolve **404**. |
 | 5 | Exposição de dados | CPF **mascarado** em toda resposta e **ausente** das mensagens de erro. O relatório persistido continua sem valor algum (etapa 2). Nada vai para log. |
@@ -2970,7 +2999,7 @@ não quatro nem três.
 | 8 | Dependências | **Nenhuma nova.** CSV continua sendo implementação própria; ClosedXML entra na etapa 4. |
 | 9 | Secrets | **Não se aplica.** |
 | 10 | Superfície pública | Quatro rotas novas, **todas autenticadas e com política declarada**. Nenhuma anônima. As duas de escrita são `POST` com `DisableAntiforgery` — coerente com a análise de CSRF do `CLAUDE.md §24.10`: o access token vai em header `Authorization`, que o navegador **não** envia sozinho. |
-| 11 | Risco de custo/abuso | Tetos da etapa 1 aplicados na rota, mais o teto do corpo da requisição. Listagem **paginada com teto de 100**. Processamento local e síncrono, como o roadmap aprovou — **nada de S3, SQS ou Lambda**. |
+| 11 | Risco de custo/abuso | Tetos da etapa 1 aplicados na rota, mais o teto do corpo da requisição — ⚠️ este último só ligado na etapa 4. Listagem **paginada com teto de 100**. Processamento local e síncrono, como o roadmap aprovou — **nada de S3, SQS ou Lambda**. |
 
 #### Definition of Done de segurança (`CLAUDE.md §40.1`)
 
@@ -3054,6 +3083,295 @@ não conhece organização; todos entram na etapa 2 · nenhum controle enfraquec
 é deliberado e barato — e simplifica a detecção de codificação, que precisa olhar os
 primeiros bytes. **Se o teto subir**, a leitura precisa virar *streaming*. Anotado para a
 **Fase 9**, que é quando volume maior passa a fazer sentido.
+
+---
+
+### Etapa 4 — XLSX com ClosedXML (concluída)
+
+#### A decisão que organiza a etapa inteira: **um pipeline, dois formatos**
+
+```text
+LeitorCsv  ─┐
+            ├─> ResultadoLeitura ─> ImportadorFuncionarios ─> transação ─> banco
+LeitorXlsx ─┘
+```
+
+O formato escolhe o **leitor**, e nada mais. Mapeamento, validação de CPF, detecção de
+duplicata, transação, isolamento e rastreabilidade são **literalmente o mesmo código**.
+
+A alternativa — um caminho de importação por formato — dobraria a chance de os dois
+divergirem, e a divergência apareceria como "o CSV importa e a mesma planilha não".
+
+#### Por que a ClosedXML mora em `PrismaRH.Infraestrutura`, e o `LeitorCsv` no domínio
+
+`LeitorCsv` não depende de nada. `LeitorXlsx` depende de um pacote de terceiro para ler um
+formato de arquivo, e o `CLAUDE.md §18` é explícito: o domínio não depende de detalhe de
+infraestrutura. Os dois produzem o mesmo `ResultadoLeitura`, que é do domínio — e é esse
+tipo que mantém o pipeline único.
+
+Consequência prática registrada: `FluxoComTeto` saiu de dentro do `LeitorCsv` para o
+domínio, porque os dois leitores precisam do **mesmo** teto de bytes. Duplicar um controle
+de segurança é duplicar a chance de um dos lados afrouxar sem ninguém notar.
+
+#### `GuardaXlsx` — a conferência que roda **antes** da biblioteca
+
+Um `.xlsx` é um ZIP de XML. O tamanho do arquivo **não diz nada** sobre quanta memória ele
+consome: 100 KB de zeros comprimidos viram 100 MB. O teto de 5 MB do upload protege a rede
+e o disco; não protege a memória, e é a memória que um *zip bomb* ataca.
+
+| Controle | O que faz |
+|---|---|
+| Assinatura de ZIP | Recusa CSV renomeado sem gastar nada |
+| `[Content_Types].xml` + `xl/workbook.xml` | Recusa ZIP qualquer — `.docx`, `.jar`, `.zip` — que passou na assinatura |
+| `vbaProject.bin` | **Macro é recusada**, não ignorada: um arquivo com macro chegou aqui por algum motivo, e aceitá-lo o deixaria seguir para a máquina da próxima pessoa |
+| Teto de 500 entradas | Milhares de partes minúsculas são a outra forma de bomba: cada uma cabe no teto de tamanho, e o custo está na quantidade |
+| Nome com `..`, barra inicial ou letra de unidade | Nada é extraído para disco, mas um nome assim não aparece por acaso |
+| **80 MB descomprimidos, medidos descomprimindo** | ⚠️ **Não usa o tamanho declarado.** Aquele número vem da *central directory*, escrita por quem montou o arquivo — conferi-lo seria perguntar ao suspeito se ele é culpado. Os bytes vão para `Stream.Null`: o custo é só o do algoritmo, e nada fica na memória |
+
+Entregar o arquivo direto para a biblioteca seria confiar que ela se defende. Ela até se
+defende de várias coisas, mas o `CLAUDE.md §24.25` é claro: dependência é superfície de
+ataque, não substituta de controle próprio. **Há teste com bomba de verdade** — 100 KB no
+disco declarando 100 MB —, e ele roda contra a rota HTTP também.
+
+#### Fórmula: recusada, e não avaliada nem aproveitada
+
+O requisito era "não avaliar fórmula". A implementação vai além: **a célula com fórmula é
+recusada**, sem que o valor seja sequer lido.
+
+A razão é de **correção**, não de segurança. A alternativa seria ler o valor em cache que o
+Excel gravou junto da fórmula — e esse valor pode estar **velho**, bastando a planilha ter
+sido salva por um programa que não recalcula. Importar um número velho sem que ninguém
+consiga perceber é pior que recusar o arquivo, porque folha de pagamento não tem como
+conferir depois.
+
+Não pedir o valor também fecha a porta pela qual a avaliação aconteceria: a biblioteca só
+calcula se alguém pedir. `RecalculateAllFormulas = false` está escrito explicitamente,
+mesmo sendo o padrão, para que mudar essa postura apareça no diff.
+
+#### O conteúdo decide o formato, e não a extensão
+
+`.xlsx` começa com a assinatura de ZIP; CSV nunca começa. Se a extensão e o conteúdo
+discordam, o arquivo é **recusado em vez de adivinhado** — adivinhar erraria justamente no
+caso interessante, que é o de alguém tentando fazer um arquivo passar por outro.
+
+#### Decisões menores, e o motivo de cada uma
+
+| Decisão | Por quê |
+|---|---|
+| Só a **primeira aba visível** | Ler todas juntaria dados de abas diferentes sem ninguém pedir; ler a aba oculta importaria o que a pessoa escondeu de propósito — o rascunho, a cópia velha |
+| Data do Excel vira **ISO** | Faz a data da planilha atravessar a **mesma** validação da data digitada no CSV, e não uma segunda parecida |
+| Número em formato invariante, sem notação científica | Sem isso, um CPF digitado como número viraria `1.1144477735E+10`, e o erro ("CPF inválido") não teria relação com a causa |
+| Célula de erro (`#N/A`, `#DIV/0!`) vira **erro de linha** | Não é valor: é a planilha dizendo que não tem o valor. Aceitar o texto gravaria "#N/A" no nome de alguém |
+| Linha vazia é ignorada; linha **com problema** não | Basta alguém ter pintado a borda até a linha 200 para haver linhas "usadas" e vazias |
+| Campo longo demais vira `[TRUNCADO]` | Mesmo comportamento do CSV: truncar em silêncio gravaria meio nome como se fosse o nome inteiro |
+
+#### Mapeamento de colunas
+
+Até a etapa 3 os nomes eram fixos, o que obrigava a renomear a planilha que a empresa já
+tem — e ela costuma dizer "Nome Completo" e "Documento".
+
+O mapeamento **vem do cliente**, e por isso não é crido: é conferido contra o cabeçalho do
+arquivo **relido** na confirmação. É vocabulário fechado no sentido do `CLAUDE.md §24.7` —
+o cliente escolhe **dentro** do conjunto que o servidor acabou de ler do arquivo, e não
+digita um seletor livre. Não há caminho daqui para consulta, para SQL, nem para nada além
+de um índice de coluna.
+
+Duas colunas apontando para o mesmo lugar também são recusadas: sem isso, o CPF entraria
+como nome e o arquivo pareceria válido, porque cada campo isolado está preenchido.
+
+O nome de coluna é **cortado** em 200 caracteres na entrada, e não validado depois. A
+diferença importa, e um teste provou: a versão que só validava deixava um nome de 5 mil
+caracteres voltar intacto no campo `mapeamento` da resposta. Cortando na entrada, nenhum
+nome longo demais chega a existir dentro do processo, e não há um segundo lugar — resposta,
+log, relatório — onde alguém precise lembrar de conferir.
+
+#### Modelos de arquivo
+
+`GET /api/importacoes/funcionarios/modelo?formato=csv|xlsx`. O `ROADMAP.md` já pedia
+**modelos de arquivo**, e a razão é prática: sem um modelo, a primeira importação de
+qualquer pessoa falha por nome de coluna, e o relatório de erro acaba fazendo o papel de
+manual.
+
+É o **primeiro uso real da `ProtecaoCsv`**, que existe desde a etapa 1 e até agora não tinha
+chamador: a defesa contra *CSV injection* é de **escrita**, e até aqui o sistema só lia.
+
+No XLSX as três colunas são marcadas como **texto**. Não é estética: um CPF que comece com
+zero, numa célula de formato geral, é guardado como número — e o zero da frente some sem
+que nada avise.
+
+Há teste de que **o modelo que o sistema entrega passa no importador do sistema**. Se não
+passasse, ele não seria modelo: seria a primeira frustração de quem tentou seguir a
+instrução.
+
+#### ⚠️ Três defeitos encontrados durante a etapa 4
+
+##### 1. `Importacao.Registrar` violava o índice único com dois erros na mesma linha
+
+**Origem: etapa 3.** `Registrar` criava uma `LinhaImportacao` nova a cada chamada. Quando o
+mesmo número de linha aparecia duas vezes — dois problemas de cabeçalho, que são ambos da
+linha 1 — nasciam duas linhas com o mesmo `NumeroNoArquivo`, e o índice único
+`ux_linhas_importacao_numero` recusava a gravação.
+
+O efeito visível era o pior possível: a rota devolvia **409** com a mensagem de conflito de
+importação simultânea. A pessoa lia "alguém importou o mesmo arquivo ao mesmo tempo" quando
+o problema era a planilha dela.
+
+Corrigido: `Registrar` reaproveita a linha existente e acrescenta os erros, ajustando os
+contadores. Dois testes de domínio e um de integração.
+
+##### 2. O "segundo teto" do Security Gate da etapa 3 não existia
+
+**Origem: etapa 3.** `TamanhoMaximoRequisicao` estava declarada como constante e o gate
+daquela etapa falava em "dois tetos" — mas ela **não estava aplicada a rota nenhuma**. Na
+prática valia o padrão do Kestrel, e o arquivo grande só era recusado **depois** de o corpo
+inteiro ter sido recebido, que é exatamente o que o teto existia para evitar.
+
+Corrigido: metadado de limite de requisição nas duas rotas de envio. Verificado ao vivo: um
+arquivo de 7 MB agora leva **413**, e não mais 400 depois de bufferizar tudo.
+
+##### 3. Linha só com fórmulas sumia do relatório
+
+Uma célula recusada devolve texto vazio, e a checagem de "linha vazia" vinha antes da de
+problema. Uma linha cujas células eram todas fórmula era descartada em silêncio, e o
+arquivo virava "cabeçalho sem dados" — que não explica nada a quem precisa corrigir.
+Encontrado por teste, corrigido invertendo a ordem.
+
+---
+
+### Security Gate — Fase 5, etapa 4 (XLSX)
+
+| # | Ponto | Resposta |
+|---|---|---|
+| 1 | Ameaças introduzidas | **Zip bomb** — a ameaça própria do formato, contra a qual o teto de bytes do upload não protege. Macro em pacote OOXML. Pacote malformado derrubando o processo. ZIP qualquer se passando por planilha. Fórmula sendo avaliada, ou seu valor em cache velho entrando como dado. Aba oculta com dados que a pessoa escondeu. Mapeamento de coluna vindo do cliente virando entrada não validada. |
+| 2 | Controles | `GuardaXlsx` **antes** da biblioteca: assinatura, partes obrigatórias, macro recusada, teto de entradas, nome com caminho, e **tamanho real descomprimido medido descomprimindo** — nunca lendo o valor declarado pelo arquivo. Fórmula **recusada sem que o valor seja lido**; recálculo desligado explicitamente. Só a primeira aba visível. Conteúdo decide o formato; discordância com a extensão é recusa. Mapeamento conferido contra o cabeçalho do arquivo relido, com nome cortado na entrada. Toda falha vira relatório, nunca exceção. |
+| 3 | Testes de segurança | **47 novos** — 9 de guarda de ZIP, 18 de leitura, 20 pelas rotas HTTP —, mais 2 de domínio para o defeito do `Registrar`. Bomba de verdade (100 KB declarando 100 MB) na classe e pela rota HTTP; macro; ZIP truncado; ZIP sem partes de planilha; nome com `..`; entradas demais; fórmula não avaliada e não gravada; CSV renomeado e XLSX renomeado; mapeamento para coluna inexistente, duplicado e gigante; `IdOrganizacao` no corpo sem efeito; importação da vizinha em 404. Os de integração, contra PostgreSQL real. |
+| 4 | Impacto multiempresa | **Nenhuma superfície nova de tenant.** XLSX entra pelo mesmo caminho do CSV, sob o mesmo filtro global, e há teste de 404 para a vizinha e de `IdOrganizacao` forjado. |
+| 5 | Exposição de dados | O CPF continua **mascarado** na fronteira HTTP, no XLSX como no CSV. O nome de coluna escolhido é cortado antes de poder voltar na resposta. Nada de novo vai para log. |
+| 6 | Permissões | `AdministrarPessoas` nas rotas de envio **e no modelo** — o modelo só serve para importar. `LerDadosEmpresariais` na consulta. Nenhuma rota anônima. |
+| 7 | Logging e auditoria | A `Importacao` grava agora também o **formato**. O resto é o da etapa 2. |
+| 8 | Dependências | **ClosedXML 0.105.1**, MIT, versão fixada, aprovada pelo responsável. `dotnet list package --vulnerable --include-transitive`: **nenhum pacote vulnerável**, incluindo `DocumentFormat.OpenXml`, `SixLabors.Fonts` e os demais transitivos. Descartadas EPPlus (licença comercial desde a v5) e NPOI (API mais crua, sem ganho aqui). |
+| 9 | Secrets | **Não se aplica.** |
+| 10 | Superfície pública | Uma rota nova — o modelo —, autenticada e com política declarada. As duas de envio ganharam **teto de corpo de requisição**, que antes só existia no papel. |
+| 11 | Risco de custo/abuso | O teto de descompressão é o controle novo: sem ele, 100 KB de upload custariam 100 MB de memória. Processamento local e síncrono, como o roadmap aprovou. |
+
+---
+
+### Etapa 5 — A tela de importação (concluída)
+
+`/importacoes`, sob **Pessoas** na navegação.
+
+```text
+escolher arquivo -> prévia (nada gravado) -> ajustar o mapeamento -> confirmar -> resultado
+                                                                          |
+                                                              histórico + relatório linha a linha
+```
+
+#### A decisão central da tela: ela não decide nada
+
+O resumo, os erros e a marcação de cada linha vêm **inteiramente** da resposta do servidor.
+Na confirmação, **o arquivo é reenviado** — e mais nada. Não existe id de prévia, nem lista
+de linhas aprovadas, nem totais, nem o hash trafegando do navegador para o servidor.
+
+Há um teste que enumera os campos do envio de confirmação e exige exatamente `arquivo`,
+`colunaNome`, `colunaCpf`, `colunaDataNascimento` — afirmando explicitamente a ausência de
+`importavel`, `validas`, `linhas`, `hashSha256` e `idPreview`. É a tradução, para o
+frontend, do modelo de confiança da etapa 3.
+
+Se alguém alterar esta página no navegador, **o resultado da importação não muda**, porque
+nada do que ela calculou é aproveitado pelo backend.
+
+#### Estados
+
+`carregando · vazio · erro · prévia · confirmando · aplicada · recusada`, com `aria-live` e
+`aria-busy` nas regiões que mudam sozinhas. O erro do histórico tem "tentar novamente"; o
+vazio explica o que fazer em vez de só dizer que não há nada.
+
+#### Permissões na interface
+
+O Auditor vê o histórico e **não vê** o campo de envio nem os botões de modelo. Isso é
+conforto visual, não segurança: quem barra o Auditor é a política do backend, e há teste de
+integração provando o **403** nas duas rotas. Esconder o botão nunca foi mecanismo de
+autorização (`CLAUDE.md §24.4`).
+
+#### Duas coisas que só apareceram no navegador
+
+**O download precisa passar pelo `fetch`.** O access token vive só em memória, então um
+link direto apontando para a API sairia sem `Authorization` e voltaria 401. O modelo é
+buscado por `fetch`, vira URL temporária e é entregue ao navegador — com a URL revogada em
+seguida, senão cada download deixaria o arquivo inteiro preso na memória da aba até o F5.
+
+**O envio multipart não pode levar `Content-Type` de JSON.** O cliente HTTP escrevia
+`application/json` sempre que havia corpo; com multipart, isso apagaria a fronteira e o
+servidor receberia um corpo que não consegue separar. Corrigido no `cliente.ts`, com teste.
+
+#### Uma aspereza corrigida depois de ver a tela
+
+O botão dizia **"Importar 0 funcionários"** quando o arquivo era recusado. Está
+desabilitado de qualquer forma, mas o texto de um botão desabilitado ainda é a explicação
+do que falta — e "0 funcionários" soa como uma ação que alguém poderia querer executar.
+Agora lê "Importar", e concorda em número quando há o que importar.
+
+---
+
+### Security Gate — Fase 5, etapa 5 (tela)
+
+| # | Ponto | Resposta |
+|---|---|---|
+| 1 | Ameaças introduzidas | **Stored XSS** — a tela exibe nome de arquivo, nome de coluna e mensagens de erro, todos vindos de arquivo de usuário. Cliente afirmando ao backend o que é válido. Token vazando por link de download. CPF aparecendo inteiro na tela. |
+| 2 | Controles | O React **escapa por padrão**, e não há `dangerouslySetInnerHTML` nesta tela — nem em nenhuma outra. Nada do que a tela calcula é enviado como verdade: a confirmação manda o arquivo e o mapeamento, e um teste enumera os campos. O download passa pelo `fetch` autenticado, com a URL temporária revogada. O CPF chega **já mascarado** da API — o número inteiro não existe no JSON. |
+| 3 | Testes de segurança | 22 no frontend: o teste que enumera os campos do envio; o que prova que o `Content-Type` não é forçado; o que prova que o token viaja; o que prova a revogação da URL; o que prova que o Auditor não vê o envio. |
+| 4 | Impacto multiempresa | **Não se aplica na tela** — ela não escolhe organização, e não há como escolher: o `IdOrganizacao` sai do usuário autenticado no backend. Comprovado por teste de integração. |
+| 5 | Exposição de dados | O CPF é exibido mascarado porque **chega mascarado**. A tela não tem o número inteiro para vazar. O SHA-256 é mostrado com a explicação de que o conteúdo não é guardado. |
+| 6 | Permissões | `podeAdministrarPessoas` esconde o envio e os modelos; o histórico é visível a quem lê dado empresarial. Adaptação de interface, **não** autorização. |
+| 7 | Logging e auditoria | **Não se aplica** — a tela não registra nada. A trilha é a `Importacao`. |
+| 8 | Dependências | **Nenhuma nova no frontend.** |
+| 9 | Secrets | **Não se aplica.** |
+| 10 | Superfície pública | Uma rota de navegação nova, dentro do `RotaProtegida`. |
+| 11 | Risco de custo/abuso | Trocar o mapeamento dispara uma prévia nova, e cada prévia é uma requisição com o arquivo. É intencional — a prévia precisa refletir a escolha —, e o teto de tamanho vale igual. Entra na conta do *rate limiting* da Fase 10. |
+
+---
+
+## Verificação final da Fase 5
+
+| O quê | Resultado |
+|---|---|
+| Build backend | `0 Aviso(s)` / `0 Erro(s)` |
+| Suíte backend | **790 testes, 0 falhas** — 50 a mais que ao fim da etapa 3 — integração contra PostgreSQL real via Testcontainers |
+| Suíte de importação, repetida 3× | estável (há teste de concorrência) |
+| Testes frontend | **82 testes, 0 falhas** — 22 novos |
+| `tsc --noEmit` | limpo |
+| `oxlint` | limpo |
+| Build frontend | ok |
+| Migrations | **nenhuma nova** nas etapas 4 e 5 |
+| Pacotes vulneráveis | nenhum, incluindo transitivos |
+| Verificação ao vivo | API e frontend de pé, fluxo completo exercitado no navegador |
+
+### O que foi exercitado ao vivo, com a API e o banco de verdade
+
+Modelo XLSX baixado e reimportado · confirmação gravando dois funcionários · reenvio do
+mesmo arquivo virando `Recusada` com erro legível · CSV renomeado para `.xlsx` e o inverso,
+ambos **400** · mapeamento para coluna inexistente **recusado** · bomba de descompressão
+(100 KB declarando 100 MB) recusada com **200 e relatório**, sem derrubar o servidor ·
+arquivo de 7 MB devolvendo **413** · Auditor levando **403** na prévia e no modelo, e
+**200** no histórico · organização vizinha levando **404** no id da importação.
+
+No navegador: prévia, seleção de colunas de um arquivo com cabeçalho próprio, confirmação,
+painel de sucesso, histórico atualizado, relatório linha a linha com o SHA-256, e os dois
+funcionários aparecendo na tela de Funcionários. **Console sem erros.**
+
+### Pendências registradas
+
+1. **Não há rate limiting** nestas rotas, como em nenhuma outra — `CLAUDE.md §24.19 item 1`,
+   Fase 10. Importação é rota cara: lê arquivo, descomprime e escreve em massa. Candidata a
+   limite próprio, mais apertado que o das rotas de leitura.
+2. **O arquivo é lido inteiro em memória** — uma vez para o hash, outra para o parser, e o
+   XLSX ainda é descomprimido uma vez a mais para medição. Com teto de 5 MB é irrelevante;
+   se o teto subir, vira *streaming* com hash incremental. Fase 9.
+3. **`id_linha_importacao` existe só em `funcionarios`.** Quando a importação alcançar
+   contratos e lançamentos, cada tabela precisa da própria coluna de origem.
+4. **O histórico não tem paginação na tela.** A API pagina com teto de 100; a tela pede a
+   primeira página e não oferece navegação. Sem impacto hoje; entra junto com a paginação
+   geral da Fase 10.
 
 ---
 

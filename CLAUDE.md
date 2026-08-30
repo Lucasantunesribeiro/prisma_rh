@@ -25,6 +25,71 @@ Antes de iniciar **qualquer** tarefa neste repositório:
    - quais testes foram executados;
    - se existe algum risco ou pendência.
 
+## 0.1 MODO DE EXECUÇÃO — UMA AUTORIZAÇÃO DE FASE VALE PARA A FASE INTEIRA
+
+> **Decisão do responsável, registrada em 30/08/2026.** Substitui o modo anterior, em que
+> cada etapa de uma fase era apresentada e aprovada separadamente.
+
+Quando o responsável autoriza uma fase, ele está autorizando **executá-la até o fim**. O
+agente planeja as etapas, implementa, testa, corrige e conclui — e só então apresenta **um
+relatório final**.
+
+### O que o agente faz sozinho, dentro da fase autorizada
+
+Planejar as etapas · implementar · pesquisar documentação quando precisar · tomar decisões
+técnicas normais · criar migrations · escrever e executar testes · corrigir testes que
+falham · rodar integração contra PostgreSQL real · executar os Security Gates · lint ·
+builds · revisar migrations · revisar o `git diff` · procurar regressões · atualizar a
+documentação · fazer commits locais coerentes.
+
+### O que o agente NÃO interrompe para perguntar
+
+Escolha interna de implementação · organização de classes · testes adicionais · refactor
+pequeno que a tarefa exige · **defeito encontrado durante a fase** · biblioteca já
+aprovada · qualquer decisão reversível que respeite este documento e o `ROADMAP.md`.
+
+Nesses casos: investigar, decidir, implementar, testar e seguir.
+
+### O que ainda interrompe
+
+| Situação | Por quê |
+|---|---|
+| **Conflito real entre fontes oficiais** sobre a mesma regra legal ou fiscal | Escolher uma por interpretação própria seria inventar direito. Mostrar as duas fontes é obrigatório (`§29`). |
+| **Mudar arquitetura ou stack aprovada** | `§35`. |
+| **Ação destrutiva irreversível** | `§32`. |
+| **Segredo ou credencial que o agente não possui** | `§33`. |
+| **Criar infraestrutura paga** | `§16`. |
+| **Deploy** | `§31`. |
+| **`git push`** | `§30`. |
+| **Custo AWS relevante** | `§16`. |
+| **Requisito de negócio impossível de determinar com segurança** | Adivinhar regra de folha é pior que perguntar. |
+
+Fora dessa lista, não interromper.
+
+### Testes fazem parte da implementação
+
+Não é aceitável entregar a fase e só então descobrir que falta testar. Dentro da própria
+fase: **implementar → testar → achar defeito → corrigir → testar de novo → seguir**.
+
+### Verificação obrigatória no fim de toda fase
+
+Suíte backend completa · testes frontend completos · testes repetidos quando houver
+concorrência ou intermitência · lint · build backend · build frontend · integração contra
+PostgreSQL real quando aplicável · verificação de migrations · Security Gate final ·
+revisão do diff · varredura de segredos · `git status` limpo.
+
+Uma fase só está concluída quando **todos** os critérios dela estiverem atendidos.
+
+### Ao terminar
+
+Commits locais feitos · `ROADMAP.md`, `README.md` e `CLAUDE.md` atualizados quando
+pertinente · **um** relatório final da fase · e **parar antes da fase seguinte**.
+
+Continua proibido sem autorização explícita naquela mensagem: `git push`, deploy, recurso
+AWS, ação destrutiva e antecipar fase futura.
+
+---
+
 ### Regra de ouro
 
 **Não transformar o Prisma RH em uma demonstração de tecnologias.**

@@ -2,7 +2,7 @@
 
 Plataforma B2B de gestão, cálculo, conferência e auditoria de folha de pagamento brasileira.
 
-> **Estado atual: Fase 5, etapa 3 — upload, preview e confirmação de CSV.**
+> **Estado atual: Fase 5 concluída — importação de CSV e XLSX, com tela.**
 > Fase 4 concluída: 4A a 4G, os cinco tipos de folha calculam.
 >
 > Existe login com JWT, cinco perfis, organizações isoladas entre si, o cadastro de
@@ -359,6 +359,7 @@ Duas escolhas de dependência, e as duas são decisão registrada:
 **Upload, preview e confirmação (Fase 5, etapa 3)**
 
 ```text
+GET  /api/importacoes/funcionarios/modelo     -> baixa um exemplo pronto (CSV ou XLSX)
 POST /api/importacoes/funcionarios/preview    -> lê, valida, devolve. NADA é gravado.
 POST /api/importacoes/funcionarios/confirmar  -> RELÊ o arquivo, revalida, e só então grava.
 ```
@@ -383,6 +384,51 @@ navegador não tem efeito nenhum.
   recusaria a linha — e o erro revelaria que aquele documento existe em outro tenant.
 - **Data só em `dd/mm/aaaa` ou `aaaa-mm-dd`.** Aceitar o que a cultura da máquina entender
   faria `03/04/2026` virar março num servidor e abril noutro, sem ninguém perceber.
+
+**XLSX: um pipeline, dois formatos (Fase 5, etapa 4)**
+
+```text
+LeitorCsv  ─┐
+            ├─> ResultadoLeitura ─> ImportadorFuncionarios ─> transação ─> banco
+LeitorXlsx ─┘
+```
+
+O formato escolhe o **leitor**, e nada mais. Validação, duplicata, mapeamento, transação e
+isolamento são o mesmo código — um caminho por formato dobraria a chance de os dois
+divergirem.
+
+- **A extensão não decide nada: o conteúdo decide.** `.xlsx` começa com a assinatura de
+  ZIP; CSV nunca começa. Se as duas discordam, o arquivo é **recusado em vez de
+  adivinhado** — adivinhar erraria justamente no caso de alguém tentando fazer um arquivo
+  passar por outro.
+- **A `GuardaXlsx` roda antes da biblioteca.** Um `.xlsx` é um ZIP de XML, e o tamanho do
+  arquivo **não diz nada** sobre a memória que ele consome: 100 KB de zeros comprimidos
+  viram 100 MB. Ela mede o tamanho descomprimido **descomprimindo de verdade** — nunca
+  lendo o valor declarado pelo próprio arquivo, que é escrito por quem o montou.
+- **Macro é recusada**, não ignorada. Um arquivo com macro chegou aqui por algum motivo.
+- **Fórmula é recusada, e não avaliada nem lida do cache.** O requisito era não avaliar; a
+  recusa vai além por correção: o valor em cache pode estar **velho**, e importar um número
+  velho sem que ninguém perceba é pior que recusar o arquivo.
+- **Só a primeira aba visível.** Ler a aba oculta importaria o que a pessoa escondeu de
+  propósito.
+- **Data do Excel vira ISO**, para atravessar a **mesma** validação da data digitada no CSV.
+
+**Mapeamento de colunas**
+
+A planilha que a empresa já tem diz "Nome Completo" e "Documento". O mapeamento vem do
+navegador, e por isso é conferido contra o cabeçalho do arquivo **relido** na confirmação:
+vocabulário fechado, escolhido dentro do que o servidor acabou de ler. Nome de coluna que
+não existe naquele arquivo não vira índice — vira recusa.
+
+**A tela (Fase 5, etapa 5)**
+
+`/importacoes`. Ela **não decide nada**: o resumo, os erros e a marcação de cada linha vêm
+inteiros da resposta do servidor, e a confirmação reenvia o arquivo. Não existe id de
+prévia, lista de linhas aprovadas nem totais trafegando do navegador para o servidor — há
+teste que enumera os campos do envio e exige exatamente `arquivo` mais o mapeamento.
+
+O Auditor vê o histórico e não vê o campo de envio. Isso é conforto visual: quem barra o
+Auditor é a política do backend, e há teste de integração provando o 403.
 
 **Rastreabilidade da importação (Fase 5, etapa 2)**
 
@@ -761,7 +807,8 @@ Todos usam a senha de `PRISMARH_SEED_SENHA`.
 | `POST /api/contratos/{id}/ferias/concessoes` | Adm. Empresa, Analista | Programa férias de um período |
 | `DELETE /api/contratos/{id}/ferias/concessoes/{idC}` | Adm. Empresa, Analista | Cancela uma programação que não começou |
 | `POST /api/folhas` (campo `tipo`) | Adm. Empresa, Analista | Abre folha **Mensal**, **Ferias** ou **Rescisao** |
-| `POST /api/importacoes/funcionarios/preview` | Adm. Empresa, Analista | Lê e valida um CSV **sem gravar nada** |
+| `GET /api/importacoes/funcionarios/modelo` | Adm. Empresa, Analista | Arquivo de exemplo, `?formato=csv` ou `xlsx` |
+| `POST /api/importacoes/funcionarios/preview` | Adm. Empresa, Analista | Lê e valida CSV ou XLSX **sem gravar nada** |
 | `POST /api/importacoes/funcionarios/confirmar` | Adm. Empresa, Analista | Relê o arquivo, revalida e grava numa transação |
 | `GET /api/importacoes` | todos os 5 | Histórico da organização, paginado |
 | `GET /api/importacoes/{id}` | todos os 5 | Relatório linha a linha |

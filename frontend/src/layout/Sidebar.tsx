@@ -5,6 +5,7 @@ import {
   ClipboardList,
   Contact,
   IdCard,
+  Upload,
   LogOut,
   PanelLeftClose,
   PanelLeftOpen,
@@ -54,6 +55,7 @@ const GRUPOS: Grupo[] = [
     itens: [
       { para: '/funcionarios', texto: 'Funcionários', icone: Contact },
       { para: '/cargos', texto: 'Cargos', icone: IdCard },
+      { para: '/importacoes', texto: 'Importações', icone: Upload },
     ],
   },
   {

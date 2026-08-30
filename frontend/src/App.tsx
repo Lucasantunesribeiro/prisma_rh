@@ -7,6 +7,7 @@ import Empresas from '@/paginas/Empresas'
 import Funcionarios from '@/paginas/Funcionarios'
 import FuncionarioDetalhe from '@/paginas/FuncionarioDetalhe'
 import Cargos from '@/paginas/Cargos'
+import Importacoes from '@/paginas/Importacoes'
 import Rubricas from '@/paginas/Rubricas'
 import Folhas from '@/paginas/Folhas'
 import FolhaDetalhe from '@/paginas/FolhaDetalhe'
@@ -26,6 +27,7 @@ export default function App() {
               <Route path="/funcionarios" element={<Funcionarios />} />
               <Route path="/funcionarios/:id" element={<FuncionarioDetalhe />} />
               <Route path="/cargos" element={<Cargos />} />
+              <Route path="/importacoes" element={<Importacoes />} />
               <Route path="/rubricas" element={<Rubricas />} />
               <Route path="/folhas" element={<Folhas />} />
               <Route path="/folhas/:id" element={<FolhaDetalhe />} />

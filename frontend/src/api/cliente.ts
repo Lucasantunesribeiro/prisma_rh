@@ -44,9 +44,14 @@ export class ErroApi extends Error {
 const ROTAS_AUTENTICACAO = '/api/autenticacao'
 
 async function chamar(caminho: string, opcoes: RequestInit, jaRenovou: boolean): Promise<Response> {
+  // FormData define o proprio Content-Type, COM a fronteira do multipart.
+  // Escrever 'application/json' por cima quebraria o envio de arquivo de um
+  // jeito silencioso: o servidor receberia um corpo que nao consegue separar.
+  const ehFormulario = typeof FormData !== 'undefined' && opcoes.body instanceof FormData
+
   const cabecalhos: Record<string, string> = {
     Accept: 'application/json',
-    ...(opcoes.body ? { 'Content-Type': 'application/json' } : {}),
+    ...(opcoes.body && !ehFormulario ? { 'Content-Type': 'application/json' } : {}),
     ...((opcoes.headers as Record<string, string>) ?? {}),
   }
 
@@ -125,4 +130,31 @@ export async function enviar<T>(caminho: string, corpo: unknown, metodo = 'POST'
 
 export async function remover(caminho: string): Promise<void> {
   await interpretar<void>(await chamar(caminho, { method: 'DELETE' }, false))
+}
+
+/**
+ * POST de arquivo, como multipart.
+ *
+ * Passa pelo mesmo `chamar` do resto: renovacao de sessao, cabecalho de
+ * autorizacao e tratamento de erro sao os mesmos. So o corpo muda.
+ */
+export async function enviarArquivo<T>(caminho: string, formulario: FormData): Promise<T> {
+  return interpretar<T>(await chamar(caminho, { method: 'POST', body: formulario }, false))
+}
+
+/**
+ * GET de conteudo binario.
+ *
+ * Existe porque o access token vive SO em memoria: um `<a href>` apontando para
+ * a API sairia sem o cabecalho Authorization e voltaria 401. O jeito de baixar
+ * um arquivo autenticado e buscar por fetch e entregar o blob ao navegador.
+ */
+export async function obterArquivo(caminho: string): Promise<Blob> {
+  const resposta = await chamar(caminho, { method: 'GET' }, false)
+
+  if (!resposta.ok) {
+    throw new ErroApi(resposta.status, `Nao foi possivel baixar o arquivo (${resposta.status}).`)
+  }
+
+  return resposta.blob()
 }
