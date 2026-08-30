@@ -2,7 +2,8 @@
 
 Plataforma B2B de gestão, cálculo, conferência e auditoria de folha de pagamento brasileira.
 
-> **Estado atual: FASE 4 CONCLUÍDA — 4A a 4G. Os cinco tipos de folha calculam.**
+> **Estado atual: Fase 5, etapa 1 — leitura segura de CSV.**
+> Fase 4 concluída: 4A a 4G, os cinco tipos de folha calculam.
 >
 > Existe login com JWT, cinco perfis, organizações isoladas entre si, o cadastro de
 > funcionários, contratos e histórico contratual por vigência, e a **primeira folha
@@ -325,6 +326,35 @@ estava pronta desde a Fase 4A.
 > que o empregador paga o **líquido** — mas onde a *apuração* continua sendo anual. Uma
 > tratava de fluxo de caixa, a outra de apuração. A causa real do bloqueio foi um PDF
 > declarado "não extraível" que `pdftotext` lê sem dificuldade.
+
+**Importação de arquivos (Fase 5, etapa 1)**
+
+Duas escolhas de dependência, e as duas são decisão registrada:
+
+| Formato | Como | Por quê |
+|---|---|---|
+| **CSV** | implementação própria | É texto delimitado, e o parser cabe num arquivo que se lê numa sentada. Cada dependência é superfície de ataque, e incidente de *supply chain* costuma entrar por pacote pequeno que ninguém revisa. |
+| **XLSX** | **ClosedXML** (MIT) | É um ZIP de XML com esquema próprio. Escrever do zero seria mais código, menos revisado e sem o tratamento de *zip bomb* que a biblioteca já tem. Entra na etapa 4. |
+
+- **O leitor não sabe o que é um caminho de arquivo.** Recebe `Stream`, nunca `string`.
+  *Path traversal* não é mitigado — é impossível por construção.
+- **Os limites valem durante a leitura**, em blocos: 5 MB, 10 mil registros, 50 colunas,
+  mil caracteres por campo. Conferir depois de ler não protege de nada, porque o dano de um
+  arquivo de 2 GB acontece na leitura. E não confia em `Stream.Length`, que um cliente pode
+  omitir ou mentir.
+- **Erro vira relatório, nunca exceção.** Uma linha ruim no meio não impede ler as demais, e
+  o número relatado é o da linha **no arquivo** — o mesmo que o editor mostra na lateral.
+- **Codificação:** BOM manda; sem BOM, tenta UTF-8 **estrito** e cai para Latin-1. O caso
+  real é o Excel brasileiro salvando sem BOM: decodificar sempre como UTF-8 tolerante
+  colocaria **"Jos?" no banco sem erro nenhum**.
+- **Delimitador padrão é `;`.** O Excel em português usa vírgula como separador decimal.
+
+> **CSV injection é problema de escrita, não de leitura.** O sistema nunca avalia fórmula —
+> `=cmd|'/c calc'!A1` volta como texto, e há teste disso. O perigo é o **Excel de quem abre
+> um arquivo que nós exportamos**. Na exportação, célula começando com `=`, `+`, `-` ou `@`
+> recebe apóstrofo, que o Excel entende como "isto é texto" e não exibe. Um número negativo
+> de verdade **não** é marcado: senão toda coluna de desconto sairia com apóstrofo e
+> deixaria de ser número na planilha de quem abre.
 
 **Avos de 13º (Fase 4F, etapa 1)**
 

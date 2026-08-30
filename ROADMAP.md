@@ -2572,6 +2572,9 @@ Antes de implementar qualquer regra legal:
 
 # FASE 5 — IMPORTAÇÃO CSV/XLSX
 
+> **Status: etapa 1 concluída em 29/08/2026 — leitura segura de CSV.**
+> Etapas 2 a 5 não iniciadas.
+
 ## Objetivo
 
 Permitir entrada de dados em massa.
@@ -2621,6 +2624,131 @@ Relatório
 - transação quando apropriada;
 - idempotência quando necessário;
 - origem registrada.
+
+### Etapa 1 — Leitura segura de CSV (concluída)
+
+Domínio puro: sem HTTP, sem banco, sem arquivo em disco. Três classes em
+`PrismaRH.Dominio/Importacao/`.
+
+#### Dependências: a decisão registrada
+
+| Formato | Como | Por quê |
+|---|---|---|
+| **CSV** | implementação própria, **zero dependência** | CSV é texto delimitado, e o parser inteiro cabe num arquivo que se lê numa sentada. O `CLAUDE.md §24.25` manda não instalar biblioteca para funcionalidade trivial — cada dependência é superfície de ataque, e a maior parte dos incidentes de *supply chain* entra por pacote pequeno que ninguém revisa. |
+| **XLSX** | **ClosedXML**, aprovada pelo responsável em 29/08/2026 | XLSX é um ZIP de XML com esquema próprio. Implementar do zero seria pior que a dependência: mais código, menos revisado, e sem o tratamento de *zip bomb* que a biblioteca já tem. Licença MIT, ativa, e lê em modo de dados — sem avaliar fórmula, que é exatamente o controle que o Security Gate exige. Entra na **etapa 4**. |
+
+Descartadas: **EPPlus** (licença comercial desde a versão 5) e **NPOI** (API mais crua, sem
+ganho sobre a ClosedXML aqui).
+
+#### Decisões registradas
+
+##### 1. O leitor não sabe o que é um caminho de arquivo
+
+`LeitorCsv.Ler` recebe `Stream`, nunca `string caminho`. *Path traversal* não é
+*mitigado* — ele é **impossível por construção**, porque a classe não tem como abrir
+arquivo nenhum.
+
+##### 2. Os limites valem **durante** a leitura
+
+`LimitesImportacao`: 5 MB, 10 mil registros, 50 colunas, mil caracteres por campo. O teto
+de bytes é conferido **em blocos, enquanto se lê**, e a leitura para no instante em que
+estoura. Conferir depois de ler não protege de nada — o dano de um arquivo de 2 GB
+acontece na leitura.
+
+Não usa `Stream.Length`: um cliente HTTP pode omiti-lo ou mentir.
+
+##### 3. Erro vira relatório, nunca exceção
+
+Arquivo de usuário é a entrada menos confiável que existe. Estourar exceção em cada aspas
+desbalanceada transformaria conteúdo malformado em **500** — o mesmo defeito que o
+`CLAUDE.md §24.19 item 4` já registra para enums. Uma linha ruim no meio não impede ler as
+demais, porque o roadmap pede **relatório linha a linha**.
+
+O número relatado é o da **linha no arquivo**, contando o cabeçalho — é o número que o
+editor mostra na lateral. Devolver "registro 7" obrigaria a pessoa a fazer a conta.
+
+##### 4. Codificação: BOM manda; sem BOM, UTF-8 **estrito**; depois Latin-1
+
+O caso real é o Excel brasileiro salvando CSV sem BOM, em Windows-1252. Decodificar sempre
+como UTF-8 tolerante colocaria **"Jos?" no banco sem erro nenhum**.
+
+A tentativa estrita funciona porque UTF-8 tem estrutura rígida: nem toda sequência de bytes
+é UTF-8 válido, então decodificar com `throwOnInvalidBytes` é teste, não chute.
+
+Latin-1 e não Windows-1252 porque Latin-1 é nativa do .NET e as duas só diferem na faixa
+`0x80–0x9F` (aspas curvas). Nenhum caractere de nome próprio brasileiro mora lá, e evitar o
+pacote `System.Text.Encoding.CodePages` vale mais que aquelas aspas.
+
+##### 5. Delimitador padrão é `;`, e não `,`
+
+O Excel em pt-BR usa vírgula como separador **decimal** e por isso exporta CSV com ponto e
+vírgula. Adotar a vírgula quebraria todo arquivo gerado pelo caminho mais comum.
+
+##### 6. CSV injection é problema de **escrita**, e a defesa fica lá
+
+O Prisma RH nunca avalia fórmula — `LeitorCsv` só lê texto, e há teste provando que
+`=cmd|'/c calc'!A1` volta como string. O perigo é o **Excel de quem abre um arquivo que nós
+exportamos**: um funcionário cadastrado com esse nome viraria comando na máquina alheia.
+
+`ProtecaoCsv` prefixa `=`, `+`, `-`, `@`, tabulação e retorno de carro com apóstrofo — que o
+Excel entende como "isto é texto" e **não exibe**. Um número negativo de verdade
+(`-1234,56`) **não** é marcado: se fosse, toda coluna de desconto sairia com apóstrofo e
+deixaria de ser número na planilha de quem abre.
+
+##### 7. Truncar campo é visível, nunca silencioso
+
+Campo acima do teto recebe o sufixo `[TRUNCADO]`. Cortar em silêncio gravaria meio nome como
+se fosse o nome inteiro; a marca faz a validação de domínio recusar em seguida.
+
+#### Um defeito real, encontrado pelo próprio teste
+
+A validação dos limites estava num **inicializador de propriedade** do record. `with { X = 0 }`
+**não reexecuta inicializador** — ele copia o objeto e aplica o `init`. Ou seja:
+`LimitesImportacao.Padrao with { TamanhoMaximoBytes = 0 }` produzia um limite inválido **em
+silêncio**, e os próprios testes usam `with`.
+
+A validação passou para o **acessor `init`**, que roda nos dois caminhos.
+
+#### Verificação
+
+**688 testes verdes** — 46 novos: 27 do leitor e 19 da proteção de escrita. Build com zero
+avisos. Entre eles, um teste de **ida e volta**: o que o sistema exporta é relido por ele
+mesmo e volta idêntico — se o escape estivesse errado, nem o próprio produto leria o que
+acabou de escrever.
+
+---
+
+### Security Gate — Fase 5, etapa 1 (leitura de CSV)
+
+| # | Ponto | Resposta |
+|---|---|---|
+| 1 | Ameaças introduzidas | Nenhuma superfície **externa** ainda: não há rota, upload nem persistência. O que entra é a capacidade de **processar bytes arbitrários** — exaustão de memória por arquivo enorme, por linha única gigante ou por campo sem fim; e a semente de **CSV injection**, que se materializa na exportação. |
+| 2 | Controles | Quatro tetos conferidos **durante** a leitura, com `Stream` e nunca caminho de arquivo. Nada é avaliado. Erro de conteúdo vira relatório, não exceção. Escrita passa por `ProtecaoCsv`. Limite zero ou negativo é recusado no `init`. |
+| 3 | Testes de segurança | Arquivo acima do teto: recusado sem ler. Mais registros que o teto: para no teto. Mais colunas: recusado no cabeçalho. Campo gigante: truncado **visível**. Aspas não fechadas: recusado. Coluna duplicada e coluna sem nome: recusadas. Fórmula: volta como texto na leitura, prefixada na escrita. |
+| 4 | Impacto multiempresa | **Não se aplica nesta etapa**: o leitor é função pura e não conhece organização, usuário nem banco. O isolamento entra na etapa 2, junto com a persistência — e ali será exigido com teste contra PostgreSQL real. |
+| 5 | Exposição de dados | Nada é gravado, nada é logado, nada sai. O conteúdo do arquivo vive só na chamada. |
+| 6 | Permissões | **Não se aplica**: nenhuma rota, nenhuma política. |
+| 7 | Logging e auditoria | **Não se aplica**: nada acontece que precise de trilha. A auditoria da importação entra na etapa 2, com a origem do dado. |
+| 8 | Dependências | **Nenhuma nova.** CSV é implementação própria — essa é a decisão. ClosedXML entra só na etapa 4. |
+| 9 | Secrets | **Não se aplica.** |
+| 10 | Superfície pública | **Nenhuma.** Nenhuma rota foi criada nesta etapa. |
+| 11 | Risco de custo/abuso | Os tetos são exatamente esta resposta. Processamento local e síncrono, como o roadmap aprovou; nada de AWS, S3, SQS ou Lambda — isso é Fase 9 e **não foi antecipado**. |
+
+#### Definition of Done de segurança (`CLAUDE.md §40.1`)
+
+Entrada externa validada — é o objeto inteiro desta etapa · nenhum dado sensível exposto ·
+nenhum secret · nenhuma dependência nova · logs limpos · **autorização, multi-tenancy,
+endpoint, upload, paginação: não se aplicam** — esta etapa não tem rota, não toca banco e
+não conhece organização; todos entram na etapa 2 · nenhum controle enfraquecido.
+
+#### Pendência registrada
+
+`LeitorCsv` carrega o arquivo inteiro em memória antes de analisar. Com o teto de 5 MB isso
+é deliberado e barato — e simplifica a detecção de codificação, que precisa olhar os
+primeiros bytes. **Se o teto subir**, a leitura precisa virar *streaming*. Anotado para a
+**Fase 9**, que é quando volume maior passa a fazer sentido.
+
+---
 
 ## Security Gate — Fase 5
 
