@@ -2572,8 +2572,9 @@ Antes de implementar qualquer regra legal:
 
 # FASE 5 — IMPORTAÇÃO CSV/XLSX
 
-> **Status: etapas 1 e 2 concluídas em 30/08/2026 — leitura de CSV e persistência
-> da importação.** Etapas 3 a 5 não iniciadas.
+> **Status: etapas 1 a 3 concluídas em 30/08/2026 — leitura de CSV, persistência e
+> as rotas de upload, preview e confirmação.** Etapas 4 (XLSX) e 5 (frontend) não
+> iniciadas.
 
 ## Objetivo
 
@@ -2831,7 +2832,168 @@ Dois testes merecem nota:
 
 ---
 
-### Security Gate — Fase 5, etapa 2 (persistência da importação)
+#### Etapa 3 — Upload, preview e confirmação (concluída)
+
+Três rotas novas, só **CSV** e só **funcionários** — XLSX é a etapa 4, e o frontend a 5.
+
+```text
+POST /api/importacoes/funcionarios/preview    -> lê, valida, devolve. NADA é gravado.
+POST /api/importacoes/funcionarios/confirmar  -> RELÊ o arquivo, revalida, e só então grava.
+GET  /api/importacoes                          -> histórico, paginado com teto
+GET  /api/importacoes/{id}                     -> relatório linha a linha
+```
+
+#### A decisão central: o cliente nunca diz o que é válido
+
+O servidor **não guarda o arquivo entre preview e confirmação** — decisão da etapa 2. A
+consequência é que a confirmação precisa do arquivo de novo, e isso é **vantagem de
+segurança, não custo**.
+
+Na confirmação o backend refaz tudo: recalcula o SHA-256, relê, revalida, remapeia. Não
+existe parâmetro de "id do preview", nem lista de linhas aprovadas, nem contagem. Um
+preview adulterado no navegador não tem efeito nenhum porque **nada dele é aproveitado**.
+
+Se o arquivo mudar entre as duas chamadas, vale **o que foi reenviado**, e o hash gravado é
+o dele. Não há comparação com o preview porque não há preview guardado.
+
+Há um teste que envia, junto do arquivo com erro, campos chamados `importavel=true`,
+`comErro=0`, `validas=1` e um `hashSha256` inventado. A confirmação sai **`Recusada`**, com
+zero funcionários criados e o hash real — nenhum daqueles campos é sequer lido.
+
+#### Decisões registradas
+
+##### 1. Preview e confirmação passam pelo **mesmo** caminho de validação
+
+`ImportadorFuncionarios.Interpretar` serve às duas. Duas implementações acabariam
+divergindo, e a divergência apareceria como *"a tela dizia que estava tudo certo e a
+gravação recusou"*.
+
+##### 2. Tudo ou nada, e a recusa é **do arquivo inteiro**
+
+Uma linha errada recusa a importação toda. Importar parcialmente deixaria o cadastro num
+estado que ninguém pediu, e obrigaria a pessoa a descobrir quais linhas entraram para
+montar o arquivo da segunda tentativa.
+
+##### 3. Duplicata vira **erro legível**, não violação de índice
+
+O importador recebe os CPFs já cadastrados **da organização** e recusa a linha com
+`"Já existe um funcionário com este CPF nesta organização"`. Sem isso, a duplicata só
+apareceria como violação de índice único — um 500 que não diz a ninguém qual linha repetiu
+o documento.
+
+Duplicata **dentro do arquivo** também é detectada, e por outra razão: sem ela, o `INSERT`
+quebraria com a transação já aberta.
+
+##### 4. O CPF é mascarado na **fronteira**, não no meio
+
+`LinhaFuncionario` carrega o `Cpf` de verdade — ela vive dentro do processo, e a
+confirmação precisa do documento inteiro para criar o cadastro. O mascaramento acontece ao
+montar a resposta HTTP, que é onde ele protege alguma coisa. Mascarar no meio obrigaria a
+interpretar o CPF duas vezes, e é assim que duas validações divergem.
+
+##### 5. A mensagem de erro **não ecoa o CPF inválido**
+
+`"CPF inválido."` e nada mais. O número da linha basta para achar a célula, e repetir o
+documento na mensagem o levaria para tela e para log sem necessidade (`CLAUDE.md §24.16`).
+
+##### 6. Os CPFs consultados passam pelo **filtro global**
+
+Só os da organização do usuário. Sem isso, um CPF da empresa vizinha faria a linha ser
+recusada — e o erro revelaria que aquele documento existe em outro tenant.
+
+##### 7. Data em vocabulário fechado: `dd/mm/aaaa` ou `aaaa-mm-dd`
+
+Aceitar o que a cultura da máquina entender faria `03/04/2026` virar março num servidor e
+abril noutro — e ninguém perceberia, porque as duas datas existem.
+
+##### 8. Dois tetos de tamanho, e não um
+
+`LimitesImportacao` para de ler aos 5 MB, mas o servidor já teria recebido o corpo inteiro.
+A rota recusa antes, no pipeline. A extensão `.csv` é conferida por conveniência — recusar
+`.exe` evita ler 5 MB de um arquivo sem chance —, mas **quem valida é o conteúdo**, no
+`LeitorCsv`.
+
+##### 9. `Path.GetFileName` no nome recebido
+
+Nada é salvo em disco, então o nome nunca vira caminho. Mas guardar `../../etc/passwd` no
+banco como "nome do arquivo" seria guardar lixo com cara de dado.
+
+#### Verificação
+
+**740 testes verdes** — 21 novos, todos contra PostgreSQL real. Build com zero avisos. A
+suíte de importação rodou **três vezes seguidas** por causa do teste de concorrência.
+
+Os nove casos de segurança pedidos, e o que cada um provou:
+
+| Pedido | Resultado |
+|---|---|
+| Analista autorizado | **200** |
+| Auditor e Visualizador | **403** nas duas rotas |
+| Organização vizinha | **404** — não 403, que confirmaria a existência |
+| Trocar `IdOrganizacao` | Sem efeito: o campo enviado nem é lido |
+| Arquivo alterado entre preview e confirmação | Vale o reenviado, e o hash gravado é o dele |
+| Erro no meio → rollback | Duas provas, ver abaixo |
+| Confirmação repetida | **`Recusada`** com motivo legível; dois funcionários, não quatro |
+| FK preenchida + `RESTRICT` | Origem apontando para a linha certa; `DELETE` recusado pelo banco |
+| Limites da etapa 1 nas rotas | **400** com `"maior que o limite"` |
+
+#### Um teste que passava pelo motivo errado
+
+O primeiro teste de rollback usava um arquivo com CPF repetido — e passava, mas **provando
+a coisa errada**: a duplicata é pega na *validação*, antes de qualquer escrita. A transação
+nunca chegava a ter estado parcial, então o `catch (DbUpdateException)` e o `RollbackAsync`
+não eram exercidos.
+
+Ele foi renomeado para `ErroDeValidacao_NaoGravaLinhaALGUMA`, que é o que ele de fato prova,
+e entrou um segundo: **`DuasConfirmacoesSIMULTANEAS_NaoDeixamEstadoPelaMetade`** dispara
+duas confirmações do mesmo arquivo em paralelo. As duas validam antes de qualquer uma
+gravar, então nenhuma vê o CPF da outra e ambas se julgam importáveis — e a perdedora
+esbarra no índice único **com a transação aberta e o trabalho pela metade**. É o único
+caminho que exercita o rollback de verdade.
+
+A afirmação não depende de quem venceu: o invariante é que existam **dois** funcionários, e
+não quatro nem três.
+
+---
+
+### Security Gate — Fase 5, etapa 3 (upload, preview e confirmação)
+
+| # | Ponto | Resposta |
+|---|---|---|
+| 1 | Ameaças introduzidas | **A primeira superfície externa que recebe arquivo** — a entrada menos confiável que existe. Ameaças: cliente afirmando que um arquivo inválido é válido; troca do arquivo entre preview e confirmação; `IdOrganizacao` forjado no corpo; importação parcial deixando o cadastro pela metade; duplicata silenciosa; CPF vazando em resposta, mensagem de erro ou log; exaustão por arquivo grande. |
+| 2 | Controles | **Nada do preview é aproveitado na confirmação** — o arquivo é relido e revalidado do zero. `IdOrganizacao` e `IdUsuario` vêm do `IContextoUsuario`, nunca do corpo; o `ImportadorFuncionarios` **não conhece organização**, então não há onde confiar no cliente por engano. Transação única cobrindo importação, linhas, funcionários e vínculo de origem. Duplicata detectada na validação, dentro e fora do arquivo. CPF mascarado na resposta e ausente das mensagens de erro. Dois tetos de tamanho. `Path.GetFileName` no nome. |
+| 3 | Testes de segurança | Vinte e um, contra PostgreSQL real — a tabela acima lista os nove pedidos. Vale destacar o de campos forjados (`importavel=true` + hash inventado → `Recusada`) e o de concorrência, que é o único que exercita o rollback. |
+| 4 | Impacto multiempresa | Nenhuma tabela nova — as da etapa 2 já têm filtro global e teste. Aqui o ponto é a **consulta de CPFs existentes**, que passa pelo filtro: sem isso, um CPF do vizinho recusaria a linha e o erro revelaria que aquele documento existe em outro tenant. Importação da vizinha devolve **404**. |
+| 5 | Exposição de dados | CPF **mascarado** em toda resposta e **ausente** das mensagens de erro. O relatório persistido continua sem valor algum (etapa 2). Nada vai para log. |
+| 6 | Permissões | `AdministrarPessoas` para importar — manter cadastro e importar são o mesmo trabalho. `LerDadosEmpresariais` para consultar o histórico: Auditor confere, não importa. Nenhuma rota anônima. |
+| 7 | Logging e auditoria | A `Importacao` **é** a trilha: quem, quando, qual arquivo (por hash), quantas linhas, o que deu errado, e o vínculo até cada cadastro criado. Alimenta a Fase 7 sem evento próprio. |
+| 8 | Dependências | **Nenhuma nova.** CSV continua sendo implementação própria; ClosedXML entra na etapa 4. |
+| 9 | Secrets | **Não se aplica.** |
+| 10 | Superfície pública | Quatro rotas novas, **todas autenticadas e com política declarada**. Nenhuma anônima. As duas de escrita são `POST` com `DisableAntiforgery` — coerente com a análise de CSRF do `CLAUDE.md §24.10`: o access token vai em header `Authorization`, que o navegador **não** envia sozinho. |
+| 11 | Risco de custo/abuso | Tetos da etapa 1 aplicados na rota, mais o teto do corpo da requisição. Listagem **paginada com teto de 100**. Processamento local e síncrono, como o roadmap aprovou — **nada de S3, SQS ou Lambda**. |
+
+#### Definition of Done de segurança (`CLAUDE.md §40.1`)
+
+Autorização analisada e testada por perfil · multi-tenancy analisada e testada contra
+PostgreSQL real · entrada externa validada no backend — e **revalidada** na confirmação ·
+dado sensível mascarado na saída e ausente dos erros · nenhum secret · **toda rota nova com
+política declarada** · **upload com limite de tamanho, de quantidade e validação de
+conteúdo** · nenhuma dependência nova · logs sem conteúdo sensível · testes de isolamento e
+autorização verdes · **listagem nova paginada com teto** · nenhum controle enfraquecido.
+
+#### Pendências registradas
+
+1. **Não há rate limiting nesta rota**, como em nenhuma outra — `CLAUDE.md §24.19 item 1`,
+   a resolver na Fase 10. Importação é rota cara: ela lê um arquivo e escreve em massa.
+   Quando o rate limiting chegar, esta é candidata a limite próprio, mais apertado que o
+   das rotas de leitura.
+2. **O arquivo é lido inteiro em memória** duas vezes por confirmação — uma para o hash,
+   outra para o parser. Com teto de 5 MB é irrelevante; se o teto subir, vira *streaming*
+   com hash incremental. Mesma anotação da etapa 1, para a Fase 9.
+
+---
+
+## Security Gate — Fase 5, etapa 2 (persistência da importação)
 
 | # | Ponto | Resposta |
 |---|---|---|

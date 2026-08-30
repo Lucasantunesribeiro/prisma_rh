@@ -192,7 +192,7 @@ public class FolhaDe13Testes(BancoPostgresFixture banco) : IDisposable
         var rubricas = await admin.GetFromJsonAsync<List<RubricaItem>>("/api/rubricas");
 
         var adiantamento = rubricas!.Single(r => r.Codigo == "DEC13ADT" && r.Ativa);
-        var total = rubricas.Single(r => r.Codigo == "DEC13" && r.Ativa);
+        var total = rubricas!.Single(r => r.Codigo == "DEC13" && r.Ativa);
         var compensacao = rubricas.Single(r => r.Codigo == "DEC13ADTD" && r.Ativa);
         var baseFgts = rubricas.Single(r => r.Codigo == "DEC13FG" && r.Ativa);
 

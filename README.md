@@ -2,7 +2,7 @@
 
 Plataforma B2B de gestão, cálculo, conferência e auditoria de folha de pagamento brasileira.
 
-> **Estado atual: Fase 5, etapa 2 — persistência da importação.**
+> **Estado atual: Fase 5, etapa 3 — upload, preview e confirmação de CSV.**
 > Fase 4 concluída: 4A a 4G, os cinco tipos de folha calculam.
 >
 > Existe login com JWT, cinco perfis, organizações isoladas entre si, o cadastro de
@@ -355,6 +355,34 @@ Duas escolhas de dependência, e as duas são decisão registrada:
 > recebe apóstrofo, que o Excel entende como "isto é texto" e não exibe. Um número negativo
 > de verdade **não** é marcado: senão toda coluna de desconto sairia com apóstrofo e
 > deixaria de ser número na planilha de quem abre.
+
+**Upload, preview e confirmação (Fase 5, etapa 3)**
+
+```text
+POST /api/importacoes/funcionarios/preview    -> lê, valida, devolve. NADA é gravado.
+POST /api/importacoes/funcionarios/confirmar  -> RELÊ o arquivo, revalida, e só então grava.
+```
+
+O servidor **não guarda o arquivo entre as duas chamadas**, então a confirmação precisa dele
+de novo — e isso é vantagem de segurança, não custo. **O cliente nunca diz ao backend quais
+linhas são válidas.** Não existe "id do preview", nem lista de linhas aprovadas, nem
+contagem: o backend recalcula o SHA-256, relê, revalida e remapeia. Um preview adulterado no
+navegador não tem efeito nenhum.
+
+> Há um teste que envia, junto de um arquivo com erro, campos chamados `importavel=true`,
+> `comErro=0` e um `hashSha256` inventado. A confirmação sai **`Recusada`**, com zero
+> funcionários criados e o hash real — nenhum daqueles campos é sequer lido.
+
+- **Tudo ou nada.** Uma linha errada recusa o arquivo inteiro: importar parcialmente
+  deixaria o cadastro num estado que ninguém pediu.
+- **Duplicata vira erro legível**, dentro e fora do arquivo — e não violação de índice
+  único, que seria um 500 sem dizer qual linha repetiu o documento.
+- **O CPF é mascarado na fronteira**, ao montar a resposta, e **não aparece nas mensagens de
+  erro**: o número da linha basta para achar a célula.
+- **Os CPFs consultados passam pelo filtro global.** Sem isso, um CPF da empresa vizinha
+  recusaria a linha — e o erro revelaria que aquele documento existe em outro tenant.
+- **Data só em `dd/mm/aaaa` ou `aaaa-mm-dd`.** Aceitar o que a cultura da máquina entender
+  faria `03/04/2026` virar março num servidor e abril noutro, sem ninguém perceber.
 
 **Rastreabilidade da importação (Fase 5, etapa 2)**
 
@@ -733,6 +761,10 @@ Todos usam a senha de `PRISMARH_SEED_SENHA`.
 | `POST /api/contratos/{id}/ferias/concessoes` | Adm. Empresa, Analista | Programa férias de um período |
 | `DELETE /api/contratos/{id}/ferias/concessoes/{idC}` | Adm. Empresa, Analista | Cancela uma programação que não começou |
 | `POST /api/folhas` (campo `tipo`) | Adm. Empresa, Analista | Abre folha **Mensal**, **Ferias** ou **Rescisao** |
+| `POST /api/importacoes/funcionarios/preview` | Adm. Empresa, Analista | Lê e valida um CSV **sem gravar nada** |
+| `POST /api/importacoes/funcionarios/confirmar` | Adm. Empresa, Analista | Relê o arquivo, revalida e grava numa transação |
+| `GET /api/importacoes` | todos os 5 | Histórico da organização, paginado |
+| `GET /api/importacoes/{id}` | todos os 5 | Relatório linha a linha |
 | `GET /api/contratos/{id}/decimo-terceiro/avos` | todos os 5 | Avos de 13º no ano, mês a mês, com o motivo |
 | `POST /api/contratos/{id}/desligamento` (campo `motivo`) | Adm. Empresa, Analista | Encerra o vínculo, com o motivo obrigatório |
 | `GET /api/contratos/{id}/rescisao` | todos os 5 | Apura as verbas, usando o valor base gravado |
