@@ -36,7 +36,9 @@ public sealed record LinhaFuncionario(
 /// </summary>
 public sealed record ResultadoFuncionarios(
     IReadOnlyList<LinhaFuncionario> Linhas,
-    IReadOnlyList<ErroImportacao> ErrosDoArquivo)
+    IReadOnlyList<ErroImportacao> ErrosDoArquivo,
+    IReadOnlyList<string> Colunas,
+    MapeamentoFuncionarios Mapeamento)
 {
     public int Total => Linhas.Count;
 
@@ -94,29 +96,31 @@ public static class ImportadorFuncionarios
     public static ResultadoFuncionarios Interpretar(
         ResultadoLeitura leitura,
         IReadOnlySet<string> cpfsJaCadastrados,
-        DateOnly hoje)
+        DateOnly hoje,
+        MapeamentoFuncionarios? mapeamento = null)
     {
         ArgumentNullException.ThrowIfNull(leitura);
         ArgumentNullException.ThrowIfNull(cpfsJaCadastrados);
 
+        mapeamento ??= MapeamentoFuncionarios.Padrao;
+
         if (!leitura.Valido)
         {
-            return new ResultadoFuncionarios([], leitura.Erros);
+            return new ResultadoFuncionarios([], leitura.Erros, leitura.Cabecalho, mapeamento);
         }
 
-        var faltando = ColunasObrigatorias.Where(c => leitura.Coluna(c) is null).ToList();
-
-        if (faltando.Count > 0)
+        // O mapeamento vem do cliente, e por isso e conferido contra o
+        // cabecalho do arquivo RELIDO - vocabulario fechado, no sentido do
+        // `CLAUDE.md secao 24.7`. Um nome que nao esta la nao vira indice de
+        // coluna: vira recusa.
+        if (mapeamento.Conferir(leitura) is { Count: > 0 } problemas)
         {
-            return new ResultadoFuncionarios([], [
-                new ErroImportacao(
-                    1, null, "Faltam colunas obrigatorias: " + string.Join(", ", faltando) + "."),
-            ]);
+            return new ResultadoFuncionarios([], problemas, leitura.Cabecalho, mapeamento);
         }
 
-        var iNome = leitura.Coluna(ColunaNome)!.Value;
-        var iCpf = leitura.Coluna(ColunaCpf)!.Value;
-        var iNascimento = leitura.Coluna(ColunaDataNascimento)!.Value;
+        var iNome = leitura.Coluna(mapeamento.Nome)!.Value;
+        var iCpf = leitura.Coluna(mapeamento.Cpf)!.Value;
+        var iNascimento = leitura.Coluna(mapeamento.DataNascimento)!.Value;
 
         var linhas = new List<LinhaFuncionario>(leitura.Linhas.Count);
 
@@ -194,7 +198,7 @@ public static class ImportadorFuncionarios
                 erros));
         }
 
-        return new ResultadoFuncionarios(linhas, []);
+        return new ResultadoFuncionarios(linhas, [], leitura.Cabecalho, mapeamento);
     }
 
     /// <summary>

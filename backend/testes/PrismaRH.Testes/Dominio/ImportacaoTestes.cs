@@ -270,6 +270,51 @@ public class ImportacaoTestes
         Assert.Equal(7, linha.NumeroNoArquivo);
     }
 
+    /// <summary>
+    /// O MESMO numero de linha, registrado duas vezes, vira **uma** linha.
+    ///
+    /// ⚠️ Defeito real, encontrado na etapa 4 e corrigido em 30/08/2026.
+    /// `Registrar` criava uma linha nova a cada chamada, e dois problemas da
+    /// mesma linha do arquivo - dois erros de cabecalho, ambos da linha 1 -
+    /// violavam o indice unico `ux_linhas_importacao_numero`. Pela rota HTTP
+    /// isso saia como **409 de conflito**, com a mensagem de "alguem importou
+    /// ao mesmo tempo", quando o problema era a planilha de quem enviou.
+    /// </summary>
+    [Fact]
+    public void MesmoNumeroDeLinhaDuasVezes_ViraUmaLinhaSoComOsDoisErros()
+    {
+        var importacao = Nova();
+
+        var primeira = importacao.Registrar(1, ["Coluna 'nome' nao existe."]);
+        var segunda = importacao.Registrar(1, ["Coluna 'cpf' nao existe."]);
+
+        Assert.Same(primeira, segunda);
+        Assert.Single(importacao.Linhas);
+        Assert.Equal(2, primeira.Erros.Count);
+
+        // Os contadores contam LINHAS, e nao chamadas.
+        Assert.Equal(1, importacao.TotalLinhas);
+        Assert.Equal(1, importacao.LinhasComErro);
+        Assert.Equal(0, importacao.LinhasValidas);
+    }
+
+    [Fact]
+    public void LinhaValidaQueDepoisRecebeErro_MudaDeSituacaoEDeContador()
+    {
+        var importacao = Nova();
+
+        importacao.Registrar(2, []);
+
+        Assert.Equal(1, importacao.LinhasValidas);
+
+        importacao.Registrar(2, ["CPF invalido."]);
+
+        Assert.Equal(1, importacao.TotalLinhas);
+        Assert.Equal(0, importacao.LinhasValidas);
+        Assert.Equal(1, importacao.LinhasComErro);
+        Assert.Equal(SituacaoLinha.ComErro, importacao.Linhas[0].Situacao);
+    }
+
     [Fact]
     public void AImportacaoNaoTemCampoParaOConteudoDoArquivo()
     {

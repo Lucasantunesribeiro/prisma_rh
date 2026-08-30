@@ -58,7 +58,14 @@ public sealed record ResultadoLeitura(
         return null;
     }
 
-    internal static bool NomesDeColunaIguais(string a, string b) =>
+    /// <summary>
+    /// Compara nomes de coluna com a mesma tolerancia usada em <see cref="Coluna"/>.
+    ///
+    /// Publico desde a etapa 4: o leitor de XLSX mora em outro projeto e
+    /// precisa da MESMA comparacao para recusar cabecalho duplicado. Duas
+    /// comparacoes parecidas acabariam divergindo num acento.
+    /// </summary>
+    public static bool NomesDeColunaIguais(string a, string b) =>
         string.Equals(Normalizar(a), Normalizar(b), StringComparison.OrdinalIgnoreCase);
 
     private static string Normalizar(string valor)

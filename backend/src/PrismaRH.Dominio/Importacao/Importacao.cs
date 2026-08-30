@@ -151,6 +151,28 @@ public sealed class Importacao
         ArgumentNullException.ThrowIfNull(erros);
         GarantirEmAnalise();
 
+        // O MESMO numero de linha pode chegar duas vezes: dois problemas de
+        // cabecalho sao ambos da linha 1. Criar uma linha nova a cada chamada
+        // violava o indice unico do banco e transformava "sua planilha tem dois
+        // erros" em 409 de conflito - defeito corrigido em 30/08/2026, ver
+        // LinhaImportacao.Acrescentar.
+        var existente = _linhas.SingleOrDefault(l => l.NumeroNoArquivo == numeroNoArquivo);
+
+        if (existente is not null)
+        {
+            var eraValida = existente.Situacao == SituacaoLinha.Valida;
+
+            existente.Acrescentar(erros);
+
+            if (eraValida && existente.Situacao == SituacaoLinha.ComErro)
+            {
+                LinhasValidas--;
+                LinhasComErro++;
+            }
+
+            return existente;
+        }
+
         var linha = new LinhaImportacao(IdOrganizacao, Id, numeroNoArquivo, erros);
 
         _linhas.Add(linha);

@@ -503,7 +503,12 @@ public class ImportacaoHttpTestes(BancoPostgresFixture banco) : IDisposable
         var previa = (await resposta.Content.ReadFromJsonAsync<PreviewItem>())!;
 
         Assert.False(previa.Importavel);
-        Assert.Contains(previa.ErrosDoArquivo, e => e.Contains("Faltam colunas obrigatorias"));
+        // Uma mensagem por coluna faltando, e nao uma lista dentro de uma
+        // frase: a tela mostra cada uma como um item, e quem le corrige uma de
+        // cada vez.
+        Assert.Contains(
+            previa.ErrosDoArquivo,
+            e => e.Contains("A coluna obrigatoria 'cpf' nao existe no arquivo"));
     }
 
     // ------------------------------------------------------------- isolamento

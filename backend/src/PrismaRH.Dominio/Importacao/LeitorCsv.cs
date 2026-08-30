@@ -100,44 +100,13 @@ public static class LeitorCsv
     /// <summary>
     /// Le no maximo <paramref name="teto"/> bytes e diz se o arquivo coube.
     ///
-    /// Le em blocos e para de verdade ao ultrapassar o teto - nao usa
-    /// Stream.Length, que um cliente HTTP pode omitir ou mentir, e nao usa
-    /// CopyTo, que copiaria o arquivo inteiro antes de alguem conferir o
-    /// tamanho.
-    ///
-    /// Le UM byte alem do teto de proposito: e assim que se distingue "coube
-    /// exatamente" de "estourou por pouco".
+    /// Delega para <see cref="FluxoComTeto"/>: o controle nasceu aqui na etapa
+    /// 1 e saiu daqui na etapa 4, quando o leitor de XLSX passou a precisar do
+    /// mesmo teto. Duas copias de um controle de seguranca sao duas copias que
+    /// um dia divergem.
     /// </summary>
-    private static bool LerComTeto(Stream origem, int teto, out byte[] bytes)
-    {
-        using var memoria = new MemoryStream();
-
-        var bloco = new byte[81_920];
-        var total = 0;
-
-        while (true)
-        {
-            var lidos = origem.Read(bloco, 0, bloco.Length);
-
-            if (lidos == 0)
-            {
-                break;
-            }
-
-            total += lidos;
-
-            if (total > teto)
-            {
-                bytes = [];
-                return false;
-            }
-
-            memoria.Write(bloco, 0, lidos);
-        }
-
-        bytes = memoria.ToArray();
-        return true;
-    }
+    private static bool LerComTeto(Stream origem, int teto, out byte[] bytes) =>
+        FluxoComTeto.Ler(origem, teto, out bytes);
 
     /// <summary>
     /// Transforma bytes em texto, adivinhando a codificacao quando preciso.

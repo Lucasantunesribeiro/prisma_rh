@@ -67,8 +67,37 @@ public sealed class LinhaImportacao
         IdImportacao = idImportacao;
         NumeroNoArquivo = numeroNoArquivo;
 
-        foreach (var erro in erros.Take(MaximoErrosPorLinha))
+        Acrescentar(erros);
+    }
+
+    /// <summary>
+    /// Acrescenta erros a uma linha que ja existe.
+    ///
+    /// ⚠️ **Existe por causa de um defeito real, corrigido em 30/08/2026.**
+    ///
+    /// Ate a etapa 4, `Importacao.Registrar` criava uma linha NOVA a cada
+    /// chamada. Quando o mesmo numero de linha aparecia duas vezes - dois erros
+    /// de cabecalho, por exemplo, que sao ambos da linha 1 - nasciam duas
+    /// LinhaImportacao com o mesmo `NumeroNoArquivo`, e o indice unico do banco
+    /// recusava a gravacao.
+    ///
+    /// O efeito visivel era o pior possivel: um arquivo com DOIS problemas de
+    /// cabecalho devolvia **409**, com a mensagem de conflito de importacao
+    /// simultanea, em vez de `Recusada` com os dois erros explicados. A pessoa
+    /// via "alguem importou ao mesmo tempo" quando o problema era a planilha
+    /// dela.
+    /// </summary>
+    internal void Acrescentar(IReadOnlyList<string> erros)
+    {
+        ArgumentNullException.ThrowIfNull(erros);
+
+        foreach (var erro in erros)
         {
+            if (_erros.Count >= MaximoErrosPorLinha)
+            {
+                break;
+            }
+
             var limpo = (erro ?? string.Empty).Trim();
 
             if (limpo.Length == 0)
