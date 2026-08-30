@@ -2,7 +2,7 @@
 
 Plataforma B2B de gestão, cálculo, conferência e auditoria de folha de pagamento brasileira.
 
-> **Estado atual: Fase 5, etapa 1 — leitura segura de CSV.**
+> **Estado atual: Fase 5, etapa 2 — persistência da importação.**
 > Fase 4 concluída: 4A a 4G, os cinco tipos de folha calculam.
 >
 > Existe login com JWT, cinco perfis, organizações isoladas entre si, o cadastro de
@@ -355,6 +355,31 @@ Duas escolhas de dependência, e as duas são decisão registrada:
 > recebe apóstrofo, que o Excel entende como "isto é texto" e não exibe. Um número negativo
 > de verdade **não** é marcado: senão toda coluna de desconto sairia com apóstrofo e
 > deixaria de ser número na planilha de quem abre.
+
+**Rastreabilidade da importação (Fase 5, etapa 2)**
+
+Duas tabelas — `importacoes` e `linhas_importacao` — e uma coluna anulável em
+`funcionarios` ligando cada cadastro à linha de arquivo que o criou.
+
+O interessante aqui é o que **não** é guardado:
+
+| Não guardado | Por quê |
+|---|---|
+| **o arquivo** | Guardar o binário exige armazenamento isolado por organização, retenção e download autorizado — infraestrutura da Fase 9. O **SHA-256** faz o papel: responde "veio deste arquivo?" com certeza prática e não permite reconstruir nada. Quem tem o original compara; quem não tem, não extrai um CPF sequer do hash. |
+| **a linha bruta** | Minimização. |
+| **nome, CPF, salário** | Não há necessidade: quem corrige tem o arquivo aberto do lado, e a chave que liga o relatório a ele é o **número da linha** — o mesmo que o editor de planilha mostra na lateral. Copiar CPF para cá só para o relatório ficar bonito criaria um segundo banco de dado pessoal, com retenção própria e finalidade diferente da do cadastro. |
+
+- **A situação da linha é derivada dos erros**, nunca um parâmetro. Um chamador que pudesse
+  dizer "válida" com erros na lista criaria uma linha que se contradiz.
+- **`Aplicar()` recusa com uma linha errada que seja** — a regra "importação inválida não
+  deixa dados pela metade" mora no domínio, e a transação do banco é a segunda camada.
+- **A importação recusada também fica registrada.** Uma tentativa que falhou também é
+  rastreabilidade: apagar o vestígio deixaria "por que o cadastro não mudou?" sem resposta.
+- **Apagar uma importação não leva pessoas junto** (`RESTRICT`), mas leva as linhas
+  (`CASCADE`). Linha órfã não significa nada sozinha; pessoa apagada por tabela-espelho
+  seria desastre.
+- **Isolamento nas duas tabelas**, e não só na raiz — há teste consultando as linhas
+  direto, sem passar pela importação, contra PostgreSQL real.
 
 **Avos de 13º (Fase 4F, etapa 1)**
 

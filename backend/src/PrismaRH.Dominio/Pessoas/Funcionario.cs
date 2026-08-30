@@ -50,6 +50,45 @@ public sealed class Funcionario
     public DateTimeOffset CriadoEm { get; private set; }
 
     /// <summary>
+    /// A linha do arquivo que criou este funcionario, quando ele veio de uma
+    /// importacao (Fase 5).
+    ///
+    /// **Nulo e o caso normal**: quem foi cadastrado a mao nao tem origem em
+    /// arquivo nenhum, e obrigar um valor aqui exigiria inventar uma importacao
+    /// falsa para todo cadastro manual.
+    ///
+    /// A relacao e RESTRITIVA no banco, e nao cascata: apagar uma importacao
+    /// nao pode levar pessoas junto. Na pratica isso torna a importacao
+    /// indeletavel enquanto houver cadastro apontando para ela - que e
+    /// exatamente o que "rastreabilidade da origem" significa.
+    /// </summary>
+    public Guid? IdLinhaImportacao { get; private set; }
+
+    /// <summary>
+    /// Registra de qual linha de importacao este funcionario veio.
+    ///
+    /// So pode ser dito UMA vez. A origem e um fato do momento da criacao;
+    /// deixa-la mutavel permitiria reescrever a procedencia de um cadastro
+    /// depois, e o `CLAUDE.md secao 4.3` proibe reescrever o passado.
+    /// </summary>
+    public void RegistrarOrigem(Guid idLinhaImportacao)
+    {
+        if (idLinhaImportacao == Guid.Empty)
+        {
+            throw new ArgumentException(
+                "Linha de importacao invalida.", nameof(idLinhaImportacao));
+        }
+
+        if (IdLinhaImportacao is not null)
+        {
+            throw new InvalidOperationException(
+                "A origem deste funcionario ja foi registrada e nao pode ser trocada.");
+        }
+
+        IdLinhaImportacao = idLinhaImportacao;
+    }
+
+    /// <summary>
     /// O CPF NAO e alteravel. Se estiver errado, o cadastro esta errado - e
     /// corrigir CPF em silencio quebraria a rastreabilidade de tudo que ja foi
     /// calculado para essa pessoa.

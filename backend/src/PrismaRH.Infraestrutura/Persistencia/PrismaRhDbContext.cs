@@ -6,6 +6,7 @@ using PrismaRH.Dominio.Ferias;
 using PrismaRH.Dominio.Rescisao;
 using PrismaRH.Dominio.Folha;
 using PrismaRH.Dominio.Identidade;
+using PrismaRH.Dominio.Importacao;
 using PrismaRH.Dominio.Parametros;
 using PrismaRH.Dominio.Pessoas;
 
@@ -40,6 +41,8 @@ public sealed class PrismaRhDbContext(
     public DbSet<Dependente> Dependentes => Set<Dependente>();
     public DbSet<ConcessaoFerias> ConcessoesFerias => Set<ConcessaoFerias>();
     public DbSet<ValorBaseFgtsRescisorio> ValoresBaseFgts => Set<ValorBaseFgtsRescisorio>();
+    public DbSet<Importacao> Importacoes => Set<Importacao>();
+    public DbSet<LinhaImportacao> LinhasImportacao => Set<LinhaImportacao>();
     public DbSet<Cargo> Cargos => Set<Cargo>();
     public DbSet<ContratoTrabalho> ContratosTrabalho => Set<ContratoTrabalho>();
     public DbSet<VigenciaContrato> VigenciasContrato => Set<VigenciaContrato>();
@@ -89,6 +92,13 @@ public sealed class PrismaRhDbContext(
         construtor.Entity<Dependente>().HasQueryFilter(d => d.IdOrganizacao == IdOrganizacaoAtual);
         construtor.Entity<ConcessaoFerias>().HasQueryFilter(c => c.IdOrganizacao == IdOrganizacaoAtual);
         construtor.Entity<ValorBaseFgtsRescisorio>().HasQueryFilter(v => v.IdOrganizacao == IdOrganizacaoAtual);
+
+        // Fase 5. As DUAS entram no filtro, e nao so a raiz: uma consulta que
+        // parta de LinhasImportacao sem passar pela Importacao alcancaria a
+        // organizacao vizinha, e o relatorio de erros de outra empresa e dado
+        // de outra empresa.
+        construtor.Entity<Importacao>().HasQueryFilter(i => i.IdOrganizacao == IdOrganizacaoAtual);
+        construtor.Entity<LinhaImportacao>().HasQueryFilter(l => l.IdOrganizacao == IdOrganizacaoAtual);
         construtor.Entity<Cargo>().HasQueryFilter(c => c.IdOrganizacao == IdOrganizacaoAtual);
         construtor.Entity<ContratoTrabalho>().HasQueryFilter(c => c.IdOrganizacao == IdOrganizacaoAtual);
         construtor.Entity<VigenciaContrato>().HasQueryFilter(v => v.IdOrganizacao == IdOrganizacaoAtual);

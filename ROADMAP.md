@@ -2572,8 +2572,8 @@ Antes de implementar qualquer regra legal:
 
 # FASE 5 — IMPORTAÇÃO CSV/XLSX
 
-> **Status: etapa 1 concluída em 29/08/2026 — leitura segura de CSV.**
-> Etapas 2 a 5 não iniciadas.
+> **Status: etapas 1 e 2 concluídas em 30/08/2026 — leitura de CSV e persistência
+> da importação.** Etapas 3 a 5 não iniciadas.
 
 ## Objetivo
 
@@ -2718,7 +2718,152 @@ acabou de escrever.
 
 ---
 
-### Security Gate — Fase 5, etapa 1 (leitura de CSV)
+#### Etapa 2 — Persistência da importação (concluída)
+
+Duas tabelas novas — `importacoes` e `linhas_importacao` — mais uma coluna anulável em
+`funcionarios`. Nenhuma rota: upload e preview são a etapa 3.
+
+#### O que é guardado, e o que deliberadamente **não** é
+
+| Guardado | Por quê |
+|---|---|
+| organização, usuário, data/hora | rastreabilidade: quem, quando, de qual empresa |
+| nome original do arquivo | rótulo do relatório — **nunca** usado como caminho |
+| formato, tamanho em bytes | identificam o arquivo junto com o hash |
+| **SHA-256** | responde "veio deste arquivo?" **sem guardar o conteúdo** |
+| totais: linhas, válidas, com erro | a listagem precisa deles sem carregar dez mil linhas |
+| status | `Analisada` · `Aplicada` · `Recusada` |
+| por linha: número no arquivo, situação, erros | o relatório |
+
+| **NÃO** guardado | Por quê |
+|---|---|
+| **o binário do arquivo** | Decisão aprovada pelo responsável em 29/08/2026. Guardar exige armazenamento isolado por organização, política de retenção e download autorizado — infraestrutura da Fase 9 e do S3, que o roadmap proíbe antecipar. |
+| **a linha bruta** | Instrução explícita do responsável, e regra de minimização do `CLAUDE.md §24.13`. |
+| **nome, CPF, salário** | Não há necessidade: quem corrige tem o arquivo aberto do lado, e a chave que liga o relatório a ele é o **número da linha** — o mesmo que o editor mostra na lateral. |
+
+##### Por que o SHA-256 substitui o arquivo
+
+Ele responde com certeza prática a pergunta que importa — *"a importação 42 veio deste
+arquivo aqui?"* — e não permite reconstruir nada. Quem tem o original calcula e compara;
+quem não tem, não extrai um CPF sequer do hash. É exatamente a propriedade desejada quando
+o conteúdo traz dado sensível.
+
+Guardado em `char(64)`, hexadecimal minúsculo, validado na entidade: duas formas de
+escrever o mesmo hash fariam a comparação falhar sem nada parecer errado.
+
+##### Por que a linha **válida** também é gravada
+
+Ela é a âncora da origem. O `id_linha_importacao` do funcionário aponta para ela, e é assim
+que se responde *"de onde veio este cadastro?"*. Gravar só as linhas com erro deixaria os
+registros criados sem origem — que era metade do pedido.
+
+#### Decisões registradas
+
+##### 1. A situação da linha é **derivada** dos erros, nunca um parâmetro
+
+Não existe `Registrar(numero, situacao, erros)`. Um chamador que pudesse dizer "válida" com
+erros na lista criaria uma linha que se contradiz — e ela passaria pela invariante de
+`Aplicar`.
+
+##### 2. `Aplicar()` recusa se houver **uma** linha com erro
+
+É a regra do roadmap — *"importação inválida não pode deixar dados parcialmente
+gravados"* — no lugar onde ela não pode ser esquecida. A transação do banco é a **segunda**
+camada; esta é a primeira, e vale mesmo para quem chamar o domínio sem transação.
+
+##### 3. A importação **recusada** também fica registrada
+
+Uma tentativa que falhou também é rastreabilidade. Apagar o vestígio deixaria a pergunta
+*"por que o cadastro não mudou?"* sem resposta.
+
+##### 4. Estado de mão única
+
+`Analisada → Aplicada` ou `Analisada → Recusada`, e nada mais. Importação aplicada é fato
+histórico, e o `CLAUDE.md §4.3` proíbe reescrever o passado em silêncio.
+
+##### 5. `RESTRICT` do funcionário para a linha, `CASCADE` da importação para a linha
+
+Direções opostas, e cada uma tem motivo:
+
+- **funcionário → linha: `RESTRICT`.** Apagar uma importação não pode levar pessoas junto.
+  Na prática, torna indeletável a importação que produziu cadastro — que é o que
+  "rastreabilidade da origem" significa.
+- **importação → linhas: `CASCADE`.** Linha órfã não significa nada sozinha, porque ela não
+  guarda valor algum — só número e erro.
+- **importação → usuário: `RESTRICT`.** Apagar um usuário não pode apagar o rastro do que
+  ele importou.
+
+##### 6. Os erros vão num **array de texto** do PostgreSQL, não numa terceira tabela
+
+Eles nunca são consultados isoladamente — só lidos junto com a linha, para montar o
+relatório. Uma tabela filha acrescentaria um *join* a toda leitura sem responder nenhuma
+pergunta nova. Os tetos (dez erros por linha, 300 caracteres cada) vivem no domínio, e
+impedem que um arquivo desenhado para isso multiplique dez mil linhas por cinquenta erros.
+
+##### 7. O índice de hash **não** é único
+
+Reimportar o mesmo arquivo é legítimo — a primeira tentativa pode ter sido recusada. Uma
+*constraint* ali transformaria uma correção em erro de sistema. O índice existe para
+responder "este arquivo já foi importado?", não para proibir.
+
+##### 8. Contadores conferidos por **check constraint**
+
+`total_linhas = linhas_validas + linhas_com_erro`. A entidade já garante isso em memória; a
+constraint garante contra qualquer caminho que **não** passe pelo domínio — um script de
+correção, por exemplo. A garantia final não é o C# (`CLAUDE.md §24.21`).
+
+#### Verificação
+
+**720 testes verdes** — 32 novos: 25 de domínio e 7 de isolamento contra PostgreSQL real
+via Testcontainers. Build com zero avisos. Migration `ImportacaoDeArquivos` revisada linha
+a linha antes de aplicar, e `has-pending-model-changes` confirma: *"No changes have been
+made to the model since the last migration"*.
+
+Dois testes merecem nota:
+
+- **`ALinhaNaoTemCampoParaValorAlgum`** afirma a lista **exata** de propriedades de
+  `LinhaImportacao`. Se alguém acrescentar `Nome` ou `Cpf` ali por conveniência de
+  relatório, o teste quebra. A decisão de minimização fica travada por código, e não por
+  boa intenção.
+- **`ContadorContraditorio_ERECUSADOPeloBANCO`** roda `UPDATE` direto no PostgreSQL e
+  afirma o **nome** da constraint violada — não apenas que "deu erro". Um teste que só
+  esperasse exceção passaria por qualquer motivo.
+
+---
+
+### Security Gate — Fase 5, etapa 2 (persistência da importação)
+
+| # | Ponto | Resposta |
+|---|---|---|
+| 1 | Ameaças introduzidas | Duas tabelas de tenant novas — e tabela de tenant sem filtro é vazamento entre organizações, a falha mais crítica do produto. Risco específico: o relatório de erros de uma importação é sobre a folha ou o cadastro de uma empresa, e um `LinhasImportacao` sem filtro próprio o entregaria à vizinha. Segundo risco: criar um **banco paralelo de dado pessoal** com retenção diferente da do cadastro. |
+| 2 | Controles | **Filtro global nas duas tabelas**, e não só na raiz. `IdOrganizacao` vem do `IContextoUsuario`, nunca do corpo. **Fail closed**: sem usuário o id é `Guid.Empty`, que não casa com nada. Minimização levada ao extremo — nenhum valor do arquivo é persistido, e há teste travando a forma da entidade. O binário não é guardado. Check constraints no banco. Estado de mão única. |
+| 3 | Testes de segurança | Sete, contra PostgreSQL real: importação da vizinha não aparece; **linhas da vizinha consultadas DIRETO também não**; sem usuário não se vê nada; cada organização vê a própria — este último importa porque um filtro que escondesse tudo passaria nos outros três; ida e volta; cascata; contador contraditório recusado pelo banco **pelo nome da constraint**. |
+| 4 | Impacto multiempresa | É o ponto central desta etapa. Ambas as tabelas têm `id_organizacao` **e** filtro global, e o teste consulta `LinhasImportacao` sem passar pela raiz justamente para provar que o filtro do filho existe. Contra Testcontainers, não EF InMemory — banco falso não gera SQL, e o filtro global **é** SQL. |
+| 5 | Exposição de dados | O que é guardado é **metadado**, não conteúdo: número de linha, contagem, hash, nome do arquivo. Nenhum CPF, nome ou salário atravessa para cá. Nada vai para log. |
+| 6 | Permissões | **Não se aplica nesta etapa**: nenhuma rota foi criada. As políticas entram na etapa 3, junto com o upload. |
+| 7 | Logging e auditoria | A importação **é**, ela mesma, trilha de auditoria: quem, quando, qual arquivo, quantas linhas, o que deu errado. Ela alimenta a Fase 7 sem precisar de evento próprio. |
+| 8 | Dependências | **Nenhuma nova.** ClosedXML continua para a etapa 4. |
+| 9 | Secrets | **Não se aplica.** |
+| 10 | Superfície pública | **Nenhuma.** Nenhuma rota nesta etapa. |
+| 11 | Risco de custo/abuso | Os tetos da etapa 1 continuam valendo, e agora há dois novos: dez erros por linha e 300 caracteres por erro — sem eles, um arquivo desenhado para isso encheria a tabela. **Paginação: não se aplica** — nenhuma listagem foi criada; ela entra na etapa 3 e nasce com teto. |
+
+#### Definition of Done de segurança (`CLAUDE.md §40.1`)
+
+Multi-tenancy analisada **e testada contra PostgreSQL real** · entrada validada no domínio ·
+dado sensível **não** duplicado — é o objeto da etapa · nenhum secret · nenhuma dependência
+nova · logs limpos · migration revisada antes de aplicar · **autorização, endpoint, upload,
+paginação: não se aplicam** — não há rota nesta etapa, e todos entram na etapa 3 · nenhum
+controle enfraquecido.
+
+#### Pendência registrada
+
+A coluna `id_linha_importacao` existe hoje **só em `funcionarios`**, que é o primeiro alvo
+de importação. Contratos e lançamentos ganham a sua quando a importação deles chegar —
+generalizar agora, com um vínculo polimórfico, seria abstração sem uso (`CLAUDE.md §20`).
+
+---
+
+## Security Gate — Fase 5, etapa 1 (leitura de CSV)
 
 | # | Ponto | Resposta |
 |---|---|---|
