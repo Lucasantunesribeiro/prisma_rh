@@ -2,7 +2,7 @@
 
 Plataforma B2B de gestão, cálculo, conferência e auditoria de folha de pagamento brasileira.
 
-> **Estado atual: Fase 5 concluída — importação de CSV e XLSX, com tela.**
+> **Estado atual: Fase 6 concluída — motor de análises, com regras configuráveis e tela.**
 > Fase 4 concluída: 4A a 4G, os cinco tipos de folha calculam.
 >
 > Existe login com JWT, cinco perfis, organizações isoladas entre si, o cadastro de
@@ -384,6 +384,41 @@ navegador não tem efeito nenhum.
   recusaria a linha — e o erro revelaria que aquele documento existe em outro tenant.
 - **Data só em `dd/mm/aaaa` ou `aaaa-mm-dd`.** Aceitar o que a cultura da máquina entender
   faria `03/04/2026` virar março num servidor e abril noutro, sem ninguém perceber.
+
+**Motor de análises (Fase 6)**
+
+```text
+CatalogoRegras (código)          RegraAnalise (banco, por organização)
+  ├─ DesligadoNaFolha              ├─ ativa?
+  ├─ AusenteDaFolha                ├─ severidade
+  ├─ LiquidoNegativo               └─ parâmetros, dentro da faixa que a regra declarou
+  ├─ RubricaDuplicada
+  ├─ DescontoAcimaDoLimite
+  └─ VariacaoSalarial
+```
+
+**A regra é código; a configuração é dado.** O usuário liga, desliga, muda a severidade e
+ajusta números — não escreve regra, não escreve SQL, não escreve expressão. O código da
+regra é um `enum` fechado: o que não está lá não existe, e a recusa acontece antes de
+qualquer código de negócio rodar.
+
+- **As regras são funções puras** sobre um retrato da folha montado antes, numa camada só.
+  Mesmo retrato, mesmos achados — é o que sustenta "execução reproduzível".
+- **O isolamento não depende da regra se comportar.** Quem monta o retrato consulta sob o
+  filtro global; a regra não recebe conexão nem `IdOrganizacao`, então não tem por onde
+  vazar dado de outro tenant nem se sua configuração pedisse.
+- **Versão e severidade são congeladas em cada resultado.** Quando alguém baixar a
+  severidade, o resultado de agosto continua dizendo o que dizia em agosto — sem isso,
+  afrouxar a régua hoje reescreveria o passado.
+- **Parâmetro fora da faixa é recusado com a faixa na mensagem**, e chave que a regra não
+  declarou é recusada em vez de ignorada: ignorar faria a pessoa configurar, ver a tela
+  salvar, e nunca entender por que nada mudou.
+- **Três níveis de permissão.** Configurar é administração, executar é operação, consultar é
+  leitura. Afrouxar uma tolerância é o jeito mais barato de fazer uma divergência sumir do
+  relatório.
+- **Analisar de novo cria execução nova.** Comparar duas passadas é o que mostra se a
+  correção funcionou. Se a folha for recalculada, a análise aparece marcada como
+  desatualizada — dizer que envelheceu é melhor que apagar.
 
 **XLSX: um pipeline, dois formatos (Fase 5, etapa 4)**
 
@@ -807,6 +842,11 @@ Todos usam a senha de `PRISMARH_SEED_SENHA`.
 | `POST /api/contratos/{id}/ferias/concessoes` | Adm. Empresa, Analista | Programa férias de um período |
 | `DELETE /api/contratos/{id}/ferias/concessoes/{idC}` | Adm. Empresa, Analista | Cancela uma programação que não começou |
 | `POST /api/folhas` (campo `tipo`) | Adm. Empresa, Analista | Abre folha **Mensal**, **Ferias** ou **Rescisao** |
+| `GET /api/regras-analise` | todos os 5 | Catálogo de regras com a configuração da organização |
+| `PUT /api/regras-analise/{codigo}` | Adm. Empresa | Liga, desliga, muda severidade e parâmetros |
+| `POST /api/folhas/{id}/analisar` | Adm. Empresa, Analista | Roda as regras ativas e grava o resultado |
+| `GET /api/folhas/{id}/analises` | todos os 5 | Histórico de análises da folha, paginado |
+| `GET /api/analises/{id}` | todos os 5 | Uma execução, com os achados |
 | `GET /api/importacoes/funcionarios/modelo` | Adm. Empresa, Analista | Arquivo de exemplo, `?formato=csv` ou `xlsx` |
 | `POST /api/importacoes/funcionarios/preview` | Adm. Empresa, Analista | Lê e valida CSV ou XLSX **sem gravar nada** |
 | `POST /api/importacoes/funcionarios/confirmar` | Adm. Empresa, Analista | Relê o arquivo, revalida e grava numa transação |

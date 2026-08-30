@@ -1523,6 +1523,29 @@ mostra qual número foi usado.
 **Bloqueante antes de qualquer uso real.** Registrada também no `README.md` e no bloco da
 Fase 4E do `ROADMAP.md`.
 
+### 7. Alteração de regra de análise guarda só a última, sem histórico
+
+Registrada em **30/08/2026**, durante a Fase 6.
+
+`RegraAnalise` guarda `AlteradoPor` e `AlteradoEm` — quem mexeu **por último**, e quando.
+Não guarda o histórico: quem afrouxou a tolerância de 70% para 95% na semana passada, e
+qual era o valor antes.
+
+O §24.17 manda auditar **alteração de parâmetro de regra**, e a razão é direta: afrouxar
+uma tolerância é o jeito mais barato de fazer uma divergência sumir do relatório de
+conferência. Sem histórico, a mudança é indistinguível de "sempre foi assim".
+
+**Aceitável enquanto o sistema roda só em `localhost` e ninguém depende do relatório.**
+Resolver na **Fase 7**, na mesma tabela somente-inserção do `ValorBaseFgtsRescisorio`
+(item 6) e do fechamento de folha — autor, valor anterior, valor novo, data.
+
+Até lá, a rastreabilidade disponível é a **severidade e a versão congeladas em cada
+resultado**: um achado de agosto continua dizendo com qual régua foi produzido, mesmo
+depois de a régua mudar.
+
+**Bloqueante antes de qualquer uso real.** Registrada também no bloco da Fase 6 do
+`ROADMAP.md`.
+
 ## 24.20 Headers, CORS e navegador
 
 **Headers** a planejar e validar contra o frontend real na Fase 10:

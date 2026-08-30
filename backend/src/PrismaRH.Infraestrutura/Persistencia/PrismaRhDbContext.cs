@@ -1,5 +1,6 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using PrismaRH.Aplicacao.Identidade;
+using PrismaRH.Dominio.Analises;
 using PrismaRH.Dominio.Contratos;
 using PrismaRH.Dominio.Empresas;
 using PrismaRH.Dominio.Ferias;
@@ -52,6 +53,14 @@ public sealed class PrismaRhDbContext(
     public DbSet<LancamentoFolha> LancamentosFolha => Set<LancamentoFolha>();
     public DbSet<LinhaMemoriaCalculo> MemoriasCalculo => Set<LinhaMemoriaCalculo>();
     public DbSet<BaseApurada> BasesApuradas => Set<BaseApurada>();
+
+    // Fase 6. A REGRA nao mora aqui - ela e codigo, no CatalogoRegras. O que
+    // estas tabelas guardam e a decisao da organizacao sobre cada regra e o
+    // que cada execucao encontrou.
+    public DbSet<RegraAnalise> RegrasAnalise => Set<RegraAnalise>();
+    public DbSet<ParametroRegraAnalise> ParametrosRegraAnalise => Set<ParametroRegraAnalise>();
+    public DbSet<ExecucaoAnalise> ExecucoesAnalise => Set<ExecucaoAnalise>();
+    public DbSet<ResultadoAnalise> ResultadosAnalise => Set<ResultadoAnalise>();
 
     /// <summary>
     /// Parametros legais federais. NAO tem filtro global de organizacao, e e
@@ -108,6 +117,15 @@ public sealed class PrismaRhDbContext(
         construtor.Entity<LancamentoFolha>().HasQueryFilter(l => l.IdOrganizacao == IdOrganizacaoAtual);
         construtor.Entity<LinhaMemoriaCalculo>().HasQueryFilter(m => m.IdOrganizacao == IdOrganizacaoAtual);
         construtor.Entity<BaseApurada>().HasQueryFilter(b => b.IdOrganizacao == IdOrganizacaoAtual);
+
+        // Fase 6. As QUATRO entram, e nao so as raizes: uma consulta que parta
+        // de ResultadosAnalise sem passar pela execucao alcancaria o relatorio
+        // de inconsistencias da organizacao vizinha - que repete valores da
+        // folha dela.
+        construtor.Entity<RegraAnalise>().HasQueryFilter(r => r.IdOrganizacao == IdOrganizacaoAtual);
+        construtor.Entity<ParametroRegraAnalise>().HasQueryFilter(p => p.IdOrganizacao == IdOrganizacaoAtual);
+        construtor.Entity<ExecucaoAnalise>().HasQueryFilter(e => e.IdOrganizacao == IdOrganizacaoAtual);
+        construtor.Entity<ResultadoAnalise>().HasQueryFilter(r => r.IdOrganizacao == IdOrganizacaoAtual);
 
         // RefreshToken NAO entra: e lido antes de existir usuario autenticado.
         // Ver o comentario em RefreshToken.cs.

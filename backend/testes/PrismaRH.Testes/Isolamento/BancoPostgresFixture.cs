@@ -93,6 +93,18 @@ public sealed class BancoPostgresFixture : IAsyncLifetime
     public Guid IdEstabelecimentoG { get; private set; }
     public Guid IdOrganizacaoH { get; private set; }
     public Guid IdEmpresaH { get; private set; }
+
+    /// <summary>
+    /// Organizacao I existe so para o MOTOR DE ANALISES (Fase 6).
+    ///
+    /// A razao e propria desta fase: as regras conferem a folha INTEIRA da
+    /// empresa. Numa organizacao compartilhada, a regra de ausencia acusaria
+    /// todo contrato criado pelas outras suites - e o teste falharia por
+    /// vizinhanca, nao por defeito.
+    /// </summary>
+    public Guid IdOrganizacaoI { get; private set; }
+    public Guid IdEmpresaI { get; private set; }
+    public Guid IdEstabelecimentoI { get; private set; }
     public Guid IdEstabelecimentoH { get; private set; }
 
     public const string Senha = "SenhaDeTeste#2026";
@@ -155,6 +167,15 @@ public sealed class BancoPostgresFixture : IAsyncLifetime
     /// </summary>
     public const string EmailAdminH = "admin@h.teste";
 
+    /// <summary>Organizacao I: motor de analises (Fase 6). Ver IdOrganizacaoI.</summary>
+    public const string EmailAdminI = "admin@i.teste";
+
+    /// <summary>Analista da organizacao I - executa analise, mas nao configura regra.</summary>
+    public const string EmailAnalistaI = "analista@i.teste";
+
+    /// <summary>Auditor da organizacao I - le resultado, e nada mais.</summary>
+    public const string EmailAuditorI = "auditor@i.teste";
+
     /// <summary>
     /// CPF valido e unico por semente. Os testes desta colecao compartilham o
     /// MESMO banco: reaproveitar um CPF entre dois testes esbarra no indice
@@ -216,7 +237,8 @@ public sealed class BancoPostgresFixture : IAsyncLifetime
         var orgF = new Organizacao("Organizacao F", agora);
         var orgG = new Organizacao("Organizacao G", agora);
         var orgH = new Organizacao("Organizacao H", agora);
-        db.Organizacoes.AddRange(orgA, orgB, orgC, orgD, orgE, orgF, orgG, orgH);
+        var orgI = new Organizacao("Organizacao I", agora);
+        db.Organizacoes.AddRange(orgA, orgB, orgC, orgD, orgE, orgF, orgG, orgH, orgI);
 
         db.Usuarios.AddRange(
             new Usuario(orgA.Id, "Admin A", EmailAdminA, hash, Perfil.AdministradorEmpresa, agora),
@@ -230,7 +252,10 @@ public sealed class BancoPostgresFixture : IAsyncLifetime
             new Usuario(orgE.Id, "Admin E", EmailAdminE, hash, Perfil.AdministradorEmpresa, agora),
             new Usuario(orgF.Id, "Admin F", EmailAdminF, hash, Perfil.AdministradorEmpresa, agora),
             new Usuario(orgG.Id, "Admin G", EmailAdminG, hash, Perfil.AdministradorEmpresa, agora),
-            new Usuario(orgH.Id, "Admin H", EmailAdminH, hash, Perfil.AdministradorEmpresa, agora));
+            new Usuario(orgH.Id, "Admin H", EmailAdminH, hash, Perfil.AdministradorEmpresa, agora),
+            new Usuario(orgI.Id, "Admin I", EmailAdminI, hash, Perfil.AdministradorEmpresa, agora),
+            new Usuario(orgI.Id, "Analista I", EmailAnalistaI, hash, Perfil.AnalistaRh, agora),
+            new Usuario(orgI.Id, "Auditor I", EmailAuditorI, hash, Perfil.Auditor, agora));
 
         var empresaA = new Empresa(orgA.Id, "Empresa da A", Cnpj.Criar("11222333000181"), agora);
         var empresaB = new Empresa(orgB.Id, "Empresa da B", Cnpj.Criar("11444777000161"), agora);
@@ -240,8 +265,10 @@ public sealed class BancoPostgresFixture : IAsyncLifetime
         var empresaF = new Empresa(orgF.Id, "Empresa da F", Cnpj.Criar("00000000000191"), agora);
         var empresaG = new Empresa(orgG.Id, "Empresa da G", Cnpj.Criar("47960950000121"), agora);
         var empresaH = new Empresa(orgH.Id, "Empresa da H", Cnpj.Criar("02558157000162"), agora);
+        var empresaI = new Empresa(orgI.Id, "Empresa da I", Cnpj.Criar("05570714000159"), agora);
         db.Empresas.AddRange(
-            empresaA, empresaB, empresaC, empresaD, empresaE, empresaF, empresaG, empresaH);
+            empresaA, empresaB, empresaC, empresaD, empresaE, empresaF, empresaG, empresaH,
+            empresaI);
 
         var estabA = new Estabelecimento(orgA.Id, empresaA.Id, "001", "Matriz A", agora);
         var estabC = new Estabelecimento(orgC.Id, empresaC.Id, "001", "Matriz C", agora);
@@ -250,7 +277,9 @@ public sealed class BancoPostgresFixture : IAsyncLifetime
         var estabF = new Estabelecimento(orgF.Id, empresaF.Id, "001", "Matriz F", agora);
         var estabG = new Estabelecimento(orgG.Id, empresaG.Id, "001", "Matriz G", agora);
         var estabH = new Estabelecimento(orgH.Id, empresaH.Id, "001", "Matriz H", agora);
-        db.Estabelecimentos.AddRange(estabA, estabC, estabD, estabE, estabF, estabG, estabH);
+        var estabI = new Estabelecimento(orgI.Id, empresaI.Id, "001", "Matriz I", agora);
+        db.Estabelecimentos.AddRange(
+            estabA, estabC, estabD, estabE, estabF, estabG, estabH, estabI);
 
         // Parametro legal FEDERAL: nao pertence a organizacao alguma, entao
         // entra uma vez so e vale para as duas. Mesma tabela da semeadura de
@@ -317,6 +346,9 @@ public sealed class BancoPostgresFixture : IAsyncLifetime
         IdOrganizacaoH = orgH.Id;
         IdEmpresaH = empresaH.Id;
         IdEstabelecimentoH = estabH.Id;
+        IdOrganizacaoI = orgI.Id;
+        IdEmpresaI = empresaI.Id;
+        IdEstabelecimentoI = estabI.Id;
     }
 
     /// <summary>

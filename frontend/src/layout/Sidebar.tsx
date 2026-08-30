@@ -11,6 +11,7 @@ import {
   PanelLeftOpen,
   Receipt,
   Scale,
+  ShieldCheck,
   Search,
   Activity,
 } from 'lucide-react'
@@ -63,6 +64,7 @@ const GRUPOS: Grupo[] = [
     itens: [
       { para: '/folhas', texto: 'Folhas', icone: Receipt },
       { para: '/rubricas', texto: 'Rubricas', icone: ClipboardList },
+      { para: '/regras-analise', texto: 'Regras de conferência', icone: ShieldCheck },
       { para: '/parametros', texto: 'Parâmetros legais', icone: Scale },
     ],
   },

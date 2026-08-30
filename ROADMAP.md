@@ -3420,6 +3420,10 @@ Primeiro implementar local/síncrono para compreender o fluxo.
 
 # FASE 6 — MOTOR DE ANÁLISES
 
+> **Status: CONCLUÍDA em 30/08/2026.** Seis regras oficiais, catálogo fechado no código,
+> parametrização por organização, execução reproduzível, histórico, três níveis de
+> permissão e tela.
+
 ## Objetivo
 
 Criar a principal camada de conferência da folha.
@@ -3478,6 +3482,215 @@ ResultadoAnalise
 - severidade;
 - data;
 - contexto técnico suficiente.
+
+## O que foi implementado
+
+### A decisão que organiza a fase: **a regra é código, a configuração é dado**
+
+```text
+CatalogoRegras (código)          RegraAnalise (banco, por organização)
+  ├─ DesligadoNaFolha              ├─ ativa?
+  ├─ AusenteDaFolha                ├─ severidade
+  ├─ LiquidoNegativo               └─ parâmetros, dentro da faixa que a regra declarou
+  ├─ RubricaDuplicada
+  ├─ DescontoAcimaDoLimite
+  └─ VariacaoSalarial
+```
+
+O `ROADMAP.md` e o `CLAUDE.md §11` diziam a mesma coisa: **o usuário não escreve código nem
+SQL**. A forma mais forte de garantir isso é o código da regra ser um `enum` fechado — o
+que não está lá não existe, e a recusa acontece na desserialização, antes de qualquer
+código de negócio rodar. Mesmo mecanismo da `EstrategiaRubrica` da Fase 3.
+
+Verificado ao vivo: `PUT /api/regras-analise/ApagarTudo` devolve **404**, e
+`{"drop table": "1"}` como parâmetro devolve **400** com *"Esta regra não tem o parâmetro"*.
+
+### As seis regras
+
+| Código | Categoria | Severidade | Parâmetro | O que procura |
+|---|---|---|---|---|
+| `DesligadoNaFolha` | Contrato | Alta | — | Desligado antes da competência com holerite na folha **mensal** |
+| `AusenteDaFolha` | Ausência | Alta | — | Contrato vigente em algum dia da competência sem holerite |
+| `LiquidoNegativo` | Valores | Alta | `toleranciaEmReais` | Líquido abaixo de zero — a pessoa deve para a empresa |
+| `RubricaDuplicada` | Duplicidade | Média | — | A mesma rubrica lançada **a mão** mais de uma vez no holerite |
+| `DescontoAcimaDoLimite` | Valores | Média | `percentualMaximo` | Descontos passando do percentual configurado |
+| `VariacaoSalarial` | Salário | Média | `percentualTolerancia` | Salário de referência variando além da tolerância entre competências |
+
+Cinco das categorias listadas no roadmap, todas com regra de verdade. **Categoria vazia é
+promessa de funcionalidade que não existe**, e por isso as demais não entraram.
+
+#### Decisões dentro das regras, e o motivo de cada uma
+
+**`DesligadoNaFolha` só olha folha mensal.** Rescisão, férias e 13º **devem** conter quem
+saiu — é literalmente para isso que existem. Acusá-las transformaria a regra em ruído, e
+regra que dá alarme falso é a primeira que alguém desliga.
+
+**Um único dia basta para o contrato contar como vigente.** Quem foi admitido no dia 31 tem
+direito a um dia de salário. Exigir o mês inteiro deixaria de fora exatamente as admissões
+e os desligamentos — os casos em que a folha mais erra.
+
+**`RubricaDuplicada` ignora o que o cálculo produziu.** O motor repete rubrica de propósito
+e com frequência: duas concessões de férias no mesmo mês, as parcelas do 13º. A duplicata
+que interessa é a **digitada duas vezes**.
+
+**`VariacaoSalarial` compara o salário de referência, e não o líquido.** O líquido varia
+todo mês por motivo legítimo — hora extra, falta, férias, adiantamento. Compará-lo daria
+alarme em quase todo mundo, e regra que acusa todo mundo não acusa ninguém. Sem folha
+anterior não há achado: tratar a ausência como zero produziria "variação de 100%" em cada
+admissão.
+
+**Os 70% do `DescontoAcimaDoLimite` não são afirmação legal.** É um padrão de produto,
+configurável, e a regra não recusa nada, não muda cálculo e não cita norma — ela chama
+alguém para olhar. O `CLAUDE.md §29` exige fonte oficial para regra legal, e esta não
+pretende ser uma.
+
+### Parametrização: faixa declarada pela própria regra
+
+Cada regra declara seus parâmetros no código — chave, rótulo, tipo, padrão, mínimo e
+máximo. O valor recebido é convertido e conferido contra essa declaração; chave que a regra
+não declarou é **recusada, e não ignorada em silêncio**.
+
+Ignorar faria a pessoa configurar `toleranciaMaxima`, ver a tela salvar, e nunca entender
+por que nada mudou.
+
+Cultura invariante sempre: aceitar a da máquina faria `1,5` virar um e meio num servidor e
+quinze noutro — e ninguém perceberia, porque os dois números existem.
+
+O valor é **relido e revalidado a cada execução**. Parece redundante, mas um valor gravado
+por uma versão antiga do sistema pode estar fora da faixa declarada pela versão atual —
+nesse caso ele cai no padrão, que é um número conhecido, em vez de virar comportamento que
+ninguém consegue explicar.
+
+### Execução reproduzível, e por construção
+
+As regras são **funções puras** sobre um `ContextoAnalise` — um retrato da folha montado
+antes, numa camada só. Elas não consultam banco, não leem relógio e não dependem de ordem
+de reflexão; a ordem de execução é a de uma lista escrita à mão.
+
+Três consequências que justificam a construção a mais:
+
+1. **testar é trivial** — o retrato se monta em memória, sem banco;
+2. **a execução é reproduzível**, que é critério de aceite — mesmo retrato, mesmos achados;
+3. **o isolamento não depende da regra se comportar** — quem monta o retrato consulta sob o
+   filtro global, então uma regra não consegue enxergar fora da organização **nem se sua
+   configuração pedisse**: ela não tem a quem perguntar.
+
+O ponto 3 é a resposta ao item 2 do Security Gate. Uma regra nova, escrita amanhã por outra
+pessoa, não recebe conexão nem `IdOrganizacao` — o retrato que chega até ela já veio
+filtrado.
+
+### Não existe tabela `VersaoRegra`
+
+O roadmap a previa como estrutura possível. Ela guardaria uma cópia de um número que já vive
+no código, junto da lógica que ele versiona — e a cópia seria a que envelhece. O
+`ROADMAP.md §0` proíbe estrutura sem uso real, e o `CLAUDE.md §20` proíbe abstração sem
+necessidade demonstrada.
+
+A versão é propriedade da regra e é **congelada em cada resultado**, junto da severidade —
+mesmo mecanismo de `LancamentoFolha` e pela mesma razão (`CLAUDE.md §4.3`): quando alguém
+baixar a severidade, o resultado de agosto precisa continuar dizendo o que dizia em agosto.
+Sem congelar, afrouxar a régua hoje reescreveria o passado.
+
+### Uma regra que estoura não derruba a execução
+
+Regra é código do sistema, e código do sistema tem defeito. Uma exceção numa regra vira
+**um achado dizendo que ela falhou**, e as outras continuam — deixar subir transformaria um
+defeito numa regra em "a folha não pode ser analisada", indisponibilidade desproporcional
+ao problema.
+
+A mensagem da exceção **não** vai para a tela: só o nome do tipo, no contexto técnico.
+Mensagem de exceção carrega caminho de arquivo, nome de coluna e às vezes o próprio dado
+(`CLAUDE.md §24.16`).
+
+O catálogo é fechado, então essa defesa não tem caminho público — e defesa sem teste é
+hipótese. `MotorAnalises.Rodar` é `internal`, com `InternalsVisibleTo` declarado e
+justificado no `.csproj`, exatamente para que o teste a exercite.
+
+### Rascunho não é analisado
+
+Em rascunho não há holerite calculado: analisar produziria "todo mundo ausente" e nada mais
+— um relatório inteiro de alarme falso, que ensina a ignorar o relatório.
+
+### Analisar de novo cria execução nova
+
+Não substitui a anterior. O roadmap pede **histórico de execução**, e comparar duas passadas
+é exatamente o que mostra se a correção funcionou.
+
+`ExecucaoAnalise` guarda a `VersaoCalculoDaFolha`: se a folha for recalculada, o número
+muda e a análise aparece marcada como **desatualizada**. Dizer que envelheceu é melhor que
+apagar — apagar perderia o histórico.
+
+### A tela
+
+`/regras-analise` configura; a seção **Conferência** dentro da folha executa e mostra.
+
+A tela de configuração usa `min`/`max` vindos do servidor nos campos numéricos. Isso é
+conforto de digitação: quem decide é o backend, e há teste provando que 150 num campo de 1 a
+100 volta 400.
+
+**Fora de escopo, de propósito:** resolver, justificar, atribuir responsável e marcar como
+tratado. Isso é workflow, e workflow é a **Fase 7**. Aqui o resultado é leitura.
+
+### ⚠️ O que um teste revelou sobre o próprio motor de cálculo
+
+O primeiro teste de integração de `DesligadoNaFolha` falhou com relatório vazio — e a causa
+não era a regra: **o motor de cálculo não cria holerite mensal para quem já saiu**, que é o
+comportamento correto.
+
+O defeito que a regra procura acontece na outra ordem, que é a ordem da vida real: a folha é
+calculada com a pessoa ativa, o desligamento é cadastrado depois, e ninguém recalcula. O
+teste foi reescrito nessa ordem, com o motivo registrado no próprio arquivo.
+
+---
+
+### Security Gate — Fase 6
+
+| # | Ponto | Resposta |
+|---|---|---|
+| 1 | Ameaças introduzidas | Parametrização virando **execução de código ou SQL**; regra de uma organização lendo dado de outra ao "comparar"; tolerância afrouxada para esconder divergência; execução em massa como vetor de exaustão; mensagem de exceção vazando caminho de arquivo ou dado para a tela. |
+| 2 | Controles | O usuário **não escreve código nem SQL**: o código da regra é `enum` fechado, e o parâmetro é número validado contra a faixa que a própria regra declarou. Chave não declarada é **recusada**. A execução recebe um **retrato** montado sob o filtro global — a regra não tem conexão nem `IdOrganizacao`, então não tem por onde vazar. Versão e severidade **congeladas** em cada resultado. Exceção de regra vira achado, sem a mensagem da exceção. |
+| 3 | Testes | **52 novos** — 31 de domínio, 21 contra PostgreSQL real. Execução reproduzível (nas duas camadas); parâmetro fora da faixa recusado com a faixa na mensagem; parâmetro não declarado recusado; valor não numérico recusado; regra inventada em 404; regra da vizinha sem efeito nesta organização; **a regra de ausência só vê contrato da própria empresa**; `codigo` e `idOrganizacao` no corpo sem efeito. |
+| 4 | Multiempresa | As **quatro** tabelas entram no filtro global — `regras_analise`, `parametros_regra_analise`, `execucoes_analise` e `resultados_analise` —, e não só as raízes: uma consulta que parta dos resultados sem passar pela execução alcançaria o relatório da vizinha, que repete valores da folha dela. Folha e execução de outra organização devolvem **404**, nunca 403. |
+| 5 | Exposição de dados | O resultado repete valores da folha: mesma classificação, mesma proteção. `ResultadoAnalise` guarda matrícula e nome — o suficiente para dizer **quem** —, e **não** guarda CPF nem salário além do que a descrição explica (`CLAUDE.md §24.13`). O contexto técnico é `chave=valor`, nunca dado pessoal. |
+| 6 | Permissões | **Três níveis distintos**, como o gate exigia: configurar é `AdministrarEmpresas`, executar é `ProcessarFolha`, consultar é `LerDadosEmpresariais`. Não é formalidade: afrouxar uma tolerância é o jeito mais barato de fazer uma divergência sumir do relatório, e quem faz isso não deve ser quem roda a análise no dia a dia. Provado por teste: o Analista executa e lê, mas leva **403** ao configurar. |
+| 7 | Logging e auditoria | `RegraAnalise` guarda **quem alterou e quando**, com FK `RESTRICT` para usuários: apagar um usuário não apaga o registro de que ele afrouxou uma regra. A trilha completa — valor anterior e valor novo — é entrega da **Fase 7**; ver a pendência abaixo. |
+| 8 | Dependências | **Nenhuma nova.** Nenhuma *engine* de regras de terceiro — a maioria embute execução dinâmica, que é exatamente o que esta fase existe para não ter. |
+| 9 | Secrets | **Não se aplica.** |
+| 10 | Superfície pública | **Nenhuma.** Cinco rotas novas, todas autenticadas e com política declarada. |
+| 11 | Custo/abuso | `CancellationToken` propagado em todas as consultas. Listagem de execuções **paginada com teto de 100**. O catálogo não pagina de propósito: tem tamanho fixo, definido em código, e não cresce com o uso. Execução em massa vira job na Fase 9. |
+
+#### Definition of Done de segurança (`CLAUDE.md §40.1`)
+
+Autorização analisada e testada nos **três** níveis · multi-tenancy analisada e testada
+contra PostgreSQL real, com teste específico para a regra que percorre contratos · entrada
+externa validada no backend, com faixa declarada pelo código · dado sensível não duplicado
+no resultado · nenhum secret · **todas as rotas novas com política declarada** · nenhuma
+dependência nova · logs sem conteúdo sensível, e mensagem de exceção fora da tela · testes
+de isolamento e autorização verdes · **listagem nova paginada com teto** · nenhum controle
+enfraquecido.
+
+#### Pendências registradas
+
+1. **A alteração de regra guarda só a última.** `RegraAnalise.AlteradoPor`/`AlteradoEm`
+   dizem quem mexeu por último, e não o histórico. O `CLAUDE.md §24.17` manda auditar
+   alteração de parâmetro de regra, e a trilha somente-inserção — autor, valor anterior,
+   valor novo, data — é entrega da **Fase 7**, junto com o `ValorBaseFgtsRescisorio` e o
+   fechamento de folha. **Aceitável enquanto o sistema roda só em `localhost`.**
+2. **`resultados_analise` não tem FK para `folhas_funcionario`**, e é decisão consciente:
+   recalcular uma folha recria os holerites com ids novos, e a FK faria o recálculo esbarrar
+   nos resultados da análise anterior. O vínculo existe para navegar da tela, e a análise
+   velha continua legível apontando para um holerite que não existe mais — ela é registro do
+   que foi visto naquele momento (`CLAUDE.md §4.3`).
+3. **Não há rate limiting**, como em nenhuma outra rota — `CLAUDE.md §24.19 item 1`,
+   Fase 10. Analisar é rota cara: lê a folha inteira, os contratos da empresa e a folha
+   anterior.
+4. **A análise é síncrona.** Numa folha de mil pessoas, as seis regras rodam dentro da
+   requisição. Hoje é irrelevante; com volume real vira job, que é a Fase 9.
+5. **Não há tela de histórico de execuções.** A API pagina e devolve todas; a seção da folha
+   mostra só a última. Comparar duas passadas exige chamar a API direto — entra junto com o
+   dashboard operacional da Fase 7.
+
+---
 
 ## Security Gate — Fase 6
 

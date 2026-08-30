@@ -37,6 +37,7 @@ import { Dialog, DialogClose, DialogContent, DialogTrigger } from '@/components/
 import { Drawer, DrawerClose, DrawerContent, DrawerTrigger } from '@/components/ui/drawer'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { SecaoAnalise } from '@/paginas/SecaoAnalise'
 import { usePagina } from '@/layout/usePagina'
 import { cn } from '@/lib/utils'
 
@@ -259,6 +260,8 @@ export default function FolhaDetalhe() {
           ) : undefined
         }
       />
+
+      <SecaoAnalise idFolha={id} situacao={folha.situacao} podeExecutar={processa} />
 
       {aberto && (
         <PainelHolerite

@@ -9,6 +9,7 @@ import FuncionarioDetalhe from '@/paginas/FuncionarioDetalhe'
 import Cargos from '@/paginas/Cargos'
 import Importacoes from '@/paginas/Importacoes'
 import Rubricas from '@/paginas/Rubricas'
+import RegrasAnalise from '@/paginas/RegrasAnalise'
 import Folhas from '@/paginas/Folhas'
 import FolhaDetalhe from '@/paginas/FolhaDetalhe'
 import Parametros from '@/paginas/Parametros'
@@ -29,6 +30,7 @@ export default function App() {
               <Route path="/cargos" element={<Cargos />} />
               <Route path="/importacoes" element={<Importacoes />} />
               <Route path="/rubricas" element={<Rubricas />} />
+              <Route path="/regras-analise" element={<RegrasAnalise />} />
               <Route path="/folhas" element={<Folhas />} />
               <Route path="/folhas/:id" element={<FolhaDetalhe />} />
               <Route path="/parametros" element={<Parametros />} />

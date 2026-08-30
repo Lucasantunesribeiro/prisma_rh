@@ -1,5 +1,18 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
+  <ItemGroup>
+    <!--
+      A suite de testes enxerga os membros internos deste projeto.
+
+      Existe por um motivo unico e nomeado: MotorAnalises.Rodar embrulha a
+      excecao de uma regra defeituosa num achado, para que um defeito numa
+      regra nao vire "a folha nao pode ser analisada". Essa defesa nao tem
+      caminho publico - o catalogo e uma lista fechada -, e defesa sem teste e
+      hipotese.
+    -->
+    <InternalsVisibleTo Include="PrismaRH.Testes" />
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>

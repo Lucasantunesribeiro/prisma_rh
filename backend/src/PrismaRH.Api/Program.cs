@@ -97,6 +97,7 @@ app.MapearContratos();
 app.MapearDependentes();
 app.MapearFerias();
 app.MapearImportacoes();
+app.MapearAnalises();
 app.MapearDecimoTerceiro();
 app.MapearRescisao();
 app.MapearRubricas();
