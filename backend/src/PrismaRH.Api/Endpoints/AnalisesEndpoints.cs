@@ -4,6 +4,8 @@ using PrismaRH.Api.Identidade;
 using PrismaRH.Aplicacao.Comum;
 using PrismaRH.Aplicacao.Identidade;
 using PrismaRH.Dominio.Analises;
+using PrismaRH.Dominio.Auditoria;
+using PrismaRH.Infraestrutura.Auditoria;
 using PrismaRH.Infraestrutura.Analises;
 using PrismaRH.Infraestrutura.Persistencia;
 
@@ -206,6 +208,24 @@ public static class AnalisesEndpoints
         configuracao.Configurar(
             requisicao.Ativa, requisicao.Severidade, valores, usuario.IdUsuario, relogio.Agora);
 
+        // ⚠️ Resolve a pendencia do `CLAUDE.md secao 24.19 item 7`, aberta na
+        // Fase 6: a linha da regra guarda so a ULTIMA alteracao, e afrouxar uma
+        // tolerancia e o jeito mais barato de fazer uma divergencia sumir do
+        // relatorio. Agora cada alteracao vira um evento com os valores.
+        var descricaoParametros = valores.Todos.Count == 0
+            ? "sem parametros"
+            : string.Join(
+                ";",
+                valores.Todos.Select(p => $"{p.Key}={DefinicaoParametro.Formatar(p.Value)}"));
+
+        db.Registrar(
+            usuario, relogio,
+            AcaoAuditada.RegraAnaliseConfigurada, EntidadeAuditada.RegraAnalise, configuracao.Id,
+            $"Regra '{regra.Nome}' configurada: "
+            + $"{(requisicao.Ativa ? "ativa" : "desligada")}, severidade {requisicao.Severidade}.",
+            $"codigo={valor};ativa={requisicao.Ativa};"
+            + $"severidade={requisicao.Severidade};{descricaoParametros}");
+
         await db.SaveChangesAsync(ct);
 
         return Results.Ok(Descrever(regra, configuracao));
@@ -261,6 +281,15 @@ public static class AnalisesEndpoints
             relogio.Agora);
 
         db.ExecucoesAnalise.Add(execucao);
+
+        db.Registrar(
+            usuario, relogio,
+            AcaoAuditada.AnaliseExecutada, EntidadeAuditada.ExecucaoAnalise, execucao.Id,
+            $"Analise da folha de {folha.Competencia}: "
+            + $"{execucao.TotalResultados} inconsistencias em {execucao.RegrasExecutadas} regras.",
+            $"folha={folha.Id};altas={execucao.ResultadosAltos};"
+            + $"medias={execucao.ResultadosMedios};baixas={execucao.ResultadosBaixos}");
+
         await db.SaveChangesAsync(ct);
 
         return Results.Ok(Descrever(execucao, folha.VersaoCalculo, comResultados: true));

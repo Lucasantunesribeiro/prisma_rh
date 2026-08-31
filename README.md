@@ -2,7 +2,7 @@
 
 Plataforma B2B de gestão, cálculo, conferência e auditoria de folha de pagamento brasileira.
 
-> **Estado atual: Fase 6 concluída — motor de análises, com regras configuráveis e tela.**
+> **Estado atual: Fase 7 concluída — workflow de tratamento, auditoria e painel.**
 > Fase 4 concluída: 4A a 4G, os cinco tipos de folha calculam.
 >
 > Existe login com JWT, cinco perfis, organizações isoladas entre si, o cadastro de
@@ -384,6 +384,46 @@ navegador não tem efeito nenhum.
   recusaria a linha — e o erro revelaria que aquele documento existe em outro tenant.
 - **Data só em `dd/mm/aaaa` ou `aaaa-mm-dd`.** Aceitar o que a cultura da máquina entender
   faria `03/04/2026` virar março num servidor e abril noutro, sem ninguém perceber.
+
+**Workflow de tratamento e auditoria (Fase 7)**
+
+```text
+Detectada ──> EmAnalise ──> Justificada ──┐
+                   │                       ├──> Resolvida ──> EmAnalise (reabertura)
+                   └──> Corrigida ─────────┘
+```
+
+A Fase 6 encontra; aqui o achado vira **trabalho**.
+
+- **A máquina de estados vive no domínio.** Pular de `Detectada` direto para `Resolvida`
+  fecharia a pendência sem ninguém ter olhado — e o percentual de conformidade viraria
+  ficção. A tela não repete a regra: as opções vêm do servidor.
+- **Justificada e Corrigida são coisas diferentes.** Uma diz "estava certo, e o motivo está
+  escrito"; a outra, "estava errado e foi arrumado". Um único status "tratada" apagaria a
+  resposta para *"quantas divergências eram erro de verdade?"*.
+- **Justificar exige escrever o motivo.** Corrigir não: corrigir é um fato verificável na
+  folha; justificar é uma afirmação de quem escreveu.
+- **A linha do tempo tem sequência própria**, e não ordena por relógio. `Guid` versão 7 tem
+  precisão de milissegundos, e duas linhas da mesma requisição empatariam — com desempate
+  aleatório. Um teste reprovou por isso.
+
+**A trilha de auditoria é somente-inserção**
+
+Não há método de alteração, não há método de remoção e **não há endpoint** de escrita — para
+perfil nenhum, inclusive Administrador da Plataforma. Uma trilha que alguém pode editar não
+é trilha.
+
+O evento é gravado **dentro da transação da operação que o gerou**: ou os dois acontecem, ou
+nenhum dos dois. Uma auditoria gravada por fora registraria alterações que o banco depois
+desfez — mentira com aparência de prova.
+
+Ela registra *que* houve um comentário, e **não o texto dele**. Justificativa de divergência
+salarial costuma explicar situação pessoal, e duplicá-la criaria uma segunda cópia do dado
+mais delicado do produto.
+
+> Isto resolve duas pendências antigas: o **Valor Base do FGTS rescisório** (`§24.19 item 6`,
+> aberta na Fase 4G) e a **configuração de regra de análise** (`item 7`, Fase 6). As duas
+> eram sobrescritas sem deixar rastro do valor anterior.
 
 **Motor de análises (Fase 6)**
 
@@ -842,6 +882,15 @@ Todos usam a senha de `PRISMARH_SEED_SENHA`.
 | `POST /api/contratos/{id}/ferias/concessoes` | Adm. Empresa, Analista | Programa férias de um período |
 | `DELETE /api/contratos/{id}/ferias/concessoes/{idC}` | Adm. Empresa, Analista | Cancela uma programação que não começou |
 | `POST /api/folhas` (campo `tipo`) | Adm. Empresa, Analista | Abre folha **Mensal**, **Ferias** ou **Rescisao** |
+| `GET /api/painel` | todos os 5 | Indicadores operacionais, agregados no banco |
+| `GET /api/inconsistencias` | todos os 5 | Caixa de trabalho, com filtros e paginação |
+| `GET /api/inconsistencias/{id}` | todos os 5 | Uma inconsistência, com a linha do tempo |
+| `POST /api/inconsistencias/{id}/status` | Adm. Empresa, Analista | Muda o status pela máquina de estados |
+| `POST /api/inconsistencias/{id}/responsavel` | Adm. Empresa, Analista | Define quem cuida |
+| `POST /api/inconsistencias/{id}/comentarios` | Adm. Empresa, Analista | Comentário na linha do tempo |
+| `POST /api/inconsistencias/{id}/evidencias` | Adm. Empresa, Analista | Registra o que foi conferido |
+| `GET /api/auditoria` | todos os 5 | Trilha de auditoria — **só leitura, para todos os perfis** |
+| `GET /api/auditoria/{entidade}/{id}` | todos os 5 | Tudo o que aconteceu com uma entidade |
 | `GET /api/regras-analise` | todos os 5 | Catálogo de regras com a configuração da organização |
 | `PUT /api/regras-analise/{codigo}` | Adm. Empresa | Liga, desliga, muda severidade e parâmetros |
 | `POST /api/folhas/{id}/analisar` | Adm. Empresa, Analista | Roda as regras ativas e grava o resultado |

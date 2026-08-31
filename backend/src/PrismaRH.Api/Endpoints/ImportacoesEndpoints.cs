@@ -6,6 +6,8 @@ using PrismaRH.Aplicacao.Identidade;
 using PrismaRH.Aplicacao.Importacao;
 using PrismaRH.Dominio.Importacao;
 using PrismaRH.Dominio.Pessoas;
+using PrismaRH.Dominio.Auditoria;
+using PrismaRH.Infraestrutura.Auditoria;
 using PrismaRH.Infraestrutura.Persistencia;
 using PrismaRH.Infraestrutura.Planilhas;
 
@@ -298,6 +300,15 @@ public static class ImportacoesEndpoints
             // nao gerando registro nenhum.
             importacao.Recusar();
         }
+
+        db.Registrar(
+            usuario, relogio,
+            resultado.Importavel ? AcaoAuditada.ImportacaoAplicada : AcaoAuditada.ImportacaoRecusada,
+            EntidadeAuditada.Importacao, importacao.Id,
+            resultado.Importavel
+                ? $"Importacao de '{entrada.Nome}' aplicada: {criados} funcionarios criados."
+                : $"Importacao de '{entrada.Nome}' recusada: {importacao.LinhasComErro} linhas com erro.",
+            $"formato={entrada.Formato};hash={hash[..12]};linhas={importacao.TotalLinhas}");
 
         try
         {

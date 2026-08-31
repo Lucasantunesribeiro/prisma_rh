@@ -1,6 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using PrismaRH.Aplicacao.Identidade;
 using PrismaRH.Dominio.Analises;
+using PrismaRH.Dominio.Auditoria;
 using PrismaRH.Dominio.Contratos;
 using PrismaRH.Dominio.Empresas;
 using PrismaRH.Dominio.Ferias;
@@ -10,6 +11,7 @@ using PrismaRH.Dominio.Identidade;
 using PrismaRH.Dominio.Importacao;
 using PrismaRH.Dominio.Parametros;
 using PrismaRH.Dominio.Pessoas;
+using PrismaRH.Dominio.Workflow;
 
 namespace PrismaRH.Infraestrutura.Persistencia;
 
@@ -61,6 +63,16 @@ public sealed class PrismaRhDbContext(
     public DbSet<ParametroRegraAnalise> ParametrosRegraAnalise => Set<ParametroRegraAnalise>();
     public DbSet<ExecucaoAnalise> ExecucoesAnalise => Set<ExecucaoAnalise>();
     public DbSet<ResultadoAnalise> ResultadosAnalise => Set<ResultadoAnalise>();
+
+    // Fase 7. O historico de tratamento e a trilha de auditoria de negocio.
+    //
+    // EventosAuditoria e SOMENTE-INSERCAO: nao ha metodo de dominio para
+    // alterar nem remover, e nao ha endpoint - para perfil nenhum, inclusive
+    // Administrador da Plataforma (`CLAUDE.md secao 24.17`).
+    public DbSet<AndamentoInconsistencia> AndamentosInconsistencia =>
+        Set<AndamentoInconsistencia>();
+
+    public DbSet<EventoAuditoria> EventosAuditoria => Set<EventoAuditoria>();
 
     /// <summary>
     /// Parametros legais federais. NAO tem filtro global de organizacao, e e
@@ -126,6 +138,12 @@ public sealed class PrismaRhDbContext(
         construtor.Entity<ParametroRegraAnalise>().HasQueryFilter(p => p.IdOrganizacao == IdOrganizacaoAtual);
         construtor.Entity<ExecucaoAnalise>().HasQueryFilter(e => e.IdOrganizacao == IdOrganizacaoAtual);
         construtor.Entity<ResultadoAnalise>().HasQueryFilter(r => r.IdOrganizacao == IdOrganizacaoAtual);
+
+        // Fase 7. A auditoria entra no filtro como todo o resto: a trilha de
+        // uma organizacao diz quem alterou o salario de quem, e isso e dado
+        // dela. "Somente-insercao" nao significa "visivel para todos".
+        construtor.Entity<AndamentoInconsistencia>().HasQueryFilter(a => a.IdOrganizacao == IdOrganizacaoAtual);
+        construtor.Entity<EventoAuditoria>().HasQueryFilter(e => e.IdOrganizacao == IdOrganizacaoAtual);
 
         // RefreshToken NAO entra: e lido antes de existir usuario autenticado.
         // Ver o comentario em RefreshToken.cs.

@@ -12,6 +12,9 @@ import {
   Receipt,
   Scale,
   ShieldCheck,
+  LayoutDashboard,
+  TriangleAlert,
+  ScrollText,
   Search,
   Activity,
 } from 'lucide-react'
@@ -62,7 +65,9 @@ const GRUPOS: Grupo[] = [
   {
     titulo: 'Folha',
     itens: [
+      { para: '/painel', texto: 'Painel', icone: LayoutDashboard },
       { para: '/folhas', texto: 'Folhas', icone: Receipt },
+      { para: '/inconsistencias', texto: 'Inconsistências', icone: TriangleAlert },
       { para: '/rubricas', texto: 'Rubricas', icone: ClipboardList },
       { para: '/regras-analise', texto: 'Regras de conferência', icone: ShieldCheck },
       { para: '/parametros', texto: 'Parâmetros legais', icone: Scale },
@@ -72,6 +77,7 @@ const GRUPOS: Grupo[] = [
     titulo: 'Administração',
     itens: [
       { para: '/empresas', texto: 'Empresas', icone: Building2 },
+      { para: '/auditoria', texto: 'Auditoria', icone: ScrollText },
       { para: '/status', texto: 'Status do sistema', icone: Activity },
     ],
   },

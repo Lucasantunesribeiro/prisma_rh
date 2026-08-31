@@ -14,6 +14,9 @@ import Folhas from '@/paginas/Folhas'
 import FolhaDetalhe from '@/paginas/FolhaDetalhe'
 import Parametros from '@/paginas/Parametros'
 import Status from '@/paginas/Status'
+import Painel from '@/paginas/Painel'
+import Inconsistencias from '@/paginas/Inconsistencias'
+import Auditoria from '@/paginas/Auditoria'
 
 export default function App() {
   return (
@@ -31,6 +34,9 @@ export default function App() {
               <Route path="/importacoes" element={<Importacoes />} />
               <Route path="/rubricas" element={<Rubricas />} />
               <Route path="/regras-analise" element={<RegrasAnalise />} />
+              <Route path="/painel" element={<Painel />} />
+              <Route path="/inconsistencias" element={<Inconsistencias />} />
+              <Route path="/auditoria" element={<Auditoria />} />
               <Route path="/folhas" element={<Folhas />} />
               <Route path="/folhas/:id" element={<FolhaDetalhe />} />
               <Route path="/parametros" element={<Parametros />} />

@@ -1419,6 +1419,11 @@ Registradas em **27/08/2026**, após auditoria do código existente. Ambas são 
 enquanto o sistema roda só em `localhost`, e **bloqueantes antes do primeiro deploy
 público**.
 
+> **Atualizado em 30/08/2026.** Os itens **6** e **7** foram **resolvidos na Fase 7**, pela
+> trilha de auditoria somente-inserção. Ficam registrados aqui, com a correção anotada no
+> próprio item, porque apagar uma pendência resolvida apaga também a prova de que ela foi
+> encontrada e tratada. Continuam abertos os itens **1 a 5**.
+
 ### 1. Não existe rate limiting em nenhum endpoint
 
 O login já é constante no tempo e não enumera usuários — as duas defesas difíceis estão
@@ -1499,7 +1504,7 @@ calculada **depois** da de férias, e como reprocessar.
 > Ou seja: **no 13º, apurar em separado é o comportamento correto**; nas férias é defeito.
 > Esta pendência alcança **férias e mensal do mesmo mês**, e nada mais.
 
-### 6. Valor base do FGTS rescisório: sem autor e sem histórico
+### 6. ✅ RESOLVIDA — Valor base do FGTS rescisório: sem autor e sem histórico
 
 Registrada em **29/08/2026**, durante a Fase 4G, etapa 3.
 
@@ -1523,7 +1528,24 @@ mostra qual número foi usado.
 **Bloqueante antes de qualquer uso real.** Registrada também no `README.md` e no bloco da
 Fase 4E do `ROADMAP.md`.
 
-### 7. Alteração de regra de análise guarda só a última, sem histórico
+> **Resolvida em 30/08/2026, na Fase 7.**
+>
+> `PUT /api/contratos/{id}/rescisao/valor-base-fgts` passou a **ler o valor anterior antes de
+> sobrescrever** e a registrar um `EventoAuditoria` na mesma transação da alteração: quem
+> informou, valor anterior, valor novo, data e o contrato. O evento é `ValorBaseFgtsInformado`
+> quando é a primeira medida e `ValorBaseFgtsCorrigido` quando há um valor sendo substituído —
+> a distinção existe porque corrigir um número que já multiplicou dinheiro é o evento que
+> importa auditar.
+>
+> A tabela `eventos_auditoria` é **somente-inserção**: não há método de domínio, nem endpoint,
+> nem perfil que altere ou apague uma linha. Consultável em `/auditoria`, filtrando por
+> `ValorBaseFgtsRescisorio`.
+>
+> ⚠️ O `ValorBaseFgtsRescisorio` continua guardando **só o valor vigente** — quem quer a série
+> histórica lê a trilha, e não a entidade. Foi decisão: duplicar a série na entidade criaria
+> uma segunda fonte de verdade que pode divergir da trilha.
+
+### 7. ✅ RESOLVIDA — Alteração de regra de análise guarda só a última, sem histórico
 
 Registrada em **30/08/2026**, durante a Fase 6.
 
@@ -1545,6 +1567,21 @@ depois de a régua mudar.
 
 **Bloqueante antes de qualquer uso real.** Registrada também no bloco da Fase 6 do
 `ROADMAP.md`.
+
+> **Resolvida em 30/08/2026, na Fase 7.**
+>
+> Configurar uma regra passou a gravar um `EventoAuditoria` `RegraAnaliseConfigurada` na mesma
+> transação: quem alterou, quando, e o **contexto completo** — código da regra, se ficou ativa,
+> a severidade escolhida e **cada parâmetro com o valor que recebeu**. Afrouxar a tolerância de
+> 70% para 95% agora deixa rastro em `/auditoria`, filtrando por `RegraAnalise`.
+>
+> O contexto é escrito em cultura **invariante** (`percentualTolerancia=95`, ponto decimal),
+> porque é campo técnico comparável entre registros; a descrição legível ao lado usa pt-BR. As
+> duas formas convivem de propósito — uma para a pessoa, outra para o diff.
+>
+> Continua valendo a rastreabilidade que já existia e é complementar: cada `ResultadoAnalise`
+> congela a **versão da regra e a severidade** do momento em que foi produzido, então um achado
+> de agosto segue dizendo com qual régua saiu, mesmo depois de a régua mudar (`§4.3`).
 
 ## 24.20 Headers, CORS e navegador
 

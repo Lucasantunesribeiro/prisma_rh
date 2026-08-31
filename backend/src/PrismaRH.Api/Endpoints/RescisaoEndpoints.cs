@@ -7,6 +7,8 @@ using PrismaRH.Dominio.Contratos;
 using PrismaRH.Dominio.Ferias;
 using PrismaRH.Dominio.Folha;
 using PrismaRH.Dominio.Rescisao;
+using PrismaRH.Dominio.Auditoria;
+using PrismaRH.Infraestrutura.Auditoria;
 using PrismaRH.Infraestrutura.Persistencia;
 
 namespace PrismaRH.Api.Endpoints;
@@ -131,6 +133,21 @@ public static class RescisaoEndpoints
     /// Corrigir o valor e legitimo - ao contrario do motivo do desligamento,
     /// que e a razao do fato; este e uma medida dele, e medida se corrige.
     /// </summary>
+    /// <summary>
+    /// Dinheiro na descricao da auditoria, sempre em pt-BR.
+    ///
+    /// Cultura EXPLICITA, e nao a da maquina: a trilha e lida por uma pessoa no
+    /// Brasil, e depender do ambiente faria o mesmo evento sair "10,000.00" num
+    /// servidor e "10.000,00" noutro - dois textos para o mesmo fato.
+    /// </summary>
+    private static string Reais(decimal valor) =>
+        valor.ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("pt-BR"));
+
+    /// <summary>Dinheiro no contexto tecnico: invariante, para poder comparar.</summary>
+    private static string Tecnico(decimal? valor) => valor is { } v
+        ? v.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)
+        : "-";
+
     private static async Task<IResult> InformarValorBaseAsync(
         Guid idContrato,
         [FromBody] InformarValorBaseRequisicao requisicao,
@@ -158,13 +175,21 @@ public static class RescisaoEndpoints
         var existente = await db.ValoresBaseFgts
             .FirstOrDefaultAsync(v => v.IdContrato == idContrato, ct);
 
+        // O valor ANTERIOR e lido antes de ser sobrescrito. Sem isto, a
+        // auditoria diria que algo mudou, mas nao de quanto para quanto - e e
+        // exatamente a diferenca que importa num numero que multiplica dinheiro.
+        var anterior = existente?.Valor;
+        var registro = existente;
+
         try
         {
             if (existente is null)
             {
-                db.ValoresBaseFgts.Add(new ValorBaseFgtsRescisorio(
+                registro = new ValorBaseFgtsRescisorio(
                     usuario.IdOrganizacao, idContrato,
-                    requisicao.Valor, requisicao.Observacao, relogio.Agora));
+                    requisicao.Valor, requisicao.Observacao, relogio.Agora);
+
+                db.ValoresBaseFgts.Add(registro);
             }
             else
             {
@@ -175,6 +200,32 @@ public static class RescisaoEndpoints
         {
             return RespostasValidacao.De(erro);
         }
+
+        // ⚠️ Resolve a pendencia do `CLAUDE.md secao 24.19 item 6`, aberta na
+        // Fase 4G em 29/08/2026 e apontada para esta fase.
+        //
+        // O Valor Base do FGTS rescisorio e entrada humana que MULTIPLICA
+        // dinheiro: 40% ou 20% dele viram a indenizacao compensatoria. A
+        // entidade continua alteravel - corrigir uma medida e legitimo -, mas a
+        // ALTERACAO agora e fato registrado, com autor, valor anterior, valor
+        // novo e data, em tabela somente-insercao.
+        db.Registrar(
+            usuario, relogio,
+            AcaoAuditada.ValorBaseFgtsInformado,
+            EntidadeAuditada.ValorBaseFgtsRescisorio,
+            registro!.Id,
+            anterior is null
+                ? $"Valor base do FGTS rescisorio informado: {Reais(requisicao.Valor)}."
+                : $"Valor base do FGTS rescisorio corrigido de {Reais(anterior.Value)} "
+                  + $"para {Reais(requisicao.Valor)}.",
+            // O CONTEXTO usa cultura INVARIANTE, ao contrario da descricao.
+            //
+            // A diferenca e proposital: a descricao e prosa para uma pessoa
+            // ler; o contexto e `chave=valor` para alguem filtrar e comparar
+            // depois. Numero legivel por maquina com separador que muda com o
+            // ambiente e numero que nao se compara.
+            $"contrato={idContrato};anterior={Tecnico(anterior)};"
+            + $"novo={Tecnico(requisicao.Valor)}");
 
         await db.SaveChangesAsync(ct);
 

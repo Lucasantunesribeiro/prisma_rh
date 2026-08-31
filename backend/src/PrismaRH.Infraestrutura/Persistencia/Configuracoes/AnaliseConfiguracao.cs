@@ -199,6 +199,44 @@ public sealed class ResultadoAnaliseConfiguracao : IEntityTypeConfiguration<Resu
             .HasColumnName("contexto")
             .HasMaxLength(ResultadoAnalise.TamanhoMaximoContexto);
 
+        // ------------------------------------------------------- Fase 7
+
+        builder.Property(r => r.Status)
+            .HasColumnName("status").HasConversion<int>().IsRequired();
+
+        builder.Property(r => r.IdResponsavel).HasColumnName("id_responsavel");
+
+        builder.Property(r => r.Justificativa)
+            .HasColumnName("justificativa")
+            .HasMaxLength(ResultadoAnalise.TamanhoMaximoJustificativa);
+
+        builder.Property(r => r.ConcluidaEm).HasColumnName("concluida_em");
+
+        builder.HasOne<PrismaRH.Dominio.Identidade.Usuario>()
+            .WithMany()
+            .HasForeignKey(r => r.IdResponsavel)
+            // Restrict: apagar um usuario nao apaga a inconsistencia que estava
+            // com ele. O trabalho fica sem dono, e nao sem registro.
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.Navigation(r => r.Andamentos)
+            .HasField("_andamentos")
+            .UsePropertyAccessMode(PropertyAccessMode.Field);
+
+        builder.HasMany(r => r.Andamentos)
+            .WithOne()
+            .HasForeignKey(a => a.IdResultadoAnalise)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // "As pendencias desta organizacao, das mais graves para as mais
+        // leves" - a pergunta do painel e da caixa de trabalho.
+        builder.HasIndex(r => new { r.IdOrganizacao, r.Status, r.Severidade })
+            .HasDatabaseName("ix_resultados_analise_status")
+            .IsDescending(false, false, true);
+
+        builder.HasIndex(r => new { r.IdOrganizacao, r.IdResponsavel })
+            .HasDatabaseName("ix_resultados_analise_responsavel");
+
         // SEM foreign key para folhas_funcionario de proposito.
         //
         // Recalcular uma folha recria os holerites com ids novos, e uma FK

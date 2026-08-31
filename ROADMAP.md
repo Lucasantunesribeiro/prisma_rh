@@ -3721,6 +3721,10 @@ enfraquecido.
 
 # FASE 7 — WORKFLOW DE TRATAMENTO E AUDITORIA
 
+> **Status: CONCLUÍDA em 30/08/2026.** Máquina de estados, linha do tempo, responsável,
+> comentários, justificativa, evidência em texto, trilha de auditoria somente-inserção,
+> painel operacional e três telas. **Resolve as pendências 6 e 7 do `CLAUDE.md §24.19`.**
+
 ## Objetivo
 
 Transformar o Prisma RH de um calculador/validador em uma ferramenta operacional.
@@ -3798,6 +3802,232 @@ Indicadores como:
 - pendências por responsável;
 - regras com maior incidência;
 - evolução por competência.
+
+## O que foi implementado
+
+### A máquina de estados, e por que ela existe
+
+```text
+Detectada ──> EmAnalise ──> Justificada ──┐
+                   │                       ├──> Resolvida
+                   └──> Corrigida ─────────┘
+
+Resolvida ──> EmAnalise   (reabertura)
+```
+
+O Security Gate nomeia a ameaça: **"transição de status pulando etapas para esconder
+pendência"**. Sem a máquina, um `PUT status=Resolvida` fecharia qualquer inconsistência sem
+análise nem justificativa — e o relatório de conformidade viraria ficção.
+
+A tabela de transições mora no **domínio**, e não no endpoint: quem chamar o domínio direto
+esbarra nela do mesmo jeito. Verificado ao vivo: `Detectada → Resolvida` devolve **400** com
+*"De 'Detectada' só é possível ir para EmAnalise."*
+
+#### Dois caminhos até Resolvida, e a diferença é a informação que importa
+
+| Status | Significa | A folha muda? |
+|---|---|---|
+| **Justificada** | O número estava certo, e o motivo está escrito | Não |
+| **Corrigida** | O número estava errado e alguém arrumou | Sim |
+
+Um único status "tratada" faria as duas virarem a mesma coisa, e *"quantas divergências
+eram erro de verdade?"* deixaria de ter resposta.
+
+#### Justificar exige escrever o motivo
+
+Justificar sem o motivo é só fechar a pendência com outro nome — e aí o percentual de
+conformidade passa a mentir. **Corrigir não exige texto**: corrigir é um fato verificável na
+folha, o número mudou; justificar é uma afirmação de quem escreveu.
+
+#### Reabrir não apaga a justificativa
+
+Ela é parte do histórico. Apagá-la esconderia o que se concluiu antes de a conclusão ser
+derrubada.
+
+### A linha do tempo: uma tabela, não quatro
+
+Comentário, transição, atribuição e evidência vivem em `andamentos_inconsistencia`, com um
+discriminador. Quatro tabelas produziriam quatro consultas, quatro chances de esquecer o
+filtro global e uma ordenação montada à mão — para mostrar o que a pessoa quer ver, que é
+**uma linha do tempo**.
+
+#### ⚠️ A sequência, e o teste que a exigiu
+
+A ordenação era `OcorridoEm` e, no empate, `Id`. Parecia suficiente — `Guid` versão 7 carrega
+o tempo —, mas a precisão dele é de **milissegundos**: duas linhas criadas na mesma
+requisição caem no mesmo instante, e ali a parte que desempata é **aleatória**.
+
+Um teste reprovou por isso. O efeito seria a linha do tempo aparecer fora de ordem
+exatamente quando várias coisas acontecem juntas — que é quando ela mais precisa estar
+certa: *"quem atribuiu antes de mudar o status?"*.
+
+A solução é uma `Sequencia` do agregado: 1, 2, 3. Ela não depende de precisão de relógio
+nenhuma. Confirmado no navegador: três andamentos com o **mesmo** carimbo de tempo aparecem
+na ordem certa.
+
+### A trilha de auditoria de negócio
+
+`eventos_auditoria`: usuário · organização · ação · entidade · identificador · data ·
+descrição · contexto. Vocabulário fechado nas duas pontas — ação e entidade são `enum`.
+
+#### Somente-inserção, e sem exceção
+
+Não há método de alteração. Não há método de remoção. **Não há endpoint** de escrita — para
+perfil nenhum, inclusive Administrador da Plataforma. Uma trilha que alguém pode editar não
+é trilha; é um campo de texto com nome pomposo.
+
+Dois testes provam: um por reflexão, exigindo que a entidade **não tenha método público
+algum** nem setter público; outro percorrendo `POST`, `PUT`, `PATCH` e `DELETE` contra as
+rotas com o perfil mais alto que existe. Verificado ao vivo: **405** nos quatro.
+
+#### O evento entra na transação da operação
+
+`Auditar.Registrar` só faz `Add`; quem chama continua dono do `SaveChangesAsync`. É isso que
+dá a garantia que mais importa: **ou os dois acontecem, ou nenhum dos dois**. Uma auditoria
+gravada por fora registraria alterações que o banco depois desfez — e essa é a pior falha
+possível numa trilha, porque ela mentiria com aparência de prova.
+
+#### O que a trilha NÃO copia
+
+O **texto** do comentário e da justificativa. A auditoria registra *que* houve comentário; o
+texto vive na linha do tempo, com o controle de acesso dela. Justificativa de divergência
+salarial costuma explicar situação pessoal, e duplicá-la numa segunda tabela criaria uma
+segunda cópia do dado mais delicado do produto (`CLAUDE.md §24.13`). Há teste provando que o
+texto não aparece na auditoria.
+
+#### Descrição em pt-BR, contexto em invariante
+
+A diferença é proposital. A **descrição** é prosa para uma pessoa ler — `10.000,00`. O
+**contexto** é `chave=valor` para alguém filtrar e comparar depois — `10000.00`. Número
+legível por máquina com separador que muda com o ambiente é número que não se compara.
+
+Um teste reprovou até isso ficar explícito nos dois lados.
+
+### ⚠️ As duas pendências que esta fase resolve
+
+#### `CLAUDE.md §24.19 item 6` — Valor Base do FGTS rescisório
+
+Aberta na Fase 4G, em 29/08/2026, e apontada para esta fase. É entrada humana que
+**multiplica dinheiro**: 40% ou 20% dela viram a indenização compensatória — e era
+sobrescrita sem deixar rastro de quem, de quando, nem do valor anterior.
+
+O valor anterior é lido **antes** de ser sobrescrito. Sem isso a auditoria diria que algo
+mudou, mas não de quanto para quanto — e é exatamente a diferença que importa.
+
+A entidade continua alterável — corrigir uma medida é legítimo —, mas a **alteração** agora
+é fato registrado. Teste de integração: duas correções produzem **duas** linhas, com
+`de 10.000,00 para 12.500,00` na descrição e `anterior=10000.00` no contexto.
+
+#### `CLAUDE.md §24.19 item 7` — configuração de regra de análise
+
+Aberta na Fase 6, em 30/08/2026. A linha da regra guardava só a **última** alteração, e
+afrouxar uma tolerância era indistinguível de "sempre foi assim".
+
+Cada configuração agora vira um evento com **os parâmetros**:
+`codigo=VariacaoSalarial;ativa=True;severidade=Baixa;percentualTolerancia=95`.
+
+### Evidência é texto, e o motivo
+
+⚠️ **Anexo binário não entrou, e é decisão consciente.**
+
+Anexar arquivo exige armazenamento isolado por organização, retenção definida e download
+autorizado — exatamente a infraestrutura que a **Fase 5 decidiu não construir antes da
+Fase 9**, quando escolheu não guardar nem o arquivo importado. Construí-la aqui, só para a
+evidência, contradiria a decisão que sustenta o desenho da importação.
+
+O que entrou é **evidência como texto**: o que foi conferido e onde a prova está. É útil e
+completo para o fluxo — e a tela diz isso a quem usa, em vez de deixar a ausência
+inexplicada. Registrado como pendência abaixo.
+
+### O painel operacional
+
+Todo número vem do banco. O critério de aceite é explícito — *"dashboard usa dados reais do
+sistema"* — e não há valor semeado, exemplo ou número calculado no navegador: cada indicador
+é uma agregação **sobre entidade filtrada**.
+
+Agregar no banco, e não em memória: numa organização com trinta folhas, trazer as
+inconsistências para contar em C# significaria carregar milhares de linhas para devolver
+seis números — e o custo cresceria com o uso.
+
+**Conformidade é `null` quando não há inconsistência nenhuma**, e não 100%. "100% de
+conformidade" numa organização que nunca rodou análise seria uma afirmação que o sistema não
+tem como sustentar.
+
+Barras em CSS, sem biblioteca de gráficos: as proporções aqui são de uma dimensão só, e o
+`CLAUDE.md §24.25` manda não instalar biblioteca para funcionalidade trivial. Cada barra tem
+o número escrito ao lado — quem não distingue as cores lê o valor do mesmo jeito.
+
+### As três telas
+
+`/painel` · `/inconsistencias` · `/auditoria`.
+
+A tela de tratamento **não repete a máquina de estados**: as opções de transição vêm do
+servidor, no campo `proximosStatus`. Duas cópias da regra divergiriam, e a da tela é a que
+ninguém testa.
+
+A tela de auditoria não tem botão de criar, editar ou apagar — porque não existe rota para
+nenhum dos três. Há teste afirmando a ausência.
+
+### ⚠️ Um defeito na migration gerada
+
+O EF gerou a coluna `status` de `resultados_analise` com `defaultValue: 0` — o padrão do CLR
+para `int`. Mas `StatusInconsistencia` começa em **1** (`Detectada`), e **zero não é valor
+válido do enum**.
+
+As inconsistências que já existiam foram encontradas pelo motor e ninguém olhou: elas **são**
+`Detectada`. Com o zero, cada uma viraria um enum inválido que o C# leria como um valor sem
+nome, e a tela mostraria um status que não existe.
+
+Corrigido à mão, com o motivo escrito na própria migration. Confirmado ao vivo: as quatro
+inconsistências que já estavam no banco de desenvolvimento vieram como `Detectada`.
+
+---
+
+### Security Gate — Fase 7
+
+| # | Ponto | Resposta |
+|---|---|---|
+| 1 | Ameaças introduzidas | **Stored XSS** em comentário e justificativa — primeira fase em que um usuário escreve texto que outro vai ler. Adulteração ou apagamento de registro de auditoria. Transição pulando etapas para esconder pendência. Atribuição de responsável a usuário de outra organização. Justificativa vazando por uma segunda tabela. |
+| 2 | Controles | O React **escapa por padrão**; não há um único `dangerouslySetInnerHTML` no projeto, e o backend guarda o texto **literal**, sem interpretar nem reescrever. Auditoria **somente-inserção**: sem método de domínio, sem endpoint, para perfil nenhum. Máquina de estados no domínio. Responsável validado **pelo filtro global** — id de fora simplesmente não é encontrado, e não há `if` de `IdOrganizacao` que alguém possa esquecer. A auditoria registra *que* houve comentário, nunca o texto. |
+| 3 | Testes | **58 novos** — 35 de domínio (24 métodos, alguns `[Theory]`) e 23 contra PostgreSQL real; a suíte foi de 845 para **903**. Comentário com `<script>` guardado literal no banco e exibido como texto na tela (dois testes, um de cada lado). Auditoria imune a `POST`/`PUT`/`PATCH`/`DELETE` com o perfil mais alto. Sete transições válidas e sete inválidas. Justificar sem motivo recusado. Responsável de outra organização recusado. Auditor e Visualizador em **403**. Inconsistência da vizinha em **404**. As duas pendências herdadas, provadas por teste. |
+| 4 | Multiempresa | `andamentos_inconsistencia` e `eventos_auditoria` entram no filtro global. A auditoria **sempre** registra a organização — o construtor recusa `Guid.Empty`, porque um evento sem dono some no filtro, e trilha invisível é pior que nenhuma. |
+| 5 | Exposição de dados | A justificativa é o dado mais delicado do produto e vive **num lugar só**, com o controle de acesso da inconsistência. Não é copiada para a auditoria nem exportada. Os nomes de usuário são resolvidos sob o filtro global: id de fora não volta, e a tela mostra o evento sem nome em vez de vazar o de fora. |
+| 6 | Permissões | Tratar é `ProcessarFolha`; ler é `LerDadosEmpresariais`. **Auditor e Visualizador leem tudo e não alteram nada** — provado por teste, e confirmado ao vivo com **403**. **Nenhum perfil edita auditoria.** |
+| 7 | Logging e auditoria | É a fase que define a auditoria de negócio. O evento entra na **transação da operação** — ou os dois acontecem, ou nenhum dos dois. `RESTRICT` para usuários: apagar a própria conta não apaga o registro do que se fez. |
+| 8 | Dependências | **Nenhuma nova.** Nenhuma biblioteca de markdown ou HTML — o texto é texto. Nenhuma biblioteca de gráficos: as barras do painel são `div` com largura em porcentagem. |
+| 9 | Secrets | **Não se aplica.** |
+| 10 | Superfície pública | **Nenhuma.** **Nove** rotas novas, todas autenticadas e com política declarada — seis em `/api/inconsistencias`, duas em `/api/auditoria` e uma em `/api/painel`. |
+| 11 | Custo/abuso | Texto com teto de 2.000 caracteres, cortado no domínio. Listagens paginadas com teto — 100 nas inconsistências, **200** na auditoria, que é lida em bloco para conferir um período. O painel agrega no banco, com teto de 20 linhas por lista e 12 competências. `CancellationToken` propagado. |
+
+#### Definition of Done de segurança (`CLAUDE.md §40.1`)
+
+Autorização analisada e testada por perfil · multi-tenancy analisada e testada contra
+PostgreSQL real · entrada externa validada no backend, com teto de tamanho · **dado sensível
+não duplicado** — a justificativa vive num lugar só · nenhum secret · **todas as rotas novas
+com política declarada** · nenhuma dependência nova · a auditoria não copia texto de usuário
+· testes de isolamento e autorização verdes · **listagens novas paginadas com teto** ·
+nenhum controle enfraquecido.
+
+#### Pendências registradas
+
+1. **Evidência é texto, não arquivo.** Anexo binário exige armazenamento isolado, retenção e
+   download autorizado — a infraestrutura que a Fase 5 adiou para a **Fase 9**. A tela diz
+   isso a quem usa. Quando o armazenamento existir, o anexo entra reusando integralmente o
+   Security Gate da Fase 5.
+2. **A auditoria não cobre todas as escritas do sistema.** Estão cobertas: fechamento de
+   folha, configuração de regra, execução de análise, valor base do FGTS, importação e todo
+   o workflow. **Não** estão: criação e alteração de funcionário, vigência contratual,
+   desligamento, rubrica e lançamento manual — a lista do `ROADMAP.md` os prevê, e eles
+   entram junto com a revisão de rotas da **Fase 10**.
+3. **Não há rate limiting**, como em nenhuma rota — `CLAUDE.md §24.19 item 1`, Fase 10.
+   Comentar é rota de escrita barata e repetível.
+4. **A auditoria não tem retenção definida.** Ela cresce para sempre, o que é correto para
+   uma trilha — mas o `CLAUDE.md §24.13` pede retenção por classe. A decisão precede o
+   primeiro uso real, e entra na Fase 10.
+5. **Não há SLA nem prazo por inconsistência.** O `ROADMAP.md` já a marcava como "futuro se
+   aprovado". Continua fora.
+
+---
 
 ## Security Gate — Fase 7
 

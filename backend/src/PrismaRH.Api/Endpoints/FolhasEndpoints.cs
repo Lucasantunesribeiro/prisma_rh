@@ -7,6 +7,8 @@ using PrismaRH.Dominio.Ferias;
 using PrismaRH.Dominio.Rescisao;
 using PrismaRH.Dominio.Folha;
 using PrismaRH.Dominio.Parametros;
+using PrismaRH.Dominio.Auditoria;
+using PrismaRH.Infraestrutura.Auditoria;
 using PrismaRH.Infraestrutura.Persistencia;
 
 namespace PrismaRH.Api.Endpoints;
@@ -304,7 +306,11 @@ public static class FolhasEndpoints
     }
 
     private static async Task<IResult> CalcularAsync(
-        Guid id, PrismaRhDbContext db, IRelogio relogio, CancellationToken ct)
+        Guid id,
+        PrismaRhDbContext db,
+        IContextoUsuario usuario,
+        IRelogio relogio,
+        CancellationToken ct)
     {
         var folha = await CarregarParaEscritaAsync(db, id, ct);
 
@@ -376,7 +382,11 @@ public static class FolhasEndpoints
     }
 
     private static async Task<IResult> FecharAsync(
-        Guid id, PrismaRhDbContext db, IRelogio relogio, CancellationToken ct)
+        Guid id,
+        PrismaRhDbContext db,
+        IContextoUsuario usuario,
+        IRelogio relogio,
+        CancellationToken ct)
     {
         var folha = await db.Folhas.Include(f => f.Funcionarios).FirstOrDefaultAsync(f => f.Id == id, ct);
 
@@ -393,6 +403,14 @@ public static class FolhasEndpoints
         {
             return RespostasValidacao.De(erro);
         }
+
+        // Fechamento de folha e evento auditado (`CLAUDE.md secao 24.17`): e o
+        // ato que transforma um calculo em fato historico.
+        db.Registrar(
+            usuario, relogio,
+            AcaoAuditada.FolhaFechada, EntidadeAuditada.FolhaPagamento, folha.Id,
+            $"Folha {folha.Tipo} de {folha.Competencia} fechada.",
+            $"liquido={folha.TotalLiquido};pessoas={folha.Funcionarios.Count}");
 
         await db.SaveChangesAsync(ct);
 

@@ -4,6 +4,8 @@ using PrismaRH.Api.Identidade;
 using PrismaRH.Aplicacao.Comum;
 using PrismaRH.Aplicacao.Identidade;
 using PrismaRH.Dominio.Folha;
+using PrismaRH.Dominio.Auditoria;
+using PrismaRH.Infraestrutura.Auditoria;
 using PrismaRH.Infraestrutura.Persistencia;
 
 namespace PrismaRH.Api.Endpoints;
