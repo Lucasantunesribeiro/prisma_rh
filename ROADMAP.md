@@ -4570,6 +4570,25 @@ Sem listagem nova: **não se aplica** paginação.
 
 # FASE 9 — PROCESSAMENTO ASSÍNCRONO NA AWS
 
+> ### ⚠️ Requisito que atravessa a fase inteira, decidido em 31/08/2026
+>
+> **Zero custo AWS é requisito arquitetural do portfólio; serviços pagos por
+> existência não são permitidos.**
+>
+> A conta perdeu o plano gratuito ao habilitar o IAM Identity Center — isso criou
+> uma AWS Organizations, e entrar numa organização é gatilho documentado de upgrade
+> automático. Os US$ 100 de crédito viraram US$ 0,00.
+>
+> **Consequência direta nesta fase:** o **S3 saiu da arquitetura**. Ele consta como
+> recurso previsto no texto original abaixo, e não está na tabela de Free Tier
+> permanente da AWS — cobra desde o primeiro byte. O arquivo importado passa a
+> ficar no PostgreSQL, como blob temporário com teto global e retenção curta.
+> **API Gateway** sai pelo mesmo motivo; a Lambda Function URL cobre o caso dentro
+> da franquia da própria Lambda.
+>
+> Detalhes, números e a conta de cada guardrail: `CLAUDE.md §16` e
+> `backend/src/PrismaRH.Dominio/Importacao/OrcamentoSemCusto.cs`.
+
 ## Objetivo
 
 Mover trabalhos pesados para processamento assíncrono quando o produto já tiver necessidade concreta.

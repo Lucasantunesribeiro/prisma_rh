@@ -731,6 +731,43 @@ Esse valor é teto, não meta de gasto.
 
 A preferência é manter o projeto próximo de US$ 0 durante uso normal de portfólio.
 
+> ### ⚠️ Decisão do responsável, registrada em 31/08/2026 — substitui a preferência acima
+>
+> **Zero custo AWS é requisito arquitetural do portfólio; serviços pagos por
+> existência não são permitidos.**
+>
+> O teto de US$ 6,50 continua valendo como limite de contrato, mas **deixou de ser
+> o alvo**. O alvo é **US$ 0,00 previsto**, e ele é critério de projeto, não de
+> economia: um serviço que cobra só por existir — sem ninguém usar o sistema — não
+> entra na arquitetura, e a solução é **redesenhada** em vez de aprovada com
+> ressalva.
+>
+> **O que a decisão exclui, e por quê:**
+>
+> | Excluído | Motivo |
+> |---|---|
+> | **S3** | Ausente da tabela oficial de Free Tier permanente da AWS: cobra desde o primeiro byte |
+> | **API Gateway** | Idem. A Lambda Function URL cobre o caso, dentro da franquia da própria Lambda |
+> | **KMS customer-managed** | US$ 1,00/mês por chave, só por existir. Filas usam a criptografia própria da SQS, com chave da AWS |
+> | **NAT Gateway** | ~US$ 32/mês fixos — sozinho, cinco vezes o teto do projeto |
+> | **EC2 · RDS · ECS/Fargate · EKS · ALB** | Cobrança por hora provisionada, independente de uso |
+> | **Provisioned concurrency** | Mantém execução quente por hora. Não confundir com *reserved concurrency*, que é gratuita |
+> | **Provisioned mode no event source mapping** | Pollers dedicados cobrados por hora |
+>
+> **O que a decisão exige de quem implementa:** o contexto por trás é que a conta
+> perdeu o plano gratuito — habilitar o IAM Identity Center criou uma AWS
+> Organizations, e isso dispara o upgrade automático documentado. Os US$ 100 de
+> crédito viraram US$ 0,00, e **Free Tier não é teto de gasto**: passar da franquia
+> não bloqueia nada, apenas cobra.
+>
+> Por isso não basta "provavelmente cabe". Cada franquia precisa de um **limite
+> técnico** que torne a ultrapassagem improvável — memória mínima, timeout curto,
+> concorrência reservada, long polling, retenção de log, teto de retentativas. Os
+> números vivem em `OrcamentoSemCusto`, cada um com a conta escrita ao lado.
+>
+> **Antes de criar qualquer recurso novo:** consultar o preço vigente e confirmar
+> que não há cobrança por existência. Se houver, não criar — redesenhar.
+
 ## Regras obrigatórias
 
 O agente NÃO pode, sem autorização explícita:
@@ -1600,6 +1637,34 @@ depois de a régua mudar.
 > Continua valendo a rastreabilidade que já existia e é complementar: cada `ResultadoAnalise`
 > congela a **versão da regra e a severidade** do momento em que foi produzido, então um achado
 > de agosto segue dizendo com qual régua saiu, mesmo depois de a régua mudar (`§4.3`).
+
+### 8. Chave de acesso AWS exposta, e mantida em uso por decisão do responsável
+
+Registrada em **31/08/2026**, ao configurar o acesso AWS da Fase 9.
+
+O par de chaves do usuário IAM `portfolio-cli-bootstrap` — que tem **`AdministratorAccess`**
+na conta `632404567709` — foi transmitido em texto puro por um canal que fica gravado em
+disco. O valor não é reproduzido aqui, nem truncado, pelo `§24.15`.
+
+A correção padrão é **rotação**: criar o novo par, trocar quem consome, confirmar, apagar o
+antigo. Apagar a mensagem não resolve — o segredo já foi escrito em arquivo, pela mesma
+razão que apagar do código não o tira do histórico do Git.
+
+> **O responsável foi avisado em 31/08/2026 e decidiu não rotacionar.** É conta pessoal de
+> portfólio, sem dado de terceiro, com orçamento mensal de US$ 31 e MFA na raiz. A decisão
+> está registrada aqui, e não repetida a cada tarefa.
+
+**O que isso muda na prática, e é por isso que fica escrito:**
+
+- a chave abre a conta inteira, não só o Prisma RH — o raio de dano de um vazamento é toda
+  a infraestrutura do portfólio, não um bucket;
+- enquanto ela viver, **o alerta de orçamento deixa de ser conforto e vira detecção**: é o
+  que avisa se alguém começar a gastar na conta;
+- **nada muda para a aplicação.** A Lambda da Fase 9 usa **papel IAM**, nunca chave de
+  longa duração (`§24.15` e o Security Gate da Fase 9, item 9). Esta chave é do
+  desenvolvimento, e não do produto.
+
+**Bloqueante antes de qualquer uso que não seja portfólio pessoal.**
 
 ## 24.20 Headers, CORS e navegador
 

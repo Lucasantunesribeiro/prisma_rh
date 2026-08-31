@@ -1,6 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using PrismaRH.Aplicacao.Identidade;
 using PrismaRH.Dominio.Analises;
+using PrismaRH.Dominio.Assincrono;
 using PrismaRH.Dominio.Auditoria;
 using PrismaRH.Dominio.Contratos;
 using PrismaRH.Dominio.Empresas;
@@ -74,6 +75,20 @@ public sealed class PrismaRhDbContext(
 
     public DbSet<EventoAuditoria> EventosAuditoria => Set<EventoAuditoria>();
 
+    // ------------------------------------------------- assincrono (Fase 9)
+
+    public DbSet<TrabalhoAssincrono> TrabalhosAssincronos => Set<TrabalhoAssincrono>();
+
+    /// <summary>
+    /// Os bytes dos arquivos enviados, guardados so ate o worker terminar.
+    ///
+    /// ⚠️ O ORCAMENTO de espaco e global (50 MB em toda a aplicacao, porque o
+    /// limite do Neon gratuito e por PROJETO); o DADO continua isolado pelo
+    /// filtro global, como todo o resto. Compartilhar o teto nao e compartilhar
+    /// o conteudo.
+    /// </summary>
+    public DbSet<BlobTemporario> BlobsTemporarios => Set<BlobTemporario>();
+
     /// <summary>
     /// Parametros legais federais. NAO tem filtro global de organizacao, e e
     /// a unica excecao do sistema: INSS e lei, vale igual para todos os
@@ -144,6 +159,8 @@ public sealed class PrismaRhDbContext(
         // dela. "Somente-insercao" nao significa "visivel para todos".
         construtor.Entity<AndamentoInconsistencia>().HasQueryFilter(a => a.IdOrganizacao == IdOrganizacaoAtual);
         construtor.Entity<EventoAuditoria>().HasQueryFilter(e => e.IdOrganizacao == IdOrganizacaoAtual);
+        construtor.Entity<TrabalhoAssincrono>().HasQueryFilter(t => t.IdOrganizacao == IdOrganizacaoAtual);
+        construtor.Entity<BlobTemporario>().HasQueryFilter(b => b.IdOrganizacao == IdOrganizacaoAtual);
 
         // RefreshToken NAO entra: e lido antes de existir usuario autenticado.
         // Ver o comentario em RefreshToken.cs.
