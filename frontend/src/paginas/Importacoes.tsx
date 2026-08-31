@@ -3,6 +3,8 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { podeAdministrarPessoas } from '@/api/autenticacao'
 import {
   EXTENSOES_ACEITAS,
+  ROTULO_TRABALHO,
+  enfileirarImportacao,
   ROTULO_FORMATO,
   ROTULO_STATUS,
   baixarModelo,
@@ -19,6 +21,7 @@ import {
   type StatusImportacao,
 } from '@/api/importacoes'
 import { useSessao } from '@/auth/useSessao'
+import { useTrabalho } from './useTrabalho'
 import { DataTable, type Coluna } from '@/components/sistema/DataTable'
 import {
   CabecalhoPagina,
@@ -176,6 +179,12 @@ function Enviar({ aoConcluir }: { aoConcluir: () => Promise<void> }) {
   const [confirmando, definirConfirmando] = useState(false)
   const [falha, definirFalha] = useState<string | null>(null)
 
+  // Processamento em segundo plano (Fase 9). `idTrabalho` liga o acompanhamento;
+  // o hook para sozinho quando o trabalho deixa de estar pendente.
+  const [idTrabalho, definirIdTrabalho] = useState<string | null>(null)
+  const [enfileirando, definirEnfileirando] = useState(false)
+  const acompanhamento = useTrabalho(idTrabalho)
+
   const analisar = useCallback(
     async (escolhido: File, escolha?: MapeamentoFuncionarios) => {
       definirAnalisando(true)
@@ -219,6 +228,32 @@ function Enviar({ aoConcluir }: { aoConcluir: () => Promise<void> }) {
 
     definirMapeamento(novo)
     void analisar(arquivo, novo)
+  }
+
+  /**
+   * Manda a planilha para a fila em vez de processar na requisição.
+   *
+   * O arquivo vai de novo, como na confirmação síncrona — o servidor relê e
+   * revalida, e é a leitura dele que decide. O que muda é **onde** isso
+   * acontece: fora da requisição, num worker.
+   */
+  const enfileirar = async () => {
+    if (!arquivo) return
+
+    definirEnfileirando(true)
+    definirFalha(null)
+    definirIdTrabalho(null)
+
+    try {
+      const trabalho = await enfileirarImportacao(arquivo)
+
+      definirIdTrabalho(trabalho.id)
+      definirPrevia(null)
+    } catch (erro) {
+      definirFalha(erro instanceof Error ? erro.message : 'Não foi possível enfileirar.')
+    } finally {
+      definirEnfileirando(false)
+    }
   }
 
   const confirmar = async () => {
@@ -307,6 +342,16 @@ function Enviar({ aoConcluir }: { aoConcluir: () => Promise<void> }) {
               aoRemapear={remapear}
               confirmando={confirmando}
               aoConfirmar={() => void confirmar()}
+              enfileirando={enfileirando}
+              aoEnfileirar={() => void enfileirar()}
+            />
+          )}
+
+          {idTrabalho && (
+            <Acompanhamento
+              acompanhamento={acompanhamento}
+              aoConcluir={aoConcluir}
+              aoFechar={() => definirIdTrabalho(null)}
             />
           )}
 
@@ -342,12 +387,16 @@ function Previa({
   aoRemapear,
   confirmando,
   aoConfirmar,
+  enfileirando,
+  aoEnfileirar,
 }: {
   previa: PreviewImportacao
   mapeamento: MapeamentoFuncionarios
   aoRemapear: (parte: Partial<MapeamentoFuncionarios>) => void
   confirmando: boolean
   aoConfirmar: () => void
+  enfileirando: boolean
+  aoEnfileirar: () => void
 }) {
   const colunas: Coluna<LinhaPreview>[] = useMemo(
     () => [
@@ -446,15 +495,33 @@ function Previa({
           )}
         </p>
 
-        <Button
-          type="button"
-          size="sm"
-          disabled={!previa.importavel || confirmando}
-          onClick={aoConfirmar}
-        >
-          <Upload aria-hidden />
-          {confirmando ? 'Importando...' : rotuloDoBotao(previa)}
-        </Button>
+        <div className="flex gap-2">
+          {/*
+            Segundo plano: mesma planilha, mesmo servidor revalidando, mas fora
+            da requisição. Fica ao lado e não no lugar — para uma folha de RH o
+            caminho direto responde em segundos, e resposta imediata é melhor
+            que resposta correta daqui a pouco.
+          */}
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={!previa.importavel || confirmando || enfileirando}
+            onClick={aoEnfileirar}
+          >
+            {enfileirando ? 'Enviando...' : 'Processar em segundo plano'}
+          </Button>
+
+          <Button
+            type="button"
+            size="sm"
+            disabled={!previa.importavel || confirmando || enfileirando}
+            onClick={aoConfirmar}
+          >
+            <Upload aria-hidden />
+            {confirmando ? 'Importando...' : rotuloDoBotao(previa)}
+          </Button>
+        </div>
       </div>
     </div>
   )
@@ -830,4 +897,77 @@ function formatarBytes(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
 
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
+}
+
+// ------------------------------------------- acompanhamento (Fase 9)
+
+/**
+ * Mostra em que pé está o trabalho que foi para a fila.
+ *
+ * A tela **não adivinha** o andamento: ela pergunta ao servidor de três em três
+ * segundos e mostra o que ele responde. Barra de progresso falsa seria pior que
+ * nenhuma — daria uma precisão que ninguém tem.
+ */
+function Acompanhamento({
+  acompanhamento,
+  aoConcluir,
+  aoFechar,
+}: {
+  acompanhamento: ReturnType<typeof useTrabalho>
+  aoConcluir: () => Promise<void>
+  aoFechar: () => void
+}) {
+  const { trabalho, acompanhando, erro, desistiu } = acompanhamento
+
+  useEffect(() => {
+    // Concluiu: o histórico da tela precisa recarregar para mostrar a
+    // importação que o worker acabou de gravar.
+    if (trabalho && !trabalho.pendente && trabalho.status === 'Concluido') {
+      void aoConcluir()
+    }
+  }, [trabalho, aoConcluir])
+
+  if (!trabalho) {
+    return (
+      <Alert role="status">
+        <AlertDescription>Enviando para a fila…</AlertDescription>
+      </Alert>
+    )
+  }
+
+  const falhou = trabalho.status === 'Falhou'
+
+  return (
+    <div className="space-y-2 rounded-md border border-border bg-muted/40 p-3">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Processamento em segundo plano
+        </span>
+        <span className={cn('text-xs font-medium', falhou && 'text-destructive')}>
+          {ROTULO_TRABALHO[trabalho.status]}
+        </span>
+      </div>
+
+      <p className="text-[13px] text-muted-foreground">
+        {acompanhando && 'Acompanhando… pode fechar esta tela, o processamento continua.'}
+        {!acompanhando && trabalho.status === 'Concluido' && 'Pronto. O histórico abaixo já mostra o resultado.'}
+        {falhou && (trabalho.erro ?? 'O processamento falhou.')}
+        {desistiu && 'Passou do tempo esperado. Confira o histórico mais tarde.'}
+      </p>
+
+      {trabalho.tentativas > 1 && (
+        <p className="text-xs text-muted-foreground">
+          Tentativa {trabalho.tentativas} — a primeira não deu certo e a fila devolveu o trabalho.
+        </p>
+      )}
+
+      {erro && <p className="text-xs text-amber-600 dark:text-amber-500">{erro}</p>}
+
+      {!acompanhando && (
+        <Button type="button" size="sm" variant="outline" onClick={aoFechar}>
+          Fechar
+        </Button>
+      )}
+    </div>
+  )
 }

@@ -24,6 +24,7 @@
     <ProjectReference Include="..\..\src\PrismaRH.Api\PrismaRH.Api.csproj" />
     <ProjectReference Include="..\..\src\PrismaRH.Infraestrutura\PrismaRH.Infraestrutura.csproj" />
     <ProjectReference Include="..\..\src\PrismaRH.Dominio\PrismaRH.Dominio.csproj" />
+    <ProjectReference Include="..\..\src\PrismaRH.Worker\PrismaRH.Worker.csproj" />
   </ItemGroup>
 
 </Project>

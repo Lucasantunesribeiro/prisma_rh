@@ -1,0 +1,65 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+
+    <!--
+      A Lambda nao tem runtime GERENCIADO para .NET 10 - o mais novo e o
+      dotnet8. Entao a funcao roda em `provided.al2023`, o runtime
+      personalizado, com publicacao self-contained: o proprio pacote leva o
+      .NET junto.
+
+      A alternativa seria fixar o worker em net8.0, e ela nao serve: ele
+      referencia Dominio, Aplicacao e Infraestrutura, todos em net10.0. Um
+      projeto net8 nao consegue referenciar net10, e multi-alvejar o dominio
+      inteiro para acomodar a Lambda seria deixar a infraestrutura mandar na
+      arquitetura.
+    -->
+    <OutputType>Exe</OutputType>
+    <AssemblyName>bootstrap</AssemblyName>
+    <StartupObject>PrismaRH.Worker.ProgramaWorker</StartupObject>
+    <PublishReadyToRun>false</PublishReadyToRun>
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>linux-x64</RuntimeIdentifier>
+    <InvariantGlobalization>true</InvariantGlobalization>
+
+    <!--
+      Trimming DESLIGADO de proposito. O EF Core usa reflexao pesada para
+      montar o modelo, e o trimmer remove o que nao consegue enxergar - o
+      resultado seria uma funcao que compila, publica, e so falha na primeira
+      consulta, em producao. Pacote maior e preco justo por isso.
+    -->
+    <PublishTrimmed>false</PublishTrimmed>
+
+    <!--
+      Arquivo unico COM compressao. O pacote self-contained descomprimido passa
+      de 50 MB, e o upload direto da Lambda para nesse numero - subir por S3
+      resolveria e o S3 esta proibido por custo.
+
+      A compressao troca ~4 MB de pacote por alguns milissegundos de extracao
+      no arranque frio. Com timeout de 60 s e uma importacao que leva segundos,
+      a troca vale; se nao valesse, o teste de arranque frio reprovaria.
+    -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <DebugType>none</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Amazon.Lambda.Core" Version="2.6.0" />
+    <PackageReference Include="Amazon.Lambda.RuntimeSupport" Version="1.13.1" />
+    <PackageReference Include="Amazon.Lambda.Serialization.SystemTextJson" Version="2.4.4" />
+    <PackageReference Include="Amazon.Lambda.SQSEvents" Version="2.2.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PrismaRH.Dominio\PrismaRH.Dominio.csproj" />
+    <ProjectReference Include="..\PrismaRH.Aplicacao\PrismaRH.Aplicacao.csproj" />
+    <ProjectReference Include="..\PrismaRH.Infraestrutura\PrismaRH.Infraestrutura.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -214,6 +214,28 @@ public sealed class TrabalhoAssincrono
     }
 
     /// <summary>
+    /// Falha que **nao adianta tentar de novo**, independente das tentativas
+    /// restantes.
+    ///
+    /// Existe porque <see cref="Falhar"/> devolve o trabalho para a fila
+    /// enquanto houver tentativa sobrando - o que esta certo para banco fora do
+    /// ar, e errado para o arquivo que nao existe mais: ele nao vai reaparecer.
+    ///
+    /// Sem esta distincao, um trabalho cujo blob expirou ficaria `Enfileirado`
+    /// para sempre, com a mensagem ja descartada da fila - **pendente eterno**,
+    /// que e pior que falho, porque a tela promete que ainda vai acontecer.
+    /// Um teste pegou exatamente isso.
+    /// </summary>
+    public void FalharDefinitivamente(string motivo, DateTimeOffset agora)
+    {
+        var limpo = string.IsNullOrWhiteSpace(motivo) ? "Falha nao informada." : motivo.Trim();
+
+        Erro = limpo.Length > TamanhoMaximoErro ? limpo[..TamanhoMaximoErro] : limpo;
+        Status = StatusTrabalho.Falhou;
+        ConcluidoEm = agora;
+    }
+
+    /// <summary>
     /// A chave de idempotencia de uma importacao.
     ///
     /// Hash do conteudo + organizacao + tipo. O hash sozinho nao serve: duas

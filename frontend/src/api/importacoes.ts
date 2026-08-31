@@ -173,3 +173,55 @@ export async function baixarModelo(formato: 'csv' | 'xlsx'): Promise<void> {
     URL.revokeObjectURL(url)
   }
 }
+
+// ------------------------------------------------- processamento assincrono (Fase 9)
+
+export type StatusTrabalho = 'Enfileirado' | 'Processando' | 'Concluido' | 'Falhou'
+
+export interface TrabalhoAssincrono {
+  id: string
+  tipo: string
+  status: StatusTrabalho
+  /** Ainda vai acontecer alguma coisa? É o que decide se a tela continua perguntando. */
+  pendente: boolean
+  tentativas: number
+  /** A `Importacao` gerada, quando concluiu. */
+  idRecurso: string | null
+  erro: string | null
+  criadoEm: string
+  concluidoEm: string | null
+}
+
+export const ROTULO_TRABALHO: Record<StatusTrabalho, string> = {
+  Enfileirado: 'Na fila',
+  Processando: 'Processando',
+  Concluido: 'Concluído',
+  Falhou: 'Falhou',
+}
+
+/**
+ * Envia a planilha para processamento em segundo plano.
+ *
+ * Responde **202** com o trabalho ainda `Enfileirado` — o arquivo foi aceito e
+ * guardado, e o processamento acontece fora da requisição. Quem chama passa a
+ * acompanhar por `obterTrabalho`.
+ *
+ * Devolve **507** quando o armazenamento temporário compartilhado está cheio.
+ * O limite é do sistema inteiro, e não da organização: outra empresa pode estar
+ * ocupando o espaço, e a mensagem diz isso em vez de sugerir falta de permissão.
+ */
+export const enfileirarImportacao = (arquivo: File): Promise<TrabalhoAssincrono> => {
+  const formulario = new FormData()
+  formulario.append('arquivo', arquivo)
+
+  return enviarArquivo('/api/importacoes/funcionarios/assincrona', formulario)
+}
+
+export const obterTrabalho = (id: string): Promise<TrabalhoAssincrono> =>
+  obter(`/api/trabalhos/${id}`)
+
+export const listarTrabalhos = (): Promise<{
+  total: number
+  pagina: number
+  itens: TrabalhoAssincrono[]
+}> => obter('/api/trabalhos?tamanho=20')

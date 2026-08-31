@@ -4570,6 +4570,11 @@ Sem listagem nova: **não se aplica** paginação.
 
 # FASE 9 — PROCESSAMENTO ASSÍNCRONO NA AWS
 
+> **Status: CONCLUÍDA em 31/08/2026.** Importação assíncrona ponta a ponta —
+> API → PostgreSQL/Neon → SQS real → Lambda real → Neon → conclusão → remoção dos
+> bytes temporários. **Custo previsto de US$ 0,00**, com guardrails técnicos e não
+> com expectativa otimista.
+
 > ### ⚠️ Requisito que atravessa a fase inteira, decidido em 31/08/2026
 >
 > **Zero custo AWS é requisito arquitetural do portfólio; serviços pagos por
@@ -4649,6 +4654,154 @@ PostgreSQL
 - RabbitMQ;
 - EKS.
 
+## O que foi implementado
+
+### A arquitetura final, e onde ela difere da prevista
+
+```text
+navegador
+   │  POST /api/importacoes/funcionarios/assincrona   (multipart)
+   ▼
+API  ── transação ──┐  reserva no orçamento global (advisory lock)
+                    │  grava os bytes  (bytea, não S3)
+                    │  cria o TrabalhoAssincrono
+                    └─ commit
+   │
+   │  DEPOIS do commit: publica na fila (mensagem não se desfaz)
+   ▼
+SQS Standard  ──(3 tentativas)──▶  DLQ (14 dias)
+   │  long polling 20 s · visibility 360 s · SSE gerenciada pela SQS
+   ▼
+Lambda worker .NET 10  (provided.al2023, 512 MB, 60 s, sem VPC)
+   │  1. esquema  2. carrega o trabalho  3. CONFERE tenant  4. abre contexto
+   ▼
+Neon PostgreSQL  (TLS obrigatório, endpoint pooler)
+   │
+   ▼
+conclui · apaga os bytes · a tela para de perguntar
+```
+
+**Duas trocas em relação ao texto original**, ambas pelo requisito de custo zero:
+
+| Previsto | Usado | Motivo |
+|---|---|---|
+| **S3** para o arquivo | **`bytea` no PostgreSQL** | S3 não está na tabela de Free Tier permanente: cobra desde o primeiro byte |
+| **API Gateway** | não usado | Idem. A API roda local nesta fase; em produção, Lambda Function URL |
+
+### O orçamento de blobs é global, e a corrida é real
+
+O limite do Neon gratuito é **por projeto** (0,5 GB), não por tenant. Um teto "por
+organização" seria ilusão aritmética: dez organizações o multiplicariam por dez.
+
+A reserva usa **`pg_advisory_xact_lock`**. A conta ingênua — ler `SUM`, decidir,
+gravar — é uma corrida de leitura-e-escrita, e nenhum `if` em C# a resolve: o
+intervalo entre ler e gravar é onde a outra requisição passa.
+
+> ⚠️ **O teste tem dentes, e isso foi verificado por mutação.** Com o lock
+> removido, o teste de duas requisições simultâneas disputando o último slot
+> **reprovou nas 5 rodadas**. Com o lock, 8/8 em 3 rodadas.
+
+Lock **de transação**, não de sessão: é devolvido pelo commit ou rollback mesmo se
+uma exceção escapar, e funciona atrás do PgBouncer em modo transação — que é o que
+o Neon gratuito usa.
+
+### O tenant viaja, e é conferido contra o objeto
+
+O filtro global do EF lê a organização do **usuário autenticado**, e um worker não
+tem usuário: fora da requisição ele devolve `Guid.Empty`, que não casa com nada.
+Falha fechada — o worker ingênuo não vaza, ele não acha nada.
+
+Por isso o worker faz, nesta ordem: lê o esquema → carrega o trabalho com
+`IgnoreQueryFilters` (ainda não há tenant) → **confere a mensagem contra o
+trabalho gravado** → só então abre o contexto, a partir do trabalho.
+
+Trocar um `Guid` na mensagem produz um JSON perfeitamente válido. É a conferência
+que o para, com `TenantDivergente`.
+
+`ContextoDoTrabalho` é **scoped**, e o worker abre um escopo por mensagem. A Lambda
+reaproveita o processo entre invocações; um contexto compartilhado faria a mensagem
+seguinte herdar o tenant da anterior.
+
+### ⚠️ 128 MB não bastou, e a prova é direta
+
+O `ROADMAP` pedia 128 MB salvo necessidade comprovada. A necessidade se comprovou:
+
+```text
+Duration: 60000.00 ms   Memory Size: 128 MB   Max Memory Used: 128 MB   Status: timeout
+```
+
+Memória no teto **e** timeout, sem produzir uma linha do handler. A causa não é só
+memória: a Lambda dá **CPU proporcional** — 128 MB ≈ 0,07 vCPU, e construir o
+modelo do EF Core (dezenas de entidades) não cabe nesse orçamento de CPU em 60 s.
+
+Com **512 MB**: pico de **226 MB**, cold start 11,4 s, execução morna **1,0 s**.
+Como o custo é memória × tempo, quadruplicar a CPU saiu praticamente igual em GB-s
+— e passou a caber no timeout.
+
+### ⚠️ Reserved concurrency = 1 é impossível nesta conta
+
+```text
+lambda get-account-settings  →  ConcurrentExecutions: 10
+put-function-concurrency 1   →  InvalidParameterValueException:
+   "decreases account's UnreservedConcurrentExecution below its minimum value of [10]"
+```
+
+A conta tem limite de **10** execuções concorrentes (contas novas começam baixo, não
+nos 1000 padrão), e a AWS exige que as não reservadas fiquem ≥ 10. Reservar 1
+deixaria 9. **Não é erro de configuração — é restrição da conta.**
+
+O teto efetivo passa a ser o próprio limite da conta. Fica registrado como risco
+residual no Security Gate.
+
+### O `ScalingConfig` do event source mapping fica desligado
+
+A documentação da AWS é literal: com a fila parada a Lambda reduz os pollers *"a
+até 2, para reduzir as chamadas ao SQS e o custo correspondente"* — **"porém essa
+otimização não está disponível quando você habilita o ajuste de concorrência
+máxima"**.
+
+Ligá-lo prenderia em 5 pollers e quase dobraria o consumo ocioso de SQS, sem ganho
+nenhum aqui. `ProvisionedPollerConfig` também não é usado: pollers dedicados são
+cobrados por hora.
+
+### A varredura dos órfãos existe porque a remoção no fim não cobre tudo
+
+O worker apaga os bytes ao terminar — concluído **ou** recusado. Mas isso não cobre
+worker morto no meio, mensagem perdida, ou publicação que falhou depois do commit
+(**aconteceu de verdade durante esta fase**, por credencial errada no ambiente).
+
+Sem varredura, cada acidente são até 5 MB perdidos num orçamento de 50 MB: dez
+acidentes e o sistema para de aceitar importação. `VarreduraBlobs` roda de hora em
+hora dentro da própria API — uma regra agendada do EventBridge seria mais um
+recurso para existir e destruir, e a API já está de pé.
+
+### Três defeitos encontrados e corrigidos durante a fase
+
+1. **Trabalho sem arquivo ficava `Enfileirado` para sempre.** `Falhar` devolve o
+   trabalho para a fila enquanto há tentativa sobrando — certo para banco fora do
+   ar, errado para arquivo que não existe mais. Com a mensagem já descartada, o
+   trabalho virava **pendente eterno**, que é pior que falho: a tela promete que
+   ainda vai acontecer. Nasceu `FalharDefinitivamente`, e um teste o pegou.
+2. **Colisão de `Program`.** O worker e a API geravam a mesma classe por
+   *top-level statements*, e o projeto de testes referencia os dois — `CS0433`
+   derrubava a suíte inteira. O worker passou a ter entrada explícita.
+3. **Vulnerabilidade conhecida em dependência transitiva.** `AWSSDK.Core 4.0.0.16`
+   (`GHSA-9cvc-h2w8-phrp`) entrou junto com o SQS. O `CLAUDE.md §40.1` invalida a
+   Definition of Done por isso. Resolvido subindo o `AWSSDK.SQS` para 4.0.100.11.
+
+### Uma armadilha desta máquina, que custou uma hora
+
+O SDK da AWS em .NET devolvia *"The security token included in the request is
+invalid"* enquanto a CLI funcionava. Causa: existem `AWS_ACCESS_KEY_ID` e
+`AWS_SECRET_ACCESS_KEY` no ambiente, de outro projeto — e **na cadeia padrão do SDK,
+variável de ambiente vence `AWS_PROFILE`**. A CLI funcionava porque `--profile`
+explícito vence tudo.
+
+A correção é do ambiente, não do código: a aplicação segue usando a cadeia padrão,
+que é o certo para o papel IAM na Lambda.
+
+---
+
 ## Security Gate — Fase 9
 
 O trabalho sai do contexto da requisição. Todo controle que dependia do usuário
@@ -4667,6 +4820,71 @@ autenticado **deixa de existir sozinho** e precisa viajar junto com a mensagem.
 | 9 | Secrets | Lambda usa **papel IAM**, não chave de acesso. Nenhuma credencial de longa duração no ambiente da função. |
 | 10 | Superfície pública | Nenhuma. Bucket e fila **nunca** públicos. |
 | 11 | Custo/abuso | Fila e Lambda são pay-per-use: mensagem envenenada em loop de retry vira conta. Limite de tentativas, DLQ, timeout, tamanho de lote e **budget com alerta** antes de ligar qualquer coisa. Teto de US$ 6,50/mês continua valendo. |
+
+### Security Gate — Fase 9, executado
+
+| # | Ponto | Resposta |
+|---|---|---|
+| 1 | Ameaças introduzidas | Job perdendo o tenant; mensagem adulterada ou reprocessada; DLQ acumulando dado pessoal; papel IAM amplo; retry duplicando efeito; fila envenenada; blob temporário virando depósito de CPF e salário. |
+| 2 | Controles | Tenant **na mensagem e conferido contra o trabalho gravado**; `ContextoDoTrabalho` scoped, escopo por mensagem; mensagem validada por esquema com vocabulário fechado e teto de 8 KB em bytes; idempotência por chave `tipo:organização:hash`, com **índice único no banco** como rede final; `maxReceiveCount` 3 → DLQ com retenção de 14 dias; SSE gerenciada pela SQS (**sem CMK**); papel IAM com **zero políticas gerenciadas**, escopado à fila e ao próprio log group; blob com teto individual de 5 MB, orçamento global de 50 MB com lock consultivo, e retenção de 7 dias com varredura horária. |
+| 3 | Testes | **1067 no backend** (+12 do worker contra PostgreSQL real, +8 do orçamento), **144 no frontend** (+6 do polling). Mensagem sem tenant, com tenant divergente, duplicada, inválida, trabalho inexistente, arquivo ausente, planilha com erro, isolamento entre organizações, concorrência no orçamento, limpeza, expiração. **O teste de concorrência foi validado por mutação**: sem o lock, reprova nas 5 rodadas. |
+| 4 | Multiempresa | O worker **não herda tenant de lugar nenhum** — abre a partir do trabalho, depois de conferir. Teste prova que mensagem apontando para outra organização não inicia, não conta tentativa e não apaga o blob. `GET /api/trabalhos/{id}` de outra organização devolve **404** (confirmado ao vivo contra o Neon). O orçamento é compartilhado; os **bytes** não: teste prova que A enxerga o espaço ocupado por B e nenhum blob dela. |
+| 5 | Exposição de dados | Mensagem carrega **só identificadores** — teste mede o corpo (< 300 bytes) e exige ausência de `cpf`, `nome`, `salario`, `arquivo`. Log do worker leva id e quantidades, nunca conteúdo nem connection string. Os bytes do arquivo são apagados ao concluir; a `Importacao` (quem, quando, hash, linhas) permanece. |
+| 6 | Permissões | Enfileirar é `AdministrarPessoas`; consultar status é `LerDadosEmpresariais`. Ambas sob o filtro global. |
+| 7 | Logging e auditoria | CloudWatch com **retenção de 7 dias**, definida à mão — o grupo nasce com retenção infinita se ninguém definir, e é assim que a franquia é atravessada meses depois. A importação gera evento de auditoria dentro da transação, pelo mesmo `ProcessadorImportacao` do caminho síncrono. |
+| 8 | Dependências | `AWSSDK.SQS` e os pacotes `Amazon.Lambda.*`, todos com versão fixada. **Vulnerabilidade conhecida encontrada e corrigida** durante a fase (ver acima). Build final com **0 avisos**. |
+| 9 | Secrets | A Lambda usa **papel IAM** para a SQS — sem chave de longa duração. A connection string do Neon vai como variável de ambiente da função, passada por **arquivo**, nunca em linha de comando: argumento aparece em listagem de processos e — como aconteceu uma vez nesta fase — na mensagem de erro da própria ferramenta. Nenhum segredo no repositório; varredura limpa. |
+| 10 | Superfície pública | **Nenhuma.** Sem webhook, sem API Gateway, sem Function URL nesta fase. Fila e função só acessíveis por IAM. |
+| 11 | Custo/abuso | Detalhado na seção abaixo. |
+
+#### Custo: franquias, guardrails, consumo e o que ainda poderia cobrar
+
+**Free Tier não é teto de gasto.** Passar da franquia não bloqueia nada — apenas cobra. Por isso cada número é um limite técnico.
+
+| Serviço | Franquia permanente | Guardrail | Consumo máximo esperado |
+|---|---|---|---|
+| Lambda | 1 M req + 400.000 GB-s/mês | 512 MB, timeout 60 s, sem provisioned concurrency | ~0,5 GB-s por importação → **milhares/mês de graça** |
+| SQS | 1 M requisições/mês | long polling 20 s, **sem `ScalingConfig`** | piso ocioso ~**260 mil/mês** (2 pollers), ~26% da franquia |
+| CloudWatch Logs | 5 GB ingestão + 5 GB armazenados | retenção 7 dias, log só com identificadores | dezenas de MB/mês |
+| Neon | 0,5 GB por projeto | 5 MB/arquivo, **50 MB globais**, retenção 7 dias | teto duro, recusa com **507** |
+
+**O que ainda poderia gerar cobrança, sendo honesto:**
+
+1. **Reserved concurrency não pôde ser aplicada** (limite da conta é 10). O teto de
+   concorrência passa a ser o da conta. Um volume sustentado de milhões de mensagens
+   poderia levar o consumo de GB-s além da franquia — irreal em portfólio, mas não
+   impossível.
+2. **Escalada de pollers sob carga.** Com fila cheia, a Lambda sobe pollers e as
+   requisições de SQS crescem. Acima de 1 M/mês são US$ 0,40 por milhão adicional.
+3. **Log em excesso** acima de 5 GB/mês.
+4. **A chave KMS do IAM Identity Center**, US$ 1,00/mês — **pré-existente e alheia a
+   esta fase**, mas é hoje o único gasto real da conta.
+
+Os alertas de orçamento (50%, 80%, 100% e previsto) existem exatamente porque a
+franquia não bloqueia: são eles que tornam visível o que o crédito esconderia.
+
+#### Definition of Done de segurança (`CLAUDE.md §40.1`)
+
+Autorização analisada e testada · multi-tenancy testada contra PostgreSQL real **e**
+contra o Neon ao vivo · entrada externa validada no backend antes de qualquer
+gravação · **mensagem de fila tratada como dado não confiável**, com dupla barreira ·
+dado sensível com retenção definida e varredura · nenhum secret em código, log ou
+mensagem · rotas novas com política declarada · **listagem nova com paginação e
+teto** · dependência vulnerável encontrada e corrigida · testes de isolamento verdes ·
+nenhum controle enfraquecido.
+
+#### Pendências registradas
+
+1. **Reserved concurrency ausente** — impossível nesta conta (limite 10). Reavaliar
+   quando a AWS elevar o limite.
+2. **A API não está publicada.** Esta fase roda a API local contra o Neon e a AWS
+   reais. Publicar é a **Fase 10**.
+3. **Sem circuit breaker para o Neon.** Se o banco cair, as 3 tentativas gastam
+   3 × 60 s antes da DLQ.
+4. **O worker só trata CSV.** O formato não viaja na mensagem; XLSX assíncrono entra
+   quando houver demanda.
+5. **A tela não foi verificada por navegador com login.** Coberta por 6 testes do
+   hook de polling e pelo E2E via API.
 
 ## Critérios de aceite
 

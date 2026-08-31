@@ -2,7 +2,8 @@
 
 Plataforma B2B de gestão, cálculo, conferência e auditoria de folha de pagamento brasileira.
 
-> **Estado atual: Fase 8 concluída — consulta de CNPJ na Receita, pelo cadastro de empresa.**
+> **Estado atual: Fase 9 concluída — importação assíncrona por SQS + Lambda, com custo AWS de US$ 0,00.**
+> Fase 8: consulta de CNPJ na Receita, pelo cadastro de empresa.
 > Fase 7: workflow de tratamento, auditoria e painel.
 > Fase 4 concluída: 4A a 4G, os cinco tipos de folha calculam.
 >
@@ -385,6 +386,41 @@ navegador não tem efeito nenhum.
   recusaria a linha — e o erro revelaria que aquele documento existe em outro tenant.
 - **Data só em `dd/mm/aaaa` ou `aaaa-mm-dd`.** Aceitar o que a cultura da máquina entender
   faria `03/04/2026` virar março num servidor e abril noutro, sem ninguém perceber.
+
+**Processamento assíncrono (Fase 9)**
+
+```text
+API → bytea no Neon → SQS → Lambda → Neon → conclui → apaga os bytes
+```
+
+A primeira vez que trabalho sai da requisição. Isso quebra uma garantia que valia
+até aqui: **o filtro global do EF lê a organização do usuário autenticado, e um
+worker não tem usuário.**
+
+- **O tenant viaja na mensagem — e é conferido contra o trabalho gravado.** Trocar
+  um `Guid` produz um JSON válido; é a conferência que o para. Fora da requisição o
+  filtro devolve `Guid.Empty`, que não casa com nada: falha fechada.
+- **A SQS entrega *pelo menos uma vez*.** Sem idempotência, a mesma planilha
+  entregue duas vezes criaria os funcionários duas vezes. A chave é
+  `tipo:organização:hash`, com índice único no banco como rede final.
+- **Os bytes são temporários.** Apagados ao concluir, e no máximo 7 dias depois. A
+  planilha tem CPF e salário: dado que não precisa mais existir não deve continuar
+  existindo.
+- **O orçamento de arquivos é global, não por empresa** — 50 MB no sistema inteiro,
+  porque o limite do Neon gratuito é por projeto. A reserva usa lock consultivo do
+  PostgreSQL; sem ele, duas requisições simultâneas estouram o teto juntas.
+
+**Custo AWS: US$ 0,00 previsto**
+
+Lambda, SQS e CloudWatch são *Always Free* — franquia permanente, não crédito. **S3
+e API Gateway ficaram de fora por cobrarem desde o primeiro byte.** Os guardrails:
+512 MB, timeout 60 s, long polling de 20 s, sem `ScalingConfig` no event source
+mapping, sem provisioned concurrency, sem VPC, sem KMS customer-managed, retenção de
+log de 7 dias.
+
+> ⚠️ **128 MB não bastou**, e a prova está no CloudWatch: `Max Memory Used: 128 MB,
+> Status: timeout`. A Lambda dá CPU proporcional à memória, e construir o modelo do
+> EF Core não cabia em 0,07 vCPU. Com 512 MB: pico de 226 MB, execução morna de 1,0 s.
 
 **Consulta de CNPJ na Receita Federal (Fase 8)**
 
@@ -935,6 +971,9 @@ Todos usam a senha de `PRISMARH_SEED_SENHA`.
 | `GET /api/auditoria` | todos os 5 | Trilha de auditoria — **só leitura, para todos os perfis** |
 | `GET /api/auditoria/{entidade}/{id}` | todos os 5 | Tudo o que aconteceu com uma entidade |
 | `POST /api/integracoes/cnpj/consultas` | Adm. Empresa | Busca razão social na Receita, pela BrasilAPI — **20/min por organização** |
+| `POST /api/importacoes/funcionarios/assincrona` | Adm. Empresa, Analista | Manda a planilha para a fila. **202** com o trabalho; **507** se o espaço acabou |
+| `GET /api/trabalhos` | todos os 5 | Trabalhos assíncronos da organização, paginado |
+| `GET /api/trabalhos/{id}` | todos os 5 | Status de um trabalho — é o que a tela pergunta |
 | `GET /api/regras-analise` | todos os 5 | Catálogo de regras com a configuração da organização |
 | `PUT /api/regras-analise/{codigo}` | Adm. Empresa | Liga, desliga, muda severidade e parâmetros |
 | `POST /api/folhas/{id}/analisar` | Adm. Empresa, Analista | Roda as regras ativas e grava o resultado |

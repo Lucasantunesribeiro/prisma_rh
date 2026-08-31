@@ -5,6 +5,9 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using PrismaRH.Aplicacao.Comum;
 using PrismaRH.Aplicacao.Identidade;
 using PrismaRH.Infraestrutura.Identidade;
+using Amazon.SQS;
+using Microsoft.Extensions.Logging;
+using PrismaRH.Infraestrutura.Fila;
 using PrismaRH.Infraestrutura.Persistencia;
 
 namespace PrismaRH.Infraestrutura;
@@ -24,7 +27,18 @@ public static class ConfiguracaoInfraestrutura
         this IServiceCollection servicos,
         IConfiguration configuracao)
     {
-        var stringConexao = configuracao.GetConnectionString(NomeConexao);
+        // ------------------------------------------------- Neon (Fase 9)
+        //
+        // Quando `PRISMARH_NEON_CONNECTION` existe, ela tem precedencia: e o
+        // banco que a Lambda alcanca da AWS, e o local do Docker nao e.
+        //
+        // A variavel vem no formato URI do Neon e e convertida aqui - colar o
+        // URI direto no `UseNpgsql` falharia so na primeira conexao, e nao no
+        // build. Ver `ConexaoNeon`.
+        //
+        // ⚠️ O valor NUNCA aparece em log nem em excecao. A mensagem de erro
+        // abaixo fala de nomes de variavel, jamais de conteudo.
+        var stringConexao = ConexaoNeon.DoAmbiente() ?? configuracao.GetConnectionString(NomeConexao);
 
         if (string.IsNullOrWhiteSpace(stringConexao))
         {
@@ -38,6 +52,25 @@ public static class ConfiguracaoInfraestrutura
         servicos
             .AddHealthChecks()
             .AddDbContextCheck<PrismaRhDbContext>(NomeVerificacaoBanco);
+
+        // ------------------------------------------------------- fila (Fase 9)
+        //
+        // O cliente da SQS so e registrado quando ha fila configurada. Sem a
+        // variavel, `PublicadorFila` recebe `null` e vira no-op com aviso -
+        // o ambiente local e a suite de testes rodam sem AWS, e a API precisa
+        // subir do mesmo jeito (`CLAUDE.md secao 1`).
+        //
+        // As credenciais vem da cadeia padrao do SDK (perfil, variaveis de
+        // ambiente, papel da instancia). NUNCA do appsettings, e nunca do
+        // repositorio.
+        if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(PublicadorFila.VariavelUrl)))
+        {
+            servicos.AddSingleton<IAmazonSQS>(_ => new AmazonSQSClient());
+        }
+
+        servicos.AddSingleton<PublicadorFila>(p => new PublicadorFila(
+            p.GetService<IAmazonSQS>(),
+            p.GetRequiredService<ILogger<PublicadorFila>>()));
 
         servicos.AddOptions<OpcoesJwt>()
             .Bind(configuracao.GetSection(OpcoesJwt.Secao))

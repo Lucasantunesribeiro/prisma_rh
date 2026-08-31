@@ -8,6 +8,7 @@ using Microsoft.Extensions.Options;
 using PrismaRH.Api.Endpoints;
 using PrismaRH.Api.Identidade;
 using PrismaRH.Api.Saude;
+using PrismaRH.Api.Servicos;
 using PrismaRH.Aplicacao.Identidade;
 using PrismaRH.Infraestrutura;
 using PrismaRH.Infraestrutura.Identidade;
@@ -69,6 +70,10 @@ builder.Services
     });
 
 builder.Services.AddAuthorizationBuilder().Adicionar();
+
+// ----------------------------------------------------- higiene (Fase 9)
+// Devolve ao orcamento global o espaco de blobs que venceram. Ver VarreduraBlobs.
+builder.Services.AddHostedService<VarreduraBlobs>();
 
 // ------------------------------------------------- integracao externa (Fase 8)
 
@@ -163,6 +168,7 @@ app.MapearContratos();
 app.MapearDependentes();
 app.MapearFerias();
 app.MapearImportacoes();
+app.MapearTrabalhos();
 app.MapearAnalises();
 app.MapearIntegracoes();
 app.MapearInconsistencias();
