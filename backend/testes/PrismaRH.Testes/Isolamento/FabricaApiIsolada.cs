@@ -1,7 +1,9 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using PrismaRH.Infraestrutura.Integracoes;
 
 namespace PrismaRH.Testes.Isolamento;
 
@@ -12,7 +14,9 @@ namespace PrismaRH.Testes.Isolamento;
 /// FabricaApiTestes: o Program le a configuracao durante o registro dos
 /// servicos, antes de qualquer ConfigureAppConfiguration da fabrica.
 /// </summary>
-public sealed class FabricaApiIsolada(string stringConexao) : WebApplicationFactory<Program>
+public sealed class FabricaApiIsolada(
+    string stringConexao,
+    Func<HttpMessageHandler>? parceiroExterno = null) : WebApplicationFactory<Program>
 {
     private const string VariavelConexao = "ConnectionStrings__PrismaRh";
     private const string VariavelJwt = "Jwt__ChaveAssinatura";
@@ -24,6 +28,19 @@ public sealed class FabricaApiIsolada(string stringConexao) : WebApplicationFact
             VariavelJwt, "chave-de-teste-de-isolamento-com-mais-de-32-caracteres");
 
         builder.UseEnvironment(Environments.Development);
+
+        // Troca APENAS o ultimo elo - quem poe os bytes na rede. Tudo o que vem
+        // antes continua sendo o codigo de producao: a guarda de destino, o
+        // controle de redirect, o teto de corpo e o parsing.
+        //
+        // Se o teste substituisse a classe inteira por um duble, ele provaria
+        // que o duble funciona. Nenhuma suite deste projeto encosta na internet.
+        if (parceiroExterno is not null)
+        {
+            builder.ConfigureServices(servicos => servicos
+                .AddHttpClient<ConsultaCnpjBrasilApi>()
+                .ConfigurePrimaryHttpMessageHandler(parceiroExterno));
+        }
 
         return base.CreateHost(builder);
     }

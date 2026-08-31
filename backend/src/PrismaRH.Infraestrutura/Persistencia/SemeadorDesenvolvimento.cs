@@ -188,8 +188,25 @@ public static class SemeadorDesenvolvimento
             // O vizinho: existe para provar que ele NAO enxerga a Prisma.
             new Usuario(horizonte.Id, "Fabio Horizonte", "admin@horizonte.exemplo", hash, Perfil.AdministradorEmpresa, agora));
 
-        var empresaPrisma = new Empresa(prisma.Id, "Industria Modelo S.A.", Cnpj.Criar("11222333000181"), agora, "Modelo");
-        var empresaHorizonte = new Empresa(horizonte.Id, "Comercio Vizinho Ltda.", Cnpj.Criar("11444777000161"), agora, "Vizinho");
+        // ⚠️ CNPJ ficticio de verdade, e nao "de aparencia ficticia".
+        //
+        // Ate a Fase 8 a demo usava 11.222.333/0001-81 e 11.444.777/0001-61 -
+        // numeros com digito verificador valido, que pareciam inventados. A
+        // consulta a Receita, construida nesta fase, mostrou que os DOIS estao
+        // registrados: uma caixa escolar no Rio Grande do Sul e uma empreiteira
+        // em Sao Paulo.
+        //
+        // O `CLAUDE.md secao 39` exige demo com dados 100% ficticios, e o risco
+        // aqui deixou de ser teorico no instante em que a propria tela passou a
+        // buscar o CNPJ na Receita: um recrutador clicando em "Buscar" veria a
+        // razao social de uma empresa real ao lado de folha de pagamento
+        // inventada.
+        //
+        // Digito verificador nao reserva faixa ficticia - o unico jeito de
+        // saber e perguntar. Estes dois foram conferidos na BrasilAPI em
+        // 31/08/2026 e voltaram "nao encontrado".
+        var empresaPrisma = new Empresa(prisma.Id, "Industria Modelo S.A.", Cnpj.Criar("99999999000191"), agora, "Modelo");
+        var empresaHorizonte = new Empresa(horizonte.Id, "Comercio Vizinho Ltda.", Cnpj.Criar("99999998000147"), agora, "Vizinho");
         contexto.Empresas.AddRange(empresaPrisma, empresaHorizonte);
 
         contexto.Estabelecimentos.AddRange(

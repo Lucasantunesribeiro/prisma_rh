@@ -2,7 +2,8 @@
 
 Plataforma B2B de gestão, cálculo, conferência e auditoria de folha de pagamento brasileira.
 
-> **Estado atual: Fase 7 concluída — workflow de tratamento, auditoria e painel.**
+> **Estado atual: Fase 8 concluída — consulta de CNPJ na Receita, pelo cadastro de empresa.**
+> Fase 7: workflow de tratamento, auditoria e painel.
 > Fase 4 concluída: 4A a 4G, os cinco tipos de folha calculam.
 >
 > Existe login com JWT, cinco perfis, organizações isoladas entre si, o cadastro de
@@ -384,6 +385,48 @@ navegador não tem efeito nenhum.
   recusaria a linha — e o erro revelaria que aquele documento existe em outro tenant.
 - **Data só em `dd/mm/aaaa` ou `aaaa-mm-dd`.** Aceitar o que a cultura da máquina entender
   faria `03/04/2026` virar março num servidor e abril noutro, sem ninguém perceber.
+
+**Consulta de CNPJ na Receita Federal (Fase 8)**
+
+```text
+14 dígitos  →  dígito verificador conferido  →  guarda de destino  →  BrasilAPI
+                                                       ↑                    ↓
+                                              revalida cada redirect   3 campos de 40
+                                                                            ↓
+                                                       tela  →  a pessoa confere  →  salva
+```
+
+A primeira vez que o Prisma RH faz uma requisição **para fora**. Isso inverte a fronteira:
+até aqui o sistema só recebia; agora ele também alcança.
+
+- **Não é fonte de verdade.** A Receita informa; quem decide é quem cadastra. Nada é
+  preenchido sozinho — a resposta fica fora do formulário até alguém clicar em *"Usar estes
+  dados"*, e cada campo que vai ser substituído mostra antes o que você digitou.
+- **Com a BrasilAPI fora do ar, o cadastro manual funciona igual.** Fora do ar, 429, resposta
+  malformada, prazo estourado: tudo vira aviso, nunca erro de tela.
+- **Três campos de quarenta.** A resposta traz quadro societário — com nome e CPF parcial de
+  pessoas físicas —, e-mail, telefone e endereço. Nada disso atravessa a fronteira, e há teste
+  exigindo a ausência.
+- **Sem credencial.** A BrasilAPI foi escolhida por isso, entre outros motivos: não há chave
+  para vazar, rotacionar ou esquecer no Git.
+- **20 consultas por minuto, por organização.** A cota de um serviço gratuito é compartilhada;
+  o limite existe para que continue sendo de todos.
+
+**A defesa de SSRF**
+
+Quando o servidor faz uma requisição, ele a faz de *dentro* da rede — com o alcance que o
+navegador de quem ataca não tem. Fazer o servidor buscar `169.254.169.254` numa nuvem devolve
+a credencial da instância.
+
+A guarda confere esquema, userinfo, porta e host, resolve o DNS e exige que **todos** os IPs
+sejam públicos — desembrulhando `::ffff:` antes de decidir, que é o disfarce que passa pela
+maioria das implementações. Ela roda antes da primeira chamada e **de novo a cada redirect**,
+porque validar só a primeira URL não protege nada.
+
+> ⚠️ Esta fase descobriu que os CNPJs "fictícios" da demo eram de **empresas reais** — dígito
+> verificador válido não reserva faixa fictícia. Trocados por dois conferidos como
+> inexistentes. Se o seu banco de desenvolvimento já existe, ele mantém os antigos: a
+> semeadura só roda em base vazia.
 
 **Workflow de tratamento e auditoria (Fase 7)**
 
@@ -891,6 +934,7 @@ Todos usam a senha de `PRISMARH_SEED_SENHA`.
 | `POST /api/inconsistencias/{id}/evidencias` | Adm. Empresa, Analista | Registra o que foi conferido |
 | `GET /api/auditoria` | todos os 5 | Trilha de auditoria — **só leitura, para todos os perfis** |
 | `GET /api/auditoria/{entidade}/{id}` | todos os 5 | Tudo o que aconteceu com uma entidade |
+| `POST /api/integracoes/cnpj/consultas` | Adm. Empresa | Busca razão social na Receita, pela BrasilAPI — **20/min por organização** |
 | `GET /api/regras-analise` | todos os 5 | Catálogo de regras com a configuração da organização |
 | `PUT /api/regras-analise/{codigo}` | Adm. Empresa | Liga, desliga, muda severidade e parâmetros |
 | `POST /api/folhas/{id}/analisar` | Adm. Empresa, Analista | Roda as regras ativas e grava o resultado |

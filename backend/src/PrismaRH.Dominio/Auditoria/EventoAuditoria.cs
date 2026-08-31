@@ -67,6 +67,19 @@ public enum AcaoAuditada
     // --------------------------------------------------------- importacao
     ImportacaoAplicada = 70,
     ImportacaoRecusada = 71,
+
+    // --------------------------------------------- integracao externa (Fase 8)
+
+    /// <summary>
+    /// O Prisma RH perguntou por um CNPJ a um servico de fora.
+    ///
+    /// Isto e auditado porque **enviar dado para fora e decisao de
+    /// privacidade**, e o Security Gate da Fase 8 pede "registro do que foi
+    /// enviado". Aqui o que sai da nossa rede e exatamente o CNPJ digitado - e
+    /// e ele que fica no contexto do evento, para a pergunta "o que este
+    /// sistema ja contou a terceiros?" ter resposta.
+    /// </summary>
+    CnpjConsultado = 80,
 }
 
 /// <summary>Sobre o que a acao foi.</summary>
@@ -81,6 +94,17 @@ public enum EntidadeAuditada
     ExecucaoAnalise = 7,
     ResultadoAnalise = 8,
     Importacao = 9,
+
+    /// <summary>
+    /// A consulta externa em si (Fase 8).
+    ///
+    /// Nao existe tabela `consultas_cnpj`, e nao deveria existir: a consulta nao
+    /// e uma entidade do sistema, e sim um **fato que aconteceu**. O
+    /// `IdEntidade` do evento e o identificador de correlacao gerado para
+    /// aquela chamada - o mesmo que aparece no log tecnico -, o que permite
+    /// partir da trilha de negocio e achar a linha do log, e vice-versa.
+    /// </summary>
+    ConsultaCnpj = 10,
 }
 
 /// <summary>

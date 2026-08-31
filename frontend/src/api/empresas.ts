@@ -26,7 +26,41 @@ export interface Estabelecimento {
   criadoEm: string
 }
 
+/**
+ * Como a consulta terminou. Espelha o `enum` do servidor — vocabulário fechado
+ * dos dois lados, e não texto livre que a tela tenta adivinhar.
+ */
+export type SituacaoConsulta = 'Encontrada' | 'NaoEncontrada' | 'Recusada' | 'Indisponivel'
+
+export interface DadosDaReceita {
+  razaoSocial: string
+  nomeFantasia: string | null
+  situacaoCadastral: string
+  ativaNaReceita: boolean
+}
+
+export interface ConsultaCnpj {
+  situacao: SituacaoConsulta
+  mensagem: string
+  dados: DadosDaReceita | null
+  /** Já existe **nesta** organização. Nunca "existe em alguma". */
+  jaCadastrada: boolean
+}
+
 export const listarEmpresas = (): Promise<PaginaEmpresas> => obter('/api/empresas')
+
+/**
+ * Busca razão social e nome fantasia na Receita Federal, pela BrasilAPI.
+ *
+ * `POST` para uma leitura, de propósito: o CNPJ não entra na URL — que vai para
+ * log de acesso e histórico de navegador — e a chamada tem efeito, porque sai
+ * da nossa rede e consome cota de um serviço de terceiro.
+ *
+ * O resultado **não** vira cadastro sozinho: volta para a tela e a pessoa
+ * decide. Com a BrasilAPI fora do ar, o formulário manual continua igual.
+ */
+export const consultarCnpj = (cnpj: string): Promise<ConsultaCnpj> =>
+  enviar('/api/integracoes/cnpj/consultas', { cnpj })
 
 export const criarEmpresa = (dados: {
   razaoSocial: string

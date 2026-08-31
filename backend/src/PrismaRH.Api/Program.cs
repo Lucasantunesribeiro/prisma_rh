@@ -1,5 +1,6 @@
 ﻿using System.Text;
 using System.Text.Json.Serialization;
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.IdentityModel.Tokens;
@@ -10,6 +11,7 @@ using PrismaRH.Api.Saude;
 using PrismaRH.Aplicacao.Identidade;
 using PrismaRH.Infraestrutura;
 using PrismaRH.Infraestrutura.Identidade;
+using PrismaRH.Infraestrutura.Integracoes;
 using PrismaRH.Infraestrutura.Persistencia;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -68,6 +70,55 @@ builder.Services
 
 builder.Services.AddAuthorizationBuilder().Adicionar();
 
+// ------------------------------------------------- integracao externa (Fase 8)
+
+// O cache e singleton porque guardar em cache por requisicao nao guarda nada. E
+// ele tem teto proprio de entradas - ver CacheConsultaCnpj.
+builder.Services.AddSingleton<CacheConsultaCnpj>();
+builder.Services.AddSingleton<GuardaDestino>();
+
+builder.Services
+    .AddHttpClient<ConsultaCnpjBrasilApi>(cliente =>
+    {
+        // O prazo tambem esta no cliente, com token proprio. Este aqui e a
+        // segunda cerca: se algum caminho escapar do CancellationToken, o
+        // HttpClient ainda corta.
+        cliente.Timeout = ConsultaCnpjBrasilApi.Prazo;
+        cliente.DefaultRequestHeaders.UserAgent.ParseAdd("PrismaRH/1.0 (+portfolio)");
+    })
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+    {
+        // ⚠️ Desligado de proposito, e este e o ponto do item 2 do Security Gate.
+        // Seguir redirect automaticamente pula a guarda de destino em todos os
+        // saltos menos o primeiro - e o primeiro e o unico que ninguem precisa
+        // atacar. Os redirects sao seguidos a mao, revalidando cada um.
+        AllowAutoRedirect = false,
+    });
+
+// Limite por ORGANIZACAO. Nao por IP: num escritorio de BPO todo mundo sai pelo
+// mesmo endereco, e o limite por IP puniria a empresa inteira pelo uso de uma
+// pessoa. CLAUDE.md secao 24.18: nenhuma organizacao pode consumir a cota de um
+// servico compartilhado e deixar as outras sem.
+builder.Services.AddRateLimiter(opcoes =>
+{
+    opcoes.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    opcoes.AddPolicy(IntegracoesEndpoints.PoliticaLimite, contexto =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            // Sem organizacao no token nao ha o que particionar. "anonimo" e uma
+            // particao unica e propositalmente apertada - falha fechada.
+            contexto.User.FindFirst(GeradorJwt.ClaimOrganizacao)?.Value ?? "anonimo",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                // 20 consultas por minuto por organizacao. Cadastrar empresa e
+                // ato raro e deliberado; vinte cobrem o uso humano com folga e
+                // nao cobrem um script.
+                PermitLimit = 20,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+            }));
+});
+
 var app = builder.Build();
 
 app.UseExceptionHandler();
@@ -75,6 +126,21 @@ app.UseStatusCodePages();
 app.UseCors(PoliticaCors);
 
 app.UseAuthentication();
+
+// ⚠️ DEPOIS do UseAuthentication, e a ordem e a funcionalidade.
+//
+// O particionador le a organizacao de `contexto.User`. Antes da autenticacao,
+// `User` ainda nao tem claim nenhuma: toda requisicao cairia na particao
+// "anonimo", e o limite viraria um balde unico para o sistema inteiro - uma
+// organizacao sozinha deixaria todas as outras sem consulta.
+//
+// Um teste pegou exatamente isso. "Existe limite" e "existe limite POR
+// ORGANIZACAO" sao afirmacoes diferentes, e a primeira passava com a segunda
+// quebrada.
+//
+// Nao limita nada por conta propria: so vale onde ha RequireRateLimiting.
+app.UseRateLimiter();
+
 app.UseAuthorization();
 
 if (app.Environment.IsDevelopment())
@@ -98,6 +164,7 @@ app.MapearDependentes();
 app.MapearFerias();
 app.MapearImportacoes();
 app.MapearAnalises();
+app.MapearIntegracoes();
 app.MapearInconsistencias();
 app.MapearAuditoria();
 app.MapearPainel();

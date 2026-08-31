@@ -4060,6 +4060,11 @@ primeira em que existe trilha de auditoria formal.
 
 # FASE 8 — INTEGRAÇÕES EXTERNAS VIA API
 
+> **Status: CONCLUÍDA em 31/08/2026.** Uma integração real, escolhida pelo responsável:
+> **consulta de empresa por CNPJ na BrasilAPI**, ligada ao cadastro de empresa. Defesa de
+> SSRF completa, limite por organização, cache com teto, auditoria da consulta e 101 testes
+> novos — nenhum deles tocando a internet.
+
 ## Objetivo
 
 Permitir comunicação com sistemas externos.
@@ -4127,6 +4132,362 @@ Sistema externo
 - tratamento de erro;
 - mapeamento explícito.
 
+## O que foi implementado
+
+### A integração escolhida, e por que esta
+
+O responsável autorizou a fase em **31/08/2026** com um alvo definido: **BrasilAPI, consulta
+de empresa por CNPJ**. A escolha foi feita depois do checklist do `CLAUDE.md §14`, executado
+contra as quatro alternativas reais:
+
+| Candidato | Chave | Custo | Veredito |
+|---|---|---|---|
+| **BrasilAPI — CNPJ** | **nenhuma** | zero (princípio declarado: *"custos devem ser zero"*), licença MIT | ✅ escolhida |
+| eSocial | certificado ICP-Brasil A1/A3 | pago | ❌ credencial ausente, e `CLAUDE.md §3` proíbe enviar obrigação oficial sem fase aprovada |
+| ERP/HRIS/ponto | contrato comercial | pago | ❌ sem API pública |
+| API de entrada genérica | emitida por nós | zero | ⚠️ possível, mas **não exercita SSRF**, que é a ameaça-título da fase |
+
+Ressalva registrada: a BrasilAPI **não documenta rate limit e não tem SLA** — é projeto de
+comunidade. Para portfólio isso não atrapalha; ao contrário, força o timeout, o limite de
+redirects e o tratamento de indisponibilidade que o Security Gate já exigia.
+
+### Isto não é fonte de verdade, e o desenho inteiro sai daí
+
+`CLAUDE.md §1`: o Prisma RH **não depende de outro sistema para funcionar**. A integração
+tinha que preservar essa propriedade, e ela é o que decide quase tudo:
+
+- a consulta **não cria nem altera empresa** — devolve para a tela, e a pessoa decide;
+- **nada é preenchido sozinho.** A resposta fica fora do formulário até alguém clicar em
+  *"Usar estes dados"*, e cada campo que vai ser substituído mostra antes o valor digitado.
+  Preencher automaticamente pareceria mais prático e apagaria, sem aviso, justamente a
+  correção que a pessoa tinha acabado de escrever;
+- **nenhuma falha do parceiro vira erro do cadastro.** Fora do ar, 429, resposta malformada,
+  prazo estourado: tudo responde **200 com o motivo dentro**, e o formulário manual continua
+  intacto ao lado. Um 502 viraria tela quebrada por causa de um serviço opcional.
+
+### A defesa de SSRF
+
+`GuardaDestino` é a peça de segurança da fase. Ela roda **antes da primeira requisição e de
+novo a cada redirect**:
+
+```text
+esquema https  →  sem userinfo  →  porta padrão  →  host na allowlist (nomes exatos)
+                                        ↓
+                              resolve o DNS
+                                        ↓
+                      TODOS os IPs precisam ser públicos
+```
+
+Quatro decisões que valem registro:
+
+1. **A allowlist é fixa em código, não em configuração.** Um `appsettings` editável
+   transformaria a única barreira de destino num campo que alguém preenche com pressa.
+   Trocar de parceiro é alterar código, com revisão — que é o peso que a decisão tem.
+2. **`AllowAutoRedirect = false`.** O `HttpClient` sabe seguir redirect sozinho, e seguir
+   automaticamente pula a guarda em todos os saltos menos o primeiro — que é justamente o
+   único que ninguém precisa atacar. Os redirects são seguidos à mão, revalidando cada um,
+   no máximo três.
+3. **O que se confere é o IP, não o nome.** O DNS do host permitido é resolvido por um
+   servidor que o Prisma RH não controla; se aquele nome passar a apontar para
+   `169.254.169.254`, a allowlist de nome sozinha aprovaria a chamada.
+4. **Endereço IPv4 embrulhado em IPv6 é desembrulhado antes de decidir.**
+   `::ffff:169.254.169.254` é IPv6 válido, as rotinas de IPv6 o consideram global, e a
+   pilha de rede conecta nele como se fosse IPv4. É o desvio que a maioria das
+   implementações deixa passar, e tem teste próprio.
+
+⚠️ Vale dizer o que a guarda **não** está defendendo aqui: nesta rota o usuário informa
+**quatorze dígitos**, e a URL é montada pelo servidor. O vetor clássico — campo de URL — não
+existe. A guarda vale pelo redirect e pelo DNS, que são os dois caminhos que sobram.
+
+### Minimização, que aqui nem exigiu disciplina
+
+A resposta real da BrasilAPI traz quarenta campos, incluindo o **quadro societário** — nome,
+faixa etária e CPF parcial de pessoas físicas —, além de e-mail, telefone e endereço.
+
+O Prisma RH lê **três**: razão social, nome fantasia e situação cadastral. `Empresa` só tem
+os dois primeiros, então o que o modelo não guarda o código não tem onde pôr. A situação
+cadastral é a exceção proposital: **não é persistida**, aparece só no instante da consulta,
+para a pessoa ver que o CNPJ está BAIXADO antes de cadastrar.
+
+Há um teste que serializa o objeto inteiro e exige que nada disso apareça — um campo novo
+acrescentado por distração amanhã reprova ali.
+
+### O limite é por organização, e um teste separou as duas coisas
+
+`CLAUDE.md §24.18`: nenhuma organização pode consumir a cota de um serviço compartilhado e
+deixar as outras sem. Vinte consultas por minuto, particionadas pela organização do token —
+não por IP, porque num escritório de BPO todo mundo sai pelo mesmo endereço.
+
+> ⚠️ **Defeito encontrado e corrigido durante a fase.** `app.UseRateLimiter()` estava **antes**
+> de `app.UseAuthentication()`. Sem autenticação, `HttpContext.User` ainda não tem claim
+> nenhuma, o particionador caía no `?? "anonimo"` e **todas as organizações compartilhavam um
+> balde único** — uma sozinha deixaria todas as outras sem consulta.
+>
+> O primeiro teste de limite passava assim mesmo, porque usava uma organização só. *"Existe
+> limite"* e *"existe limite **por organização**"* são afirmações diferentes, e a primeira
+> passa com a segunda quebrada. O teste que separa as duas — A esgota a cota, B continua
+> sendo atendida — reprovou, e foi ele que apontou a ordem do middleware.
+
+### Cache: chave sem tenant, e o motivo por escrito
+
+O `CLAUDE.md §24.5` manda pôr a organização na chave de cache, e a regra está certa — para
+dado **do tenant**. Aqui não há: a chave é um CNPJ digitado pela pessoa, e o valor é registro
+público da Receita, igual para quem perguntar. Pôr a organização na chave não protegeria nada
+e desligaria o cache na prática.
+
+⚠️ O risco residual está escrito no código em vez de descoberto depois: um acerto de cache
+responde mais rápido, então quem medir o tempo consegue supor que alguém consultou aquele
+CNPJ há pouco. Não diz **quem** — nem organização, nem usuário —, e o mesmo registro está
+publicamente disponível na BrasilAPI para qualquer um.
+
+**Falha não entra no cache.** Guardar `Indisponivel` faria a queda do parceiro sobreviver ao
+próprio fim: ele voltaria ao ar e o Prisma RH continuaria dizendo que está fora pelos dez
+minutos seguintes.
+
+### A consulta entra na trilha de auditoria
+
+Enviar dado para fora é decisão de privacidade, e o item 5 deste gate pede **registro do que
+foi enviado**. Cada consulta grava um `EventoAuditoria` `CnpjConsultado`, na mesma transação,
+com o CNPJ, o resultado e a origem.
+
+A origem importa mais do que parece: num acerto de cache **nada saiu da nossa rede**, e
+registrar as duas situações com a mesma frase faria a trilha afirmar um envio que não houve.
+Por isso `CacheConsultaCnpj` devolve também se acertou, e a descrição muda.
+
+O `IdEntidade` do evento é o **identificador de correlação** daquela chamada — o mesmo que vai
+para o log técnico. É por ele que se sai da trilha de negócio e se chega na linha do log, e
+vice-versa. Não existe tabela `consultas_cnpj`, e não deveria: a consulta não é entidade do
+sistema, é um fato que aconteceu.
+
+O CNPJ fica na **auditoria**, que tem controle de acesso, e **não** no log técnico, que tem
+acesso mais amplo e retenção diferente (`CLAUDE.md §24.16`). O log guarda correlação, host,
+status e duração.
+
+### `POST` para uma leitura
+
+Duas razões, nenhuma de purismo REST: o CNPJ **não entra na URL** — que vai para log de
+acesso, histórico de navegador e painel de proxy —, e a chamada **tem efeito**: sai da nossa
+rede, consome cota de terceiro e gera auditoria. `GET` promete que nada disso acontece.
+
+### ⚠️ Os CNPJs "fictícios" da demo eram de empresas reais
+
+A funcionalidade desta fase foi o que expôs o problema, e ele é do `CLAUDE.md §39`.
+
+A semeadura usava `11.222.333/0001-81` e `11.444.777/0001-61` — números com dígito
+verificador válido, que **pareciam** inventados. Consultados na Receita, os dois estão
+registrados: uma caixa escolar no Rio Grande do Sul e uma empreiteira em São Paulo. O
+primeiro devolve inclusive nome e CPF parcial de uma pessoa física no quadro societário.
+
+Deixou de ser teórico no instante em que a própria tela passou a buscar o CNPJ na Receita: um
+recrutador clicando em *"Buscar"* veria a razão social de uma empresa real ao lado de folha de
+pagamento inventada.
+
+Dígito verificador **não reserva faixa fictícia** — o único jeito de saber é perguntar. A
+semeadura passou a usar `99.999.999/0001-91` e `99.999.998/0001-47`, conferidos na BrasilAPI
+em 31/08/2026, ambos "não encontrado".
+
+> **Pendência menor, registrada:** o `BancoPostgresFixture` dos testes também usa CNPJs reais
+> (Petrobras, Correios, Bradesco e outros). Fixture de teste **não é a demo**, e o §39 fala da
+> demo — mas fica anotado. Trocar ali mexeria em dezenas de asserções, e o ganho seria
+> cosmético.
+
+### Nenhum teste toca a internet
+
+Os 101 testes novos — **88 no backend e 13 no frontend** — exercitam o **código de
+produção**, e não um dublê dele:
+
+- `GuardaDestinoTestes` (**38**) injeta o resolvedor de DNS: o teste diz *"este host resolve
+  para 169.254.169.254"* sem precisar que seja verdade em lugar nenhum;
+- `ConsultaCnpjBrasilApiTestes` (**28**) troca só o `HttpMessageHandler` — o último elo, quem
+  põe os bytes no fio. Guarda, redirect, teto de corpo e parsing continuam sendo o código real;
+- `IntegracaoCnpjHttpTestes` (**22**) sobe a API inteira contra PostgreSQL real, com o mesmo
+  dublê no fim da linha;
+- `Empresas.teste.tsx` (**13**) cobre a tela: nada preenchido sozinho, aviso antes de
+  substituir, e o cadastro manual indo até o fim com a consulta em cada um dos três modos de
+  falha.
+
+A suíte backend foi de **903 para 991**; a do frontend, de **125 para 138**.
+
+Testar defesa de rede **contra a rede** dá uma suíte que falha no avião e passa no escritório
+— o que não prova nada nas duas vezes.
+
+---
+
+## O que foi implementado
+
+### A integração escolhida, e por que esta
+
+O responsável autorizou a fase em **31/08/2026** com um alvo definido: **BrasilAPI, consulta
+de empresa por CNPJ**. A escolha foi feita depois do checklist do `CLAUDE.md §14`, executado
+contra as quatro alternativas reais:
+
+| Candidato | Chave | Custo | Veredito |
+|---|---|---|---|
+| **BrasilAPI — CNPJ** | **nenhuma** | zero (princípio declarado: *"custos devem ser zero"*), licença MIT | ✅ escolhida |
+| eSocial | certificado ICP-Brasil A1/A3 | pago | ❌ credencial ausente, e `CLAUDE.md §3` proíbe enviar obrigação oficial sem fase aprovada |
+| ERP/HRIS/ponto | contrato comercial | pago | ❌ sem API pública |
+| API de entrada genérica | emitida por nós | zero | ⚠️ possível, mas **não exercita SSRF**, que é a ameaça-título da fase |
+
+Ressalva registrada: a BrasilAPI **não documenta rate limit e não tem SLA** — é projeto de
+comunidade. Para portfólio isso não atrapalha; ao contrário, força o timeout, o limite de
+redirects e o tratamento de indisponibilidade que o Security Gate já exigia.
+
+### Isto não é fonte de verdade, e o desenho inteiro sai daí
+
+`CLAUDE.md §1`: o Prisma RH **não depende de outro sistema para funcionar**. A integração
+tinha que preservar essa propriedade, e ela é o que decide quase tudo:
+
+- a consulta **não cria nem altera empresa** — devolve para a tela, e a pessoa decide;
+- **nada é preenchido sozinho.** A resposta fica fora do formulário até alguém clicar em
+  *"Usar estes dados"*, e cada campo que vai ser substituído mostra antes o valor digitado.
+  Preencher automaticamente pareceria mais prático e apagaria, sem aviso, justamente a
+  correção que a pessoa tinha acabado de escrever;
+- **nenhuma falha do parceiro vira erro do cadastro.** Fora do ar, 429, resposta malformada,
+  prazo estourado: tudo responde **200 com o motivo dentro**, e o formulário manual continua
+  intacto ao lado. Um 502 viraria tela quebrada por causa de um serviço opcional.
+
+### A defesa de SSRF
+
+`GuardaDestino` é a peça de segurança da fase. Ela roda **antes da primeira requisição e de
+novo a cada redirect**:
+
+```text
+esquema https  →  sem userinfo  →  porta padrão  →  host na allowlist (nomes exatos)
+                                        ↓
+                              resolve o DNS
+                                        ↓
+                      TODOS os IPs precisam ser públicos
+```
+
+Quatro decisões que valem registro:
+
+1. **A allowlist é fixa em código, não em configuração.** Um `appsettings` editável
+   transformaria a única barreira de destino num campo que alguém preenche com pressa.
+   Trocar de parceiro é alterar código, com revisão — que é o peso que a decisão tem.
+2. **`AllowAutoRedirect = false`.** O `HttpClient` sabe seguir redirect sozinho, e seguir
+   automaticamente pula a guarda em todos os saltos menos o primeiro — que é justamente o
+   único que ninguém precisa atacar. Os redirects são seguidos à mão, revalidando cada um,
+   no máximo três.
+3. **O que se confere é o IP, não o nome.** O DNS do host permitido é resolvido por um
+   servidor que o Prisma RH não controla; se aquele nome passar a apontar para
+   `169.254.169.254`, a allowlist de nome sozinha aprovaria a chamada.
+4. **Endereço IPv4 embrulhado em IPv6 é desembrulhado antes de decidir.**
+   `::ffff:169.254.169.254` é IPv6 válido, as rotinas de IPv6 o consideram global, e a
+   pilha de rede conecta nele como se fosse IPv4. É o desvio que a maioria das
+   implementações deixa passar, e tem teste próprio.
+
+⚠️ Vale dizer o que a guarda **não** está defendendo aqui: nesta rota o usuário informa
+**quatorze dígitos**, e a URL é montada pelo servidor. O vetor clássico — campo de URL — não
+existe. A guarda vale pelo redirect e pelo DNS, que são os dois caminhos que sobram.
+
+### Minimização, que aqui nem exigiu disciplina
+
+A resposta real da BrasilAPI traz quarenta campos, incluindo o **quadro societário** — nome,
+faixa etária e CPF parcial de pessoas físicas —, além de e-mail, telefone e endereço.
+
+O Prisma RH lê **três**: razão social, nome fantasia e situação cadastral. `Empresa` só tem
+os dois primeiros, então o que o modelo não guarda o código não tem onde pôr. A situação
+cadastral é a exceção proposital: **não é persistida**, aparece só no instante da consulta,
+para a pessoa ver que o CNPJ está BAIXADO antes de cadastrar.
+
+Há um teste que serializa o objeto inteiro e exige que nada disso apareça — um campo novo
+acrescentado por distração amanhã reprova ali.
+
+### O limite é por organização, e um teste separou as duas coisas
+
+`CLAUDE.md §24.18`: nenhuma organização pode consumir a cota de um serviço compartilhado e
+deixar as outras sem. Vinte consultas por minuto, particionadas pela organização do token —
+não por IP, porque num escritório de BPO todo mundo sai pelo mesmo endereço.
+
+> ⚠️ **Defeito encontrado e corrigido durante a fase.** `app.UseRateLimiter()` estava **antes**
+> de `app.UseAuthentication()`. Sem autenticação, `HttpContext.User` ainda não tem claim
+> nenhuma, o particionador caía no `?? "anonimo"` e **todas as organizações compartilhavam um
+> balde único** — uma sozinha deixaria todas as outras sem consulta.
+>
+> O primeiro teste de limite passava assim mesmo, porque usava uma organização só. *"Existe
+> limite"* e *"existe limite **por organização**"* são afirmações diferentes, e a primeira
+> passa com a segunda quebrada. O teste que separa as duas — A esgota a cota, B continua
+> sendo atendida — reprovou, e foi ele que apontou a ordem do middleware.
+
+### Cache: chave sem tenant, e o motivo por escrito
+
+O `CLAUDE.md §24.5` manda pôr a organização na chave de cache, e a regra está certa — para
+dado **do tenant**. Aqui não há: a chave é um CNPJ digitado pela pessoa, e o valor é registro
+público da Receita, igual para quem perguntar. Pôr a organização na chave não protegeria nada
+e desligaria o cache na prática.
+
+⚠️ O risco residual está escrito no código em vez de descoberto depois: um acerto de cache
+responde mais rápido, então quem medir o tempo consegue supor que alguém consultou aquele
+CNPJ há pouco. Não diz **quem** — nem organização, nem usuário —, e o mesmo registro está
+publicamente disponível na BrasilAPI para qualquer um.
+
+**Falha não entra no cache.** Guardar `Indisponivel` faria a queda do parceiro sobreviver ao
+próprio fim: ele voltaria ao ar e o Prisma RH continuaria dizendo que está fora pelos dez
+minutos seguintes.
+
+### A consulta entra na trilha de auditoria
+
+Enviar dado para fora é decisão de privacidade, e o item 5 deste gate pede **registro do que
+foi enviado**. Cada consulta grava um `EventoAuditoria` `CnpjConsultado`, na mesma transação,
+com o CNPJ, o resultado e a origem.
+
+A origem importa mais do que parece: num acerto de cache **nada saiu da nossa rede**, e
+registrar as duas situações com a mesma frase faria a trilha afirmar um envio que não houve.
+Por isso `CacheConsultaCnpj` devolve também se acertou, e a descrição muda.
+
+O `IdEntidade` do evento é o **identificador de correlação** daquela chamada — o mesmo que vai
+para o log técnico. É por ele que se sai da trilha de negócio e se chega na linha do log, e
+vice-versa. Não existe tabela `consultas_cnpj`, e não deveria: a consulta não é entidade do
+sistema, é um fato que aconteceu.
+
+O CNPJ fica na **auditoria**, que tem controle de acesso, e **não** no log técnico, que tem
+acesso mais amplo e retenção diferente (`CLAUDE.md §24.16`). O log guarda correlação, host,
+status e duração.
+
+### `POST` para uma leitura
+
+Duas razões, nenhuma de purismo REST: o CNPJ **não entra na URL** — que vai para log de
+acesso, histórico de navegador e painel de proxy —, e a chamada **tem efeito**: sai da nossa
+rede, consome cota de terceiro e gera auditoria. `GET` promete que nada disso acontece.
+
+### ⚠️ Os CNPJs "fictícios" da demo eram de empresas reais
+
+A funcionalidade desta fase foi o que expôs o problema, e ele é do `CLAUDE.md §39`.
+
+A semeadura usava `11.222.333/0001-81` e `11.444.777/0001-61` — números com dígito
+verificador válido, que **pareciam** inventados. Consultados na Receita, os dois estão
+registrados: uma caixa escolar no Rio Grande do Sul e uma empreiteira em São Paulo. O
+primeiro devolve inclusive nome e CPF parcial de uma pessoa física no quadro societário.
+
+Deixou de ser teórico no instante em que a própria tela passou a buscar o CNPJ na Receita: um
+recrutador clicando em *"Buscar"* veria a razão social de uma empresa real ao lado de folha de
+pagamento inventada.
+
+Dígito verificador **não reserva faixa fictícia** — o único jeito de saber é perguntar. A
+semeadura passou a usar `99.999.999/0001-91` e `99.999.998/0001-47`, conferidos na BrasilAPI
+em 31/08/2026, ambos "não encontrado".
+
+> **Pendência menor, registrada:** o `BancoPostgresFixture` dos testes também usa CNPJs reais
+> (Petrobras, Correios, Bradesco e outros). Fixture de teste **não é a demo**, e o §39 fala da
+> demo — mas fica anotado. Trocar ali mexeria em dezenas de asserções, e o ganho seria
+> cosmético.
+
+### Nenhum teste toca a internet
+
+Os 101 testes novos exercitam o **código de produção**, e não um dublê dele:
+
+- `GuardaDestinoTestes` (44) injeta o resolvedor de DNS: o teste diz *"este host resolve para
+  169.254.169.254"* sem precisar que seja verdade em lugar nenhum;
+- `ConsultaCnpjBrasilApiTestes` (35) troca só o `HttpMessageHandler` — o último elo, quem põe
+  os bytes no fio. Guarda, redirect, teto de corpo e parsing continuam sendo o código real;
+- `IntegracaoCnpjHttpTestes` (22) sobe a API inteira contra PostgreSQL real, com o mesmo
+  dublê no fim da linha.
+
+Testar defesa de rede **contra a rede** dá uma suíte que falha no avião e passa no escritório
+— o que não prova nada nas duas vezes.
+
+---
+
 ## Security Gate — Fase 8
 
 Primeira fase em que **o Prisma RH faz requisições para fora**. Isso inverte a fronteira:
@@ -4157,6 +4518,53 @@ Antes de qualquer integração:
 - verificar custo externo.
 
 O teto AWS continua US$ 6,50/mês.
+
+---
+
+### Security Gate — Fase 8, executado (BrasilAPI / CNPJ)
+
+| # | Ponto | Resposta |
+|---|---|---|
+| 1 | Ameaças introduzidas | **SSRF** por redirect e por DNS apontando para faixa interna ou para o metadata service; cadeia de redirects sem fim; resposta hostil do parceiro tratada como confiável; corpo sem fim esgotando memória; parceiro lento segurando conexão; cota de terceiro consumida por uma organização e negada às outras; dado pessoal do quadro societário entrando no produto. |
+| 2 | Controles | Allowlist **fixa em código**, de nomes exatos; `https` obrigatório; userinfo e porta não padrão recusados; **DNS resolvido e todos os IPs conferidos**, com IPv4-mapeado-em-IPv6 desembrulhado antes; `AllowAutoRedirect = false` com revalidação a cada salto e teto de 3; prazo de 8 s em duas cercas; teto de 512 KB medido **na leitura**, não pelo `Content-Length`; resposta validada por esquema; três campos aproveitados de quarenta; limite de 20/min por organização; cache com teto de 500 entradas e 10 min. |
+| 3 | Testes | **101 novos** (88 backend, 13 frontend), nenhum tocando a internet. **38** na guarda — metadata service, todas as faixas privadas, IPv6, o disfarce `::ffff:`, host que resolve para dois endereços, e as **bordas** (`172.15`, `172.32`, `100.63`) que uma leitura apressada bloquearia por engano. **28** no cliente — oito corpos malformados, corpo sem `Content-Length`, redirect para IP interno, redirect para host de fora, cadeia sem fim, prazo, falha de rede, truncamento. **22** contra PostgreSQL real — permissões, isolamento, auditoria, cache, e os dois testes de limite. **13** na tela. Suíte backend 903 → 991; frontend 125 → 138. |
+| 4 | Multiempresa | `jaCadastrada` responde *"já existe **nesta** organização"*, sob o filtro global, e nunca *"existe em alguma"* — a segunda resposta deixaria um administrador mapear a carteira de clientes da concorrente um CNPJ por vez, sem ler um único dado dela. Teste com o mesmo CNPJ nas duas organizações. O limite de consultas é particionado por organização, com teste provando que a cota de uma não alcança a outra. |
+| 5 | Exposição de dados | Três campos de quarenta. **Quadro societário, e-mail, telefone e endereço nunca atravessam a fronteira** — teste serializa o objeto inteiro e exige a ausência. O CNPJ consultado fica na auditoria, que tem controle de acesso, e **não** no log técnico. Nada da Receita é persistido: os dados vão para a tela e só entram no banco se a pessoa clicar e salvar. |
+| 6 | Permissões | `AdministrarEmpresas`, e só. A consulta serve ao formulário de empresa; dar a mais gente ampliaria quem consegue gastar cota de terceiro sem precisar. Analista de RH, Auditor e Visualizador recebem **403**, provado por teste e confirmado ao vivo. |
+| 7 | Logging e auditoria | `CnpjConsultado` na mesma transação, com CNPJ, resultado e **origem** — `brasilapi` ou `cache`, porque num acerto de cache nada saiu da rede. O `IdEntidade` é o identificador de correlação, que costura trilha e log. Log técnico guarda correlação, host, status e duração — **nunca** o CNPJ. |
+| 8 | Dependências | **Nenhuma nova.** `HttpClientFactory`, `MemoryCache` e `RateLimiter` são do próprio framework. Nenhum SDK de parceiro. |
+| 9 | Secrets | **Não se aplica** — e é um resultado do desenho, não sorte: a BrasilAPI foi escolhida por não exigir credencial. Não há chave para vazar, rotacionar ou esquecer no Git. Se um dia houver parceiro com credencial, o §24.15 volta a valer inteiro. |
+| 10 | Superfície pública | **Nenhuma.** Não há webhook de entrada. Uma rota nova, autenticada, com política declarada e limite próprio. |
+| 11 | Custo/abuso | Cota do parceiro é gratuita, e o limite por organização existe para que continue sendo de todos. Cache com teto de entradas — sem ele, consultar muitos CNPJs distintos seria um jeito educado de encher a memória. Teto de corpo, prazo e `CancellationToken` propagado. **Zero custo AWS**: nada foi criado, o teto de US$ 6,50/mês segue intocado. |
+
+#### Definition of Done de segurança (`CLAUDE.md §40.1`)
+
+Autorização analisada e testada por perfil · multi-tenancy analisada e testada contra
+PostgreSQL real · entrada externa validada no backend **antes** de sair para o parceiro ·
+**resposta do parceiro também validada**, por esquema · dado pessoal do quadro societário
+não atravessa a fronteira · nenhum secret, porque não há credencial · rota nova com política
+declarada · **limite de taxa novo, por organização** · nenhuma dependência nova · testes de
+isolamento e autorização verdes · nenhum controle enfraquecido.
+
+Sem listagem nova: **não se aplica** paginação.
+
+#### Pendências registradas
+
+1. **Sem retry.** Uma falha é uma falha, e a pessoa clica de novo. Retry automático em cima de
+   um serviço gratuito é o caminho mais curto para ser bloqueado — e a operação, sendo
+   manual, já tem quem repita: o usuário.
+2. **Sem *circuit breaker*.** Com a BrasilAPI fora, cada consulta gasta os 8 segundos do prazo
+   antes de desistir. Incômodo, não perigoso: a rota é opcional e o formulário manual não
+   espera. Entra quando houver segunda integração — antes disso seria a abstração genérica
+   que o `ROADMAP.md` proíbe.
+3. **Consulta só no cadastro de empresa.** Não há botão de "atualizar dados na Receita" numa
+   empresa já cadastrada, porque não há tela de edição de empresa. Quando houver, a consulta
+   reusa integralmente esta rota.
+4. **Não há rate limiting nas outras rotas** — `CLAUDE.md §24.19 item 1`, Fase 10. Esta fase
+   trouxe o `RateLimiter` para o `Program.cs`, o que **facilita** o item da Fase 10, mas não o
+   resolve: nenhuma outra rota opta pelo limite.
+5. **A BrasilAPI não tem SLA nem rate limit documentado.** Aceito conscientemente: o produto
+   funciona inteiro sem ela, e nenhum cálculo depende do que ela responde.
 
 ---
 

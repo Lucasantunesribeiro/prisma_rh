@@ -1,7 +1,13 @@
-import { Plus } from 'lucide-react'
+import { Plus, Search } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { podeAdministrar } from '@/api/autenticacao'
-import { criarEmpresa, listarEmpresas, type Empresa } from '@/api/empresas'
+import {
+  consultarCnpj,
+  criarEmpresa,
+  listarEmpresas,
+  type ConsultaCnpj,
+  type Empresa,
+} from '@/api/empresas'
 import { useSessao } from '@/auth/useSessao'
 import { DataTable, type Coluna } from '@/components/sistema/DataTable'
 import {
@@ -142,6 +148,9 @@ export default function Empresas() {
   )
 }
 
+/** Só os dígitos. A máscara é conforto visual; o servidor recebe o número. */
+const soDigitos = (texto: string) => texto.replace(/\D/g, '')
+
 function NovaEmpresa({ aoCriar }: { aoCriar: () => Promise<void> }) {
   const [aberto, definirAberto] = useState(false)
   const [razaoSocial, definirRazaoSocial] = useState('')
@@ -150,16 +159,63 @@ function NovaEmpresa({ aoCriar }: { aoCriar: () => Promise<void> }) {
   const [erro, definirErro] = useState<string | null>(null)
   const [enviando, definirEnviando] = useState(false)
 
+  const [consultando, definirConsultando] = useState(false)
+  const [consulta, definirConsulta] = useState<ConsultaCnpj | null>(null)
+
+  const digitos = soDigitos(cnpj)
+
+  const aoConsultar = async () => {
+    definirConsultando(true)
+    definirConsulta(null)
+
+    try {
+      definirConsulta(await consultarCnpj(digitos))
+    } catch (falha) {
+      // A consulta é auxílio, nunca requisito. Falhar aqui vira aviso na área
+      // da consulta e não toca no formulário: o cadastro manual segue igual.
+      definirConsulta({
+        situacao: 'Indisponivel',
+        mensagem: falha instanceof Error ? falha.message : 'Não foi possível consultar agora.',
+        dados: null,
+        jaCadastrada: false,
+      })
+    } finally {
+      definirConsultando(false)
+    }
+  }
+
+  /**
+   * Preenche o formulário — só quando a pessoa clica.
+   *
+   * A resposta da Receita **não** cai nos campos sozinha. O que ela substitui
+   * fica escrito antes, ao lado de cada campo, para ninguém perder o que
+   * digitou sem ver.
+   */
+  const aoUsarDados = () => {
+    if (!consulta?.dados) {
+      return
+    }
+
+    definirRazaoSocial(consulta.dados.razaoSocial)
+
+    // Nome fantasia vazio na Receita não apaga o que a pessoa escreveu:
+    // "a Receita não sabe" é diferente de "não tem".
+    if (consulta.dados.nomeFantasia) {
+      definirNomeFantasia(consulta.dados.nomeFantasia)
+    }
+  }
+
   const aoEnviar = async (evento: FormEvent) => {
     evento.preventDefault()
     definirErro(null)
     definirEnviando(true)
 
     try {
-      await criarEmpresa({ razaoSocial, cnpj, nomeFantasia: nomeFantasia || null })
+      await criarEmpresa({ razaoSocial, cnpj: digitos, nomeFantasia: nomeFantasia || null })
       definirRazaoSocial('')
       definirCnpj('')
       definirNomeFantasia('')
+      definirConsulta(null)
       definirAberto(false)
       await aoCriar()
     } catch (falha) {
@@ -194,15 +250,37 @@ function NovaEmpresa({ aoCriar }: { aoCriar: () => Promise<void> }) {
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="cnpj">CNPJ</Label>
-              <Input
-                id="cnpj"
-                required
-                inputMode="numeric"
-                placeholder="00.000.000/0000-00"
-                value={cnpj}
-                onChange={(e) => definirCnpj(e.target.value)}
-                className="tabular"
-              />
+              <div className="flex gap-2">
+                <Input
+                  id="cnpj"
+                  required
+                  inputMode="numeric"
+                  placeholder="00.000.000/0000-00"
+                  value={cnpj}
+                  onChange={(e) => {
+                    definirCnpj(e.target.value)
+                    definirConsulta(null)
+                  }}
+                  className="tabular"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0"
+                  // Sem os quatorze dígitos não há o que perguntar. O servidor
+                  // recusaria de qualquer jeito; a tela evita a viagem.
+                  disabled={digitos.length !== 14 || consultando}
+                  onClick={() => void aoConsultar()}
+                >
+                  <Search aria-hidden />
+                  {consultando ? 'Buscando…' : 'Buscar'}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Busca razão social e nome fantasia na Receita Federal. Opcional — dá para
+                preencher tudo à mão.
+              </p>
             </div>
 
             <div className="space-y-1.5">
@@ -214,6 +292,15 @@ function NovaEmpresa({ aoCriar }: { aoCriar: () => Promise<void> }) {
               />
             </div>
           </div>
+
+          {consulta && (
+            <ResultadoDaConsulta
+              consulta={consulta}
+              razaoSocialAtual={razaoSocial}
+              nomeFantasiaAtual={nomeFantasia}
+              aoUsar={aoUsarDados}
+            />
+          )}
 
           {erro && (
             <Alert variant="destructive" role="alert">
@@ -234,5 +321,116 @@ function NovaEmpresa({ aoCriar }: { aoCriar: () => Promise<void> }) {
         </form>
       </DrawerContent>
     </Drawer>
+  )
+}
+
+/**
+ * O que a Receita respondeu, e o que aceitar isso vai mudar.
+ *
+ * ## Nada é preenchido sozinho
+ *
+ * A resposta fica **aqui**, fora do formulário, até alguém clicar em "Usar
+ * estes dados". Preencher automaticamente pareceria mais prático e apagaria o
+ * que a pessoa digitou sem ela ver — e num cadastro de empresa o que ela
+ * digitou pode ser justamente a correção.
+ *
+ * Por isso cada campo que **vai ser substituído** mostra antes o valor atual.
+ * O aviso é a diferença entre ajudar e atropelar.
+ *
+ * ## Isto não é fonte de verdade
+ *
+ * A Receita informa; quem decide é quem cadastra. A situação cadastral aparece
+ * para a pessoa ver que o CNPJ está BAIXADO **antes** de criar a empresa — e
+ * não é guardada em lugar nenhum.
+ */
+function ResultadoDaConsulta({
+  consulta,
+  razaoSocialAtual,
+  nomeFantasiaAtual,
+  aoUsar,
+}: {
+  consulta: ConsultaCnpj
+  razaoSocialAtual: string
+  nomeFantasiaAtual: string
+  aoUsar: () => void
+}) {
+  if (!consulta.dados) {
+    return (
+      <Alert role="status">
+        <AlertDescription>
+          {consulta.mensagem}
+          {consulta.situacao === 'Indisponivel' && (
+            <span className="mt-1 block text-xs text-muted-foreground">
+              A consulta é opcional: preencha os campos à mão e cadastre normalmente.
+            </span>
+          )}
+        </AlertDescription>
+      </Alert>
+    )
+  }
+
+  const { razaoSocial, nomeFantasia, situacaoCadastral, ativaNaReceita } = consulta.dados
+
+  const substituiRazao = razaoSocialAtual.trim() !== '' && razaoSocialAtual !== razaoSocial
+  const substituiFantasia =
+    nomeFantasia !== null && nomeFantasiaAtual.trim() !== '' && nomeFantasiaAtual !== nomeFantasia
+
+  return (
+    <div className="space-y-3 rounded-md border border-border bg-muted/40 p-3">
+      <div className="flex items-start justify-between gap-3">
+        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Encontrado na Receita Federal
+        </span>
+        <span
+          className={
+            ativaNaReceita
+              ? 'rounded px-1.5 py-0.5 text-xs text-muted-foreground'
+              : 'rounded bg-destructive/10 px-1.5 py-0.5 text-xs font-medium text-destructive'
+          }
+        >
+          {situacaoCadastral}
+        </span>
+      </div>
+
+      <dl className="space-y-2 text-sm">
+        <div>
+          <dt className="text-xs text-muted-foreground">Razão social</dt>
+          <dd className="font-medium text-foreground">{razaoSocial}</dd>
+          {substituiRazao && (
+            <dd className="text-xs text-amber-600 dark:text-amber-500">
+              substitui o que você digitou: “{razaoSocialAtual}”
+            </dd>
+          )}
+        </div>
+
+        {nomeFantasia && (
+          <div>
+            <dt className="text-xs text-muted-foreground">Nome fantasia</dt>
+            <dd className="font-medium text-foreground">{nomeFantasia}</dd>
+            {substituiFantasia && (
+              <dd className="text-xs text-amber-600 dark:text-amber-500">
+                substitui o que você digitou: “{nomeFantasiaAtual}”
+              </dd>
+            )}
+          </div>
+        )}
+      </dl>
+
+      {!ativaNaReceita && (
+        <p className="text-xs text-destructive">
+          Este CNPJ não está ativo na Receita. Confira antes de cadastrar.
+        </p>
+      )}
+
+      {consulta.jaCadastrada && (
+        <p className="text-xs text-amber-600 dark:text-amber-500">
+          Já existe uma empresa com este CNPJ nesta organização.
+        </p>
+      )}
+
+      <Button type="button" size="sm" variant="secondary" onClick={aoUsar}>
+        Usar estes dados
+      </Button>
+    </div>
   )
 }

@@ -1270,6 +1270,24 @@ precede o deploy.
 Vale a partir da fase de integrações e para **qualquer** funcionalidade que faça
 requisição externa, IA inclusa.
 
+> **Implementado em 31/08/2026, na Fase 8.** `GuardaDestino`, em
+> `backend/src/PrismaRH.Infraestrutura/Integracoes/`, é a realização desta seção, e passa a
+> ser **controle de segurança já implementado** para efeito do §35: enfraquecê-la exige
+> decisão registrada do responsável, não conveniência.
+>
+> O que ela faz, e o que cada item existe para impedir:
+>
+> | Barreira | Sem ela |
+> |---|---|
+> | `https` obrigatório, sem userinfo, porta padrão | `https://parceiro@atacante.com` parece a allowlist para quem lê rápido |
+> | **Allowlist fixa em código**, de nomes exatos | Em `appsettings`, a única barreira de destino vira um campo que alguém preenche com pressa |
+> | DNS resolvido, **todos** os IPs conferidos | Allowlist de *nome* não protege quando o nome passa a apontar para dentro |
+> | `::ffff:` desembrulhado antes de decidir | `::ffff:169.254.169.254` é IPv6 "global" que conecta como IPv4 — o desvio clássico |
+> | `AllowAutoRedirect = false`, revalidando cada salto, teto de 3 | Validar só a primeira URL não protege: quem escolhe o segundo destino é o parceiro |
+>
+> A guarda é testada **sem rede**: o resolvedor de DNS é injetado. Defesa de rede testada
+> contra a rede real dá uma suíte que falha no avião e passa no escritório.
+
 - **allowlist de destinos** — host e esquema declarados em configuração, nunca digitados
   livremente pelo usuário;
 - validar a URL **após resolver o DNS**, bloqueando `localhost`, `127.0.0.0/8`, `::1`,
@@ -1699,6 +1717,19 @@ Nunca:
 - credenciais reais.
 
 Dados fictícios devem ser claramente identificáveis como demonstração quando necessário.
+
+> **Regra acrescentada em 31/08/2026, na Fase 8.** **Dígito verificador válido não reserva
+> faixa fictícia.** Um CNPJ ou CPF "inventado" que passa na validação pode pertencer a
+> alguém — e passar, sozinho, não é prova de nada.
+>
+> A demo usava `11.222.333/0001-81` e `11.444.777/0001-61`, que *pareciam* inventados. A
+> própria consulta à Receita, construída na Fase 8, mostrou que os dois estão registrados:
+> uma caixa escolar no RS e uma empreiteira em SP — a primeira com nome e CPF parcial de
+> pessoa física no quadro societário.
+>
+> **Antes de usar um documento em dado de demonstração, confira que ele não existe.** Os
+> atuais (`99.999.999/0001-91` e `99.999.998/0001-47`) foram conferidos e voltaram "não
+> encontrado".
 
 ---
 
