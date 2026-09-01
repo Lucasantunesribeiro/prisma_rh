@@ -5922,6 +5922,93 @@ aws iam    delete-role        --role-name portfolio-prisma-rh-prod-api-role --pr
 
 ---
 
+## FASE 12 — EXECUTADA em 01/09/2026
+
+### O que a auditoria encontrou
+
+Três defeitos, todos achados por **auditoria executável** — nenhum apareceu lendo código.
+
+| # | Defeito | Por que importava | Correção |
+|---|---|---|---|
+| 1 | **Não existia `FallbackPolicy`** | Uma rota nova onde alguém esquecesse `RequireAuthorization` nasceria **anônima** — o oposto do `CLAUDE.md §24.4`, que manda negar por padrão. E rota que funciona não levanta suspeita de ninguém. | `SetFallbackPolicy` exigindo usuário autenticado. Não substitui a política por rota: o fallback é a rede, o `InventarioDeRotasTestes` é o piso. |
+| 2 | **`PrismaRH.Worker` não estava na solution** | Era compilado apenas por referência do projeto de testes. `dotnet list package --vulnerable` sobre a `.sln` **pulava exatamente o projeto que carrega o SDK da AWS** — o mesmo onde uma vulnerabilidade já havia sido encontrada na Fase 9. | Adicionado. A varredura passou de 5 para 6 projetos. |
+| 3 | **`/api/contratos/{id}/rescisao/matriz` devolvia 200 para contrato de ninguém** | Não vazava dado: o handler não recebe parâmetro e devolve tabela de referência do sistema. O defeito era de **contrato de API** — a rota se apresentava como sub-recurso de um contrato e ignorava o contrato. A promessa falsa envelhece mal: no dia em que alguém acrescentar ali algo específico do contrato, a validação que deveria existir já não existe. | Movida para `/api/rescisao/matriz`. Tabela de referência não é sub-recurso de tenant. |
+
+> ⚠️ **Uma conclusão minha estava errada, e fica registrada.** A auditoria de índices
+> apontou que faltava um índice `(IdOrganizacao, IdFolha)` em `resultados_analise`. Ele
+> **já existia** — a listagem de índices que eu li estava truncada. Nenhuma migration foi
+> criada. O erro está aqui porque um relatório que só mostra os acertos não é auditoria.
+
+### A suíte de segurança permanente
+
+`backend/testes/PrismaRH.Testes/Seguranca/`. O `ROADMAP.md` é explícito sobre o motivo:
+*"regressão de segurança é silenciosa e ninguém percebe sem teste"*.
+
+| Arquivo | O que trava, para sempre |
+|---|---|
+| **`InventarioDeRotasTestes`** | Lê o `EndpointDataSource` **da aplicação rodando**, não o código-fonte. A diferença importa: um `grep` acha a chamada de `RequireAuthorization`; não acha a rota onde alguém **esqueceu** de chamá-la, que é o caso perigoso. Toda rota anônima precisa estar num inventário com motivo escrito, e o inventário não pode ter linha morta. |
+| **`TokenForjadoTestes`** | Assinatura com outra chave, emissor errado, público errado, expirado há um segundo, `alg:none`, ausente e lixo — todos com o perfil mais alto dentro do token. Mais o **controle**: um token bem formado passa na autenticação e mesmo assim não alcança dado de ninguém, porque o filtro global não casa com a organização inventada. Sem o controle, os outros sete poderiam estar passando porque a rota está quebrada. |
+| **`VarreduraIdorTestes`** | Enumera as rotas `{id:guid}` e bate em todas com id de ninguém, exigindo 404 ou 400 — nunca 200, nunca 500. **Rota nova entra na varredura sozinha**, que é o ponto: o risco não é o recurso de hoje, é o número 43 daqui a dois meses. Foi ela que achou o defeito 3. |
+| **`MatrizDeAutorizacaoTestes`** | Avalia as cinco políticas contra os cinco perfis pelo `IAuthorizationService` **real** e compara com a matriz declarada. É o item 6 do gate ao pé da letra: *"contra o código real, não contra o documento"*. Mais: usuário sem perfil e perfil inventado não passam em política nenhuma. |
+| **`LogSemSegredoTestes`** | Lê as chamadas de log no fonte. Heurística **declarada como tal**, com liberação nominal justificada e um controle que prova que a guarda detecta uma linha errada de propósito. Provar em execução exigiria exercitar todo caminho que loga — e o caminho que ninguém exercitou é justamente o que vaza. |
+
+### Pipeline — `.github/workflows/ci.yml`
+
+Build, testes, lint e varredura de dependências a cada `push` e `pull_request` em `main`.
+
+| Decisão | Por quê |
+|---|---|
+| **`-warnaserror` no build** | O projeto compila com zero avisos hoje. Aviso tolerado vira aviso ignorado, e depois ninguém lê nenhum. |
+| **A varredura NuGet lê a saída, não o exit code** | ⚠️ `dotnet list package --vulnerable` devolve **zero mesmo quando acha** — ele lista, não julga. Sem essa leitura o passo passaria sempre e daria a impressão de proteger. |
+| **`npm audit --audit-level=high`** | Falha em alta e crítica. Travar em tudo faz o time aprender a ignorar o passo, que é pior que não tê-lo. |
+| **`npm ci`, e não `npm install`** | Instala exatamente o lockfile. `install` pode resolver versão diferente da que foi testada. |
+| **Varredura de segredos com `fetch-depth: 0`** | Item 9 do gate pede o **histórico**, não o estado atual — apagar do arquivo não remove dos commits anteriores. E o passo mostra commit e arquivo, **nunca o valor**: repetir o segredo no log do pipeline o vaza de novo, num lugar com acesso mais amplo. |
+| **`permissions: contents: read`** | O padrão do GitHub é mais amplo. Este pipeline só precisa ler. |
+| **Actions fixadas por versão, todas `actions/*`** | `CLAUDE.md §24.25`. Nenhuma action de origem desconhecida. |
+
+`.github/dependabot.yml` complementa: o pipeline diz que **hoje** não há vulnerabilidade
+conhecida; o Dependabot avisa quando uma aparece **amanhã**, sem esperar o próximo commit.
+Cadência semanal de propósito — PR de dependência todo dia vira repositório onde ninguém lê
+PR nenhum, e a atualização de segurança some no meio.
+
+### Security Gate — Fase 12, executado
+
+| # | Ponto | O que foi feito |
+|---|---|---|
+| 1 | Ameaças introduzidas | Nenhuma. A fase remove. O risco próprio — "corrigir" com alteração ampla sem teste — foi tratado com o mesmo método de sempre: cada correção acompanhada do teste que prova a falha. |
+| 2 | Controles | Nenhum pentest contra terceiro. Todas as verificações rodam contra o host de teste e o PostgreSQL do container. |
+| 3 | Testes | 5 arquivos novos, **33 testes de segurança**. Suíte total: **1231**, duas execuções consecutivas. |
+| 4 | Multiempresa | Revisão completa dos caminhos que tocam dado de tenant: consultas (filtro global), joins, agregações do resumo, exports, blobs, jobs, filas, cache (todos com organização na chave), logs, auditoria, integrações e IA. Todos com teste de isolamento contra PostgreSQL real. |
+| 5 | Exposição de dados | CPF mascarado na listagem; erro de importação cita a linha, nunca o documento; `ProtecaoCsv` prefixa célula que começa com `=`, `+`, `-` ou `@`; `TratamentoDeErro` não devolve o detalhe do parser, que pode conter dado pessoal. |
+| 6 | Permissões | `MatrizDeAutorizacaoTestes` audita a matriz Recurso × Operação × Perfil contra o código real. |
+| 7 | Logging e auditoria | **22 templates de log lidos um a um**: todos carregam identificador, status, duração e contagem — nenhum carrega conteúdo. `LogSemSegredoTestes` congela isso. |
+| 8 | Dependências | NuGet (6 projetos, com transitivas) e npm (com e sem dev): **zero vulnerabilidades**. ⚠️ `xunit 2.9.3` está marcado como **Legacy** pelo NuGet, com alternativa `xunit.v3` — registrado como pendência abaixo, não corrigido. |
+| 9 | Secrets | Histórico completo — **47 commits** — varrido com padrões de chave AWS, chave privada, chave Google e token Slack, além de arquivos `.env`/`.pem`/`.p12`. Nenhum acerto: o único casamento é um **placeholder literal** (`usuario:senha@host`) num comentário de documentação do `ConexaoNeon`. |
+| 10 | Superfície pública | Inventário executável: **4 rotas anônimas**, cada uma com motivo escrito — `entrar`, `renovar`, `sair` e `/health`. O documento OpenAPI **deixou de ser anônimo** por efeito da `FallbackPolicy`, e continua existindo só em Development. |
+| 11 | Custo/abuso | Limites revistos: rate limit por IP no login, por organização na IA e na consulta de CNPJ; paginação com teto em toda listagem; teto de upload e de blobs global. ⚠️ **Alerta de gasto no console do Google continua ausente** — fora do alcance do repositório. |
+
+### Critérios de aceite
+
+| Critério | Situação |
+|---|---|
+| nenhum problema crítico conhecido | ✅ Os três defeitos encontrados foram corrigidos. As pendências abaixo estão registradas e nenhuma é crítica em uso de portfólio. |
+| fluxos principais cobertos | ✅ 1231 testes backend, 163 frontend. |
+| auditoria funcionando | ✅ Trilha somente-inserção com 12 ações auditadas, consultável em `/auditoria`. |
+| documentação atualizada | ✅ `ROADMAP.md`, `README.md` e `CLAUDE.md`. |
+| custos controlados | ✅ AWS com US$ 0,00 previsto; IA em centavos/mês com tetos técnicos. |
+
+### Pendências registradas, não corrigidas
+
+| Pendência | Por que não foi corrigida agora |
+|---|---|
+| **`xunit 2.9.3` marcado como Legacy** | A alternativa é `xunit.v3`, e migrar 1231 testes é mudança de framework de teste — `CLAUDE.md §35` exige aprovação. Não é vulnerabilidade: é fim de linha anunciado. Fica para uma tarefa própria. |
+| **Sem alerta de gasto no console do Google** | Depende de configuração na conta do responsável, fora do repositório. Os tetos técnicos do `OrcamentoIa` são a defesa disponível. |
+| **DAST e SAST** | O `ROADMAP.md` os condiciona a *"opção gratuita adequada"* e a *"quando o produto estabilizar"*. Não foram adicionados: instalar ferramenta que ninguém lê é ruído com aparência de segurança. |
+| **Restore de backup nunca testado** | O `CLAUDE.md §24.23` é explícito: *"backup nunca testado é hipótese, não garantia"*. O Neon Free faz backup do provedor; a restauração não foi exercitada. |
+| **Bloqueio progressivo por conta no login** | Aberta desde a Fase 10 (`CLAUDE.md §24.19 item 1`). O limite por IP existe; o por conta, não. |
+| **IRRF de férias e mensal na mesma competência** | `CLAUDE.md §24.19 item 5`. Correção fiscal, não de segurança. |
+---
+
 # FASE 13 — DOCUMENTAÇÃO DE PORTFÓLIO E ENTREVISTA
 
 ## Objetivo

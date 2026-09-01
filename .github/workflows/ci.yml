@@ -1,0 +1,149 @@
+# Integração contínua do Prisma RH (Fase 12).
+#
+# O `ROADMAP.md` da Fase 12 diz por que este arquivo existe:
+#
+#   "Estes nao sao exercicio de auditoria: viram suite permanente, porque
+#    regressao de seguranca e silenciosa e ninguem percebe sem teste."
+#
+# Auditoria feita uma vez responde "estava seguro naquele dia". O pipeline
+# responde "continua estando", a cada commit.
+#
+# ⚠️ ACTIONS FIXADAS POR VERSAO (`CLAUDE.md §24.25`). Nenhuma action de origem
+# desconhecida: todas sao `actions/*`, oficiais do GitHub.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancela execucao anterior do mesmo ramo. Sem isso, uma sequencia de commits
+# enfileira execucoes que ninguem vai ler.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# ⚠️ Permissao minima (`CLAUDE.md §24.4`). O padrao do GitHub e mais amplo, e
+# este pipeline so precisa ler o codigo.
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend — build, testes e dependencias
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restaurar
+        working-directory: backend
+        run: dotnet restore PrismaRH.sln
+
+      - name: Compilar
+        working-directory: backend
+        # `-warnaserror`: o projeto compila com zero avisos hoje, e e assim que
+        # continua. Aviso tolerado vira aviso ignorado, e depois ninguem le
+        # nenhum.
+        run: dotnet build PrismaRH.sln --no-restore --configuration Release -warnaserror
+
+      - name: Testes
+        working-directory: backend
+        # Os testes de integracao sobem PostgreSQL real por Testcontainers - o
+        # runner do GitHub ja tem Docker. Filtro global testado em banco falso
+        # nao prova nada, porque o EF InMemory nao gera SQL (`CLAUDE.md §24.5`).
+        run: dotnet test PrismaRH.sln --no-build --configuration Release
+
+      - name: Dependencias vulneraveis (NuGet)
+        working-directory: backend
+        # ⚠️ `dotnet list package --vulnerable` devolve exit code ZERO mesmo
+        # quando acha vulnerabilidade - ele lista, nao julga. Sem esta leitura
+        # da saida, o passo passaria sempre e daria a impressao de proteger.
+        #
+        # `--include-transitive` porque a maior parte dos incidentes de supply
+        # chain entra por pacote pequeno que ninguem instalou de proposito.
+        run: |
+          saida=$(dotnet list package --vulnerable --include-transitive 2>&1)
+          echo "$saida"
+          if echo "$saida" | grep -qiE "has the following vulnerable|tem os seguintes pacotes vulner"; then
+            echo "::error::Pacote NuGet com vulnerabilidade conhecida."
+            exit 1
+          fi
+
+  frontend:
+    name: Frontend — lint, testes e build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Instalar
+        working-directory: frontend
+        # `ci`, e nao `install`: instala exatamente o lockfile. `install` pode
+        # resolver versao diferente da que foi testada.
+        run: npm ci
+
+      - name: Lint
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Testes
+        working-directory: frontend
+        run: npm run test
+
+      - name: Build
+        working-directory: frontend
+        run: npm run build
+
+      - name: Dependencias vulneraveis (npm)
+        working-directory: frontend
+        # `--audit-level=high` falha em alta e critica. Moderada e baixa entram
+        # no relatorio sem travar o pipeline: travar em tudo faz o time
+        # aprender a ignorar o passo, que e pior que nao te-lo.
+        run: npm audit --audit-level=high
+
+  segredos:
+    name: Segredos no repositorio
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Historico completo: o `CLAUDE.md §24.15` e o item 9 do Security Gate
+          # da Fase 12 pedem varredura do HISTORICO, nao do estado atual.
+          # Apagar o segredo do arquivo nao o remove dos commits anteriores.
+          fetch-depth: 0
+
+      - name: Padroes de credencial no historico
+        # ⚠️ O valor de nada e impresso, por principio: repetir o segredo no log
+        # do pipeline o vaza de novo, num lugar que fica gravado e tem acesso
+        # mais amplo (`CLAUDE.md §24.15`). O passo mostra COMMIT e ARQUIVO.
+        run: |
+          padrao='AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----|AIza[0-9A-Za-z_-]{35}|xox[baprs]-'
+          if git grep -lIE "$padrao" $(git rev-list --all) -- 2>/dev/null | head -20 | grep -q .; then
+            echo "::error::Padrao de credencial encontrado no historico do git."
+            git grep -lIE "$padrao" $(git rev-list --all) -- 2>/dev/null | head -20
+            exit 1
+          fi
+          echo "Nenhum padrao de credencial no historico."
+
+      - name: Arquivo de segredo versionado
+        run: |
+          if git ls-files | grep -qiE '(^|/)\.env$|\.pem$|\.pfx$|\.p12$|(^|/)id_rsa$'; then
+            echo "::error::Arquivo de segredo versionado."
+            git ls-files | grep -iE '(^|/)\.env$|\.pem$|\.pfx$|\.p12$|(^|/)id_rsa$'
+            exit 1
+          fi
+          echo "Nenhum arquivo de segredo versionado."

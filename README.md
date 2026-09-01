@@ -2,12 +2,14 @@
 
 Plataforma B2B de gestão, cálculo, conferência e auditoria de folha de pagamento brasileira.
 
-> **Estado atual: Fase 11 concluída — o Prisma RH está no ar, com assistente de IA.**
+> **Estado atual: Fase 12 concluída — hardening, CI/CD e suíte de segurança permanente.**
 >
 > - **Aplicação:** https://portfolio-prisma-rh.vercel.app
 > - **API:** AWS Lambda com Function URL · **Banco:** Neon PostgreSQL
 > - **Custo AWS previsto: US$ 0,00** — sem S3, API Gateway, NAT ou KMS próprio.
 >
+> Fase 12: CI/CD no GitHub Actions, varredura de dependencias e segredos,
+> e 33 testes de seguranca permanentes.
 > Fase 11: assistente de IA — explica inconsistências, resume a folha e
 > converte pergunta em português em filtro controlado (Google Gemini).
 > Fase 9: importação assíncrona por SQS + Lambda.
@@ -394,6 +396,43 @@ navegador não tem efeito nenhum.
   recusaria a linha — e o erro revelaria que aquele documento existe em outro tenant.
 - **Data só em `dd/mm/aaaa` ou `aaaa-mm-dd`.** Aceitar o que a cultura da máquina entender
   faria `03/04/2026` virar março num servidor e abril noutro, sem ninguém perceber.
+
+**Hardening e CI/CD (Fase 12)**
+
+A auditoria final. Três defeitos, todos achados por **auditoria executável** — nenhum
+apareceu lendo código:
+
+- **não existia `FallbackPolicy`**: uma rota nova onde alguém esquecesse
+  `RequireAuthorization` nasceria **anônima**, e rota que funciona não levanta suspeita de
+  ninguém. Agora o padrão é negar;
+- **o projeto do worker não estava na solution**: era compilado só por referência dos
+  testes, e a varredura de dependências sobre a `.sln` **pulava exatamente o projeto que
+  carrega o SDK da AWS**;
+- **`/api/contratos/{id}/rescisao/matriz` devolvia 200 para contrato de ninguém**: não
+  vazava dado — o handler devolve tabela de referência e ignora o contrato —, mas a rota
+  prometia ser sub-recurso de um contrato e não era. Movida para `/api/rescisao/matriz`.
+
+A suíte de segurança em `backend/testes/PrismaRH.Testes/Seguranca/` lê a **aplicação
+rodando**, não o código-fonte:
+
+| Arquivo | O que trava |
+|---|---|
+| `InventarioDeRotasTestes` | Toda rota anônima está num inventário com motivo escrito. Um `grep` acha a chamada de `RequireAuthorization`; não acha a rota onde alguém **esqueceu** de chamá-la. |
+| `TokenForjadoTestes` | Assinatura de outra chave, emissor errado, expirado, `alg:none` — mais o controle que prova que os outros falham pelo motivo certo. |
+| `VarreduraIdorTestes` | Enumera as rotas `{id:guid}` e bate em todas com id de ninguém. **Rota nova entra sozinha** — foi ela que achou o terceiro defeito. |
+| `MatrizDeAutorizacaoTestes` | Avalia as 5 políticas contra os 5 perfis pelo serviço real e compara com a matriz declarada. |
+| `LogSemSegredoTestes` | Nenhuma chamada de log menciona senha, token, CPF ou payload. |
+
+Pipeline em `.github/workflows/ci.yml`: build com `-warnaserror`, testes com PostgreSQL
+real, lint, e varredura de dependências e de segredos **no histórico completo**.
+
+> ⚠️ `dotnet list package --vulnerable` devolve **exit code zero mesmo quando acha** — ele
+> lista, não julga. O passo lê a saída; sem isso ele passaria sempre e daria a impressão
+> de proteger.
+
+> ⚠️ **Uma conclusão da auditoria estava errada, e fica registrada:** apontei um índice
+> faltando em `resultados_analise` que **já existia** — a listagem que li estava truncada.
+> Nenhuma migration foi criada. Um relatório que só mostra os acertos não é auditoria.
 
 **Assistente de inconsistências (Fase 11A)**
 
@@ -893,8 +932,14 @@ subsequentes) e **art. 137** (fora do prazo, remuneração **em dobro**).
 
 ## O que ainda NÃO existe
 
-**Afastamentos** e **CI/CD**. Importações, motor de análises, workflow, integração de CNPJ,
-processamento assíncrono, produção e assistente de IA já existem — ver acima.
+**Afastamentos** — não há registro de ausência em lugar nenhum do domínio, e é
+por isso que a redução de férias por faltas (art. 130) não é aplicada.
+
+Todo o resto do roadmap existe: importações, motor de análises, workflow, integração de
+CNPJ, processamento assíncrono, produção, assistente de IA nas três subfases e CI/CD.
+
+As pendências conhecidas — nenhuma crítica em uso de portfólio — estão listadas no
+fim da Fase 12 do [ROADMAP.md](ROADMAP.md).
 
 Os **cinco tipos de folha** calculam: mensal, férias, rescisão, adiantamento de 13º e a
 folha anual de 13º.

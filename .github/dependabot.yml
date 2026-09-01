@@ -1,0 +1,46 @@
+# Dependabot (Fase 12).
+#
+# `CLAUDE.md §24.25` pede "Dependabot ou equivalente". Ele complementa a
+# varredura do pipeline, e nao a substitui: o pipeline diz que HOJE nao ha
+# vulnerabilidade conhecida; o Dependabot avisa quando uma aparece amanha, sem
+# esperar o proximo commit.
+#
+# ⚠️ Cadencia semanal, e nao diaria. Um projeto de portfolio com PR de
+# dependencia todo dia vira um repositorio onde ninguem le PR nenhum - e a
+# atualizacao de seguranca some no meio.
+#
+# Atualizacao de SEGURANCA nao respeita este intervalo: o GitHub abre assim que
+# o aviso sai, que e o comportamento desejado.
+
+version: 2
+
+updates:
+  - package-ecosystem: nuget
+    directory: /backend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    # Agrupado: quinze PRs para quinze pacotes da mesma familia e ruido.
+    groups:
+      backend:
+        patterns: ['*']
+        update-types: [minor, patch]
+    # Major fica de fora do agrupamento de proposito: `CLAUDE.md §24.25` manda
+    # revisar antes de major upgrade, e revisar exige um PR por vez.
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      frontend:
+        patterns: ['*']
+        update-types: [minor, patch]
+
+  # As proprias actions do pipeline. Elas executam com acesso ao repositorio, e
+  # action desatualizada e superficie de ataque como qualquer dependencia.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
