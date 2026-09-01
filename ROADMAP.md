@@ -6127,6 +6127,78 @@ configuração exata que a implementa, não.
 
 ---
 
+## FASE 13 — EXECUTADA em 01/09/2026
+
+Com ela o roadmap chega ao fim. O produto não mudou: esta fase transforma o que foi
+construído em **evidência legível**.
+
+### O erro que a fase existia para achar
+
+O `README.md` afirmava, na primeira tela:
+
+> *"O pagamento do 13º e a folha de rescisão ainda não existem."*
+
+**Existem desde a Fase 4G.** O `TipoFolha` tem cinco valores — `Mensal`, `Ferias`,
+`Rescisao`, `DecimoTerceiroAdiantamento` e `DecimoTerceiro` — e o corpo do próprio README
+dizia isso trinta linhas abaixo. A frase era resquício da Fase 4E e nunca foi revista.
+
+Isso importa mais num documento de portfólio do que em qualquer outro: **a primeira tela é
+a que um entrevistador confere**, e uma contradição interna vale menos que uma omissão.
+
+### O que foi escrito
+
+| Artefato | Trabalho que ele faz, e ninguém mais faz |
+|---|---|
+| **`README.md` — abertura reescrita** | Antes, a primeira tela era um log de fases. Agora responde: qual o problema, o que o produto faz, **o que é tecnicamente interessante** (com o arquivo de cada ponto), como está construído, os números, e as **limitações declaradas**. A profundidade que já existia continua abaixo, indexada. |
+| **`docs/adr/` — 8 ADRs** | O `ROADMAP.md` registra o que foi feito em cada fase. Nenhum documento registrava **o que foi recusado**. Toda ADR aqui tem a seção *"O que foi recusado"* — sem ela, o documento vira elogio à própria escolha. |
+| **`docs/arquitetura.md`** | Uma tela com o fluxo inteiro, a regra de dependência, **onde cada garantia mora e por que ali**, as três fronteiras com o mundo, o assíncrono, o custo, e o que a arquitetura deliberadamente não tem. |
+| **`docs/entrevista.md`** | As perguntas difíceis com a resposta **e o arquivo**. Regra declarada no topo: *se a resposta não puder ser mostrada, ela não vale*. Termina com "o que deu errado neste projeto" — três defeitos reais, incluindo um erro meu de auditoria. |
+| **`docs/imagens/README.md`** | A lista de seis capturas, na ordem que conta a história, com o que **não** pode aparecer na imagem. |
+
+### Por que 8 ADRs, e não 30
+
+O `ROADMAP.md` pede *"ADRs para decisões realmente relevantes"*. O critério aplicado foi
+**custo de reverter**: entra a decisão de que outras decisões passam a depender.
+
+Um ADR para cada escolha de implementação transformaria a pasta num segundo roadmap que
+ninguém lê — e a pasta de ADR só funciona enquanto for curta o bastante para ser lida
+inteira.
+
+As oito: monólito modular · filtro global · 404 em vez de 403 · token em memória com
+refresh opaco · PostgreSQL e não RDS · Function URL e não API Gateway · rubrica por enum e
+não fórmula · IA que explica e não calcula.
+
+### Capturas de tela — pendentes, com motivo
+
+⚠️ **Não foram feitas.** Tirá-las exige entrar na aplicação, e digitar senha em formulário
+é ação que o agente não executa. `docs/imagens/README.md` traz a lista exata para que a
+captura leve cinco minutos, com as regras do item 2 do gate desta fase.
+
+### Security Gate — Fase 13, executado
+
+| # | Ponto | O que foi feito |
+|---|---|---|
+| 1 | Ameaças introduzidas | Documentação de portfólio é pública, e o risco é **contar demais**. Concretamente: URL interna, nome de bucket, ARN, id de conta AWS, string de conexão, credencial em print de terminal, screenshot com dado que pareça real. |
+| 2 | Controles | Cada documento foi lido procurando essas seis coisas. **O que os documentos citam são nomes de classe e caminhos de arquivo do repositório, que já é público** — nunca valor de configuração. A guia de capturas repete a regra para quem for tirá-las. |
+| 3 | Testes | Varredura de segredos executada sobre o repositório completo depois de escrever a documentação: **nenhum indício**. Os 16 arquivos citados em `docs/entrevista.md` foram conferidos um a um — todos existem, e os métodos citados também (`Dinheiro.Arredondar` com `AwayFromZero`, `FalharDefinitivamente`). Documento que aponta para arquivo inexistente é pior que documento nenhum. |
+| 4–11 | Demais pontos | **Não se aplicam** — esta fase não altera o sistema. Nenhuma linha de código de produção foi tocada; nenhuma rota, política, migration ou dependência mudou. |
+
+### Verificação executada
+
+- 1231 testes backend, 163 frontend, lint e builds limpos — inalterados, porque nada de
+  produção foi tocado;
+- varredura de segredos limpa após a documentação;
+- **todos os caminhos de arquivo citados na documentação conferidos contra o repositório**.
+
+### O que a Fase 13 deixa em aberto
+
+| Pendência | Situação |
+|---|---|
+| **Capturas de tela** | Listadas e especificadas; a captura em si depende de login. |
+| **ADRs futuras** | A pasta cobre o que existe hoje. Decisão estrutural nova pede ADR nova — é a regra registrada no `docs/adr/README.md`. |
+| **Tradução para inglês** | Fora de escopo por decisão do projeto (`CLAUDE.md §19`): produto e documentação em português. |
+---
+
 # 5. MAPA DE EVOLUÇÃO RESUMIDO
 
 ```text

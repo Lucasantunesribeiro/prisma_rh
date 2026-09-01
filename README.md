@@ -1,44 +1,120 @@
 # Prisma RH
 
-Plataforma B2B de gestão, cálculo, conferência e auditoria de folha de pagamento brasileira.
+**Plataforma B2B de gestão, cálculo, conferência e auditoria de folha de pagamento
+brasileira.** Multiempresa, com cálculo rastreável, motor de conferência automática e
+trilha de auditoria.
 
-> **Estado atual: Fase 12 concluída — hardening, CI/CD e suíte de segurança permanente.**
->
-> - **Aplicação:** https://portfolio-prisma-rh.vercel.app
-> - **API:** AWS Lambda com Function URL · **Banco:** Neon PostgreSQL
-> - **Custo AWS previsto: US$ 0,00** — sem S3, API Gateway, NAT ou KMS próprio.
->
-> Fase 12: CI/CD no GitHub Actions, varredura de dependencias e segredos,
-> e 33 testes de seguranca permanentes.
-> Fase 11: assistente de IA — explica inconsistências, resume a folha e
-> converte pergunta em português em filtro controlado (Google Gemini).
-> Fase 9: importação assíncrona por SQS + Lambda.
-> Fase 8: consulta de CNPJ na Receita, pelo cadastro de empresa.
-> Fase 7: workflow de tratamento, auditoria e painel.
-> Fase 4 concluída: 4A a 4G, os cinco tipos de folha calculam.
->
-> Existe login com JWT, cinco perfis, organizações isoladas entre si, o cadastro de
-> funcionários, contratos e histórico contratual por vigência, e a **primeira folha
-> mensal calculada e armazenada pelo próprio Prisma RH**, com memória de cálculo,
-> reprocessamento e fechamento.
-> As bases de INSS, FGTS e IRRF são apuradas por holerite, o **INSS do segurado é
-> descontado** pela tabela progressiva vigente e o **FGTS do empregador é depositado**
-> a 8% sobre a base — como linha informativa, que não reduz o líquido.
-> O **IRRF** é retido pela tabela de 2026, com dedução por dependente, desconto
-> simplificado e o **redutor** da Lei 15.270/2025 — quem ganha até R$ 5.000 não paga.
-> Com isso a folha mensal está completa: salário proporcional, bases, INSS, FGTS e IRRF.
-> Existe também **férias**, completas: quantos períodos cada contrato acumulou, quais já
-> passaram do prazo, a **programação** dos dias — com fracionamento e abono validados pela
-> CLT — e o **pagamento**, numa folha de tipo próprio, com o 1/3 constitucional e as
-> incidências de cada verba conforme o Manual do eSocial.
-> Do **13º salário** existem os **avos** — quantos meses de cada ano contam, e por quê.
-> O desligamento exige o **motivo**, e a **rescisão é simulada**: saldo de salário, aviso
-> prévio, férias vencidas e proporcionais com 1/3, e a multa do FGTS — cada regra com a
-> norma que a sustenta. **Cinco motivos calculam; três ficam bloqueados** por falta de
-> fonte oficial, e o sistema diz isso em vez de chutar. O pagamento do 13º e a folha de
-> rescisão ainda não existem.
-> Consulte o [ROADMAP.md](ROADMAP.md) para as fases seguintes e o
-> [CLAUDE.md](CLAUDE.md) para as regras do projeto.
+🔗 **[Aplicação](https://portfolio-prisma-rh.vercel.app)** · React na Vercel, API em AWS
+Lambda, banco no Neon PostgreSQL — **custo AWS previsto de US$ 0,00**.
+
+---
+
+## O problema
+
+Departamentos pessoais e empresas de BPO processam folha para muitas empresas, sob regras
+que mudam com o tempo, e precisam **explicar cada valor** — às vezes anos depois, numa
+reclamação trabalhista. O risco é financeiro e trabalhista ao mesmo tempo.
+
+A maior parte das ferramentas produz um número. O Prisma RH produz o número **e a conta
+que levou até ele**: quais rubricas entraram, sobre qual base, com qual parâmetro vigente,
+em qual versão do cálculo.
+
+## O que ele faz
+
+| | |
+|---|---|
+| **Cadastro** | Organizações, empresas, estabelecimentos, funcionários, contratos e histórico contratual por vigência |
+| **Folha** | Cinco tipos calculam: **mensal, férias, rescisão, adiantamento de 13º e 13º anual** — com memória de cálculo linha a linha |
+| **Encargos** | INSS progressivo, FGTS, IRRF com dependentes, desconto simplificado e o redutor da Lei 15.270/2025 |
+| **Importação** | CSV e XLSX, com preview, validação e relatório de erros — síncrona ou por fila |
+| **Conferência** | Motor de análises com regras versionadas e tolerância parametrizável por organização |
+| **Workflow** | Detectada → Em análise → Justificada → Corrigida → Resolvida, com responsável, comentários e evidências |
+| **Auditoria** | Trilha somente-inserção: quem alterou, o quê, quando e de quanto para quanto |
+| **IA** | Explica uma inconsistência, resume a folha e converte pergunta em português em filtro controlado |
+
+## O que é tecnicamente interessante aqui
+
+Se você veio olhar código, estes são os pontos que valem a leitura:
+
+| Assunto | Onde | Em uma linha |
+|---|---|---|
+| **Isolamento multiempresa** | `PrismaRhDbContext` | Filtro global, não `where` escrito à mão. Sem usuário, `Guid.Empty` — que não casa com nada. Recurso de outro tenant devolve **404, não 403** |
+| **Cálculo explicável** | `MotorCalculoFolha`, `LinhaMemoriaCalculo` | Cada holerite guarda os passos. Alterar a rubrica hoje **não** reescreve a folha de agosto |
+| **Histórico que não é destruído** | `VigenciaContrato` | *Exclusion constraint* no PostgreSQL impede sobreposição de períodos mesmo sob requisições simultâneas |
+| **Defesa de SSRF** | `GuardaDestino` | Allowlist fixa em código, DNS resolvido e **todos** os IPs conferidos, `::ffff:` desembrulhado, redirect revalidado a cada salto |
+| **Orçamento global com concorrência** | `OrcamentoBlobs` | `pg_advisory_xact_lock` para reservar espaço — funciona atrás do PgBouncer, onde lock de sessão não funciona |
+| **CSRF com `SameSite=None`** | `GuardaCsrf` | *Double submit* comparado em tempo constante **mais** validação de `Origin`. Ausência é recusa |
+| **IA que não calcula** | `VocabularioConsulta` | O modelo propõe campo, operador e valor; a aplicação confere contra lista fechada e monta `Where` tipado. **Não existe SQL vindo do modelo** |
+| **Segurança testada, não afirmada** | `testes/Seguranca/` | Inventário de rotas lido da aplicação rodando, token forjado de seis formas, varredura de IDOR que inclui rotas futuras sozinha |
+
+## Como está construído
+
+```text
+React + TypeScript (Vercel)
+        │  fetch com access token em memoria
+        ▼
+ASP.NET Core Minimal APIs — monolito modular
+        │
+        ├── PrismaRH.Dominio        regras, sem EF, sem ASP.NET, sem AWS
+        ├── PrismaRH.Aplicacao      casos de uso
+        ├── PrismaRH.Infraestrutura EF Core, integracoes, IA
+        └── PrismaRH.Api            HTTP, autorizacao, limites
+        │
+        ▼
+PostgreSQL (Neon)         SQS ──▶ Lambda Worker (importacao pesada)
+```
+
+**Monólito modular, não microserviços** — um produto com um banco e um time não tem o
+problema que microserviço resolve, e teria todos os que ele traz.
+
+## Números
+
+| | |
+|---|---|
+| Testes backend | **1231**, incluindo integração contra PostgreSQL real via Testcontainers |
+| Testes frontend | **163** |
+| Testes de segurança | **33**, em suíte própria e permanente |
+| Rotas | **85**, das quais **4 anônimas** — cada uma com motivo escrito e travada por teste |
+| Custo AWS previsto | **US$ 0,00** |
+
+## Índice
+
+| Documento | Para quê |
+|---|---|
+| [docs/arquitetura.md](docs/arquitetura.md) | Camadas, dependências, produção e por que cada escolha |
+| [docs/entrevista.md](docs/entrevista.md) | As perguntas difíceis, com a resposta e o arquivo |
+| [docs/adr/](docs/adr/) | As decisões que sustentam o resto, cada uma com a alternativa recusada |
+| [docs/imagens/](docs/imagens/) | O que capturar da demo, e o que **não** pode aparecer na imagem |
+| [ROADMAP.md](ROADMAP.md) | As 13 fases, com o Security Gate executado de cada uma |
+| [CLAUDE.md](CLAUDE.md) | As regras permanentes do projeto |
+
+Neste arquivo, mais abaixo: **[o que já existe](#o-que-já-existe)** em detalhe ·
+**[o que não existe](#o-que-ainda-não-existe)** · **[stack](#stack-atual)** ·
+**[como rodar](#1-configuração)** · **[testes](#5-testes)** ·
+**[decisões de segurança](#decisões-de-segurança)**.
+
+## Limitações declaradas
+
+Um portfólio que só lista acertos não é evidência de nada. O que **não** funciona:
+
+- **Não é homologado.** Nenhuma obrigação é transmitida a órgão público, e o produto não
+  substitui um sistema comercial de folha.
+- **Afastamentos não existem** — não há registro de ausência no domínio, e é por isso que
+  a redução de férias por faltas (art. 130) não é aplicada.
+- **Três dos oito motivos de rescisão ficam bloqueados** por falta de fonte oficial
+  confiável. O sistema **diz isso** em vez de chutar.
+- **IRRF de férias e mensal na mesma competência** são apurados em separado, o que subestima
+  a retenção — a tabela é progressiva. Registrado, não corrigido.
+- **Restore de backup nunca foi testado**, e backup não testado é hipótese, não garantia.
+- A lista completa está no fim da [Fase 12 do ROADMAP](ROADMAP.md).
+
+## Dados
+
+A demonstração usa **apenas dados fictícios**. Nenhum CPF, salário ou nome real.
+
+> ⚠️ Os CNPJs da demonstração foram **conferidos contra a Receita** e voltaram "não
+> encontrado". Dígito verificador válido não reserva faixa fictícia: os dois documentos
+> "inventados" que o projeto usava antes pertenciam a empresas reais.
 
 ---
 
