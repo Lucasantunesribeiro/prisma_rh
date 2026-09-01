@@ -44,8 +44,30 @@ public sealed class AutenticacaoServico(
             return ResultadoAutenticacao.Erro(FalhaAutenticacao.CredencialInvalida);
         }
 
-        if (!hasheador.Conferir(usuario.SenhaHash, senha ?? string.Empty))
+        var agora = relogio.Agora;
+
+        // ⚠️ A senha e conferida MESMO com a conta bloqueada, e o resultado e
+        // descartado.
+        //
+        // Nao e desperdicio: e o que mantem o tempo de resposta igual nos tres
+        // caminhos - e-mail inexistente, senha errada e conta esperando. Sair
+        // antes de conferir devolveria rapido demais e contaria ao atacante que
+        // aquela conta existe E que ele acertou o suficiente para bloquea-la
+        // (`CLAUDE.md secao 24.3`).
+        var senhaConfere = hasheador.Conferir(usuario.SenhaHash, senha ?? string.Empty);
+
+        if (usuario.EstaBloqueado(agora))
         {
+            // Resposta IDENTICA a de senha errada. A conta em espera nao se
+            // anuncia - senao o bloqueio vira oraculo de existencia.
+            return ResultadoAutenticacao.Erro(FalhaAutenticacao.CredencialInvalida);
+        }
+
+        if (!senhaConfere)
+        {
+            usuario.RegistrarFalhaDeLogin(agora);
+            await armazenamento.SalvarAsync(ct);
+
             return ResultadoAutenticacao.Erro(FalhaAutenticacao.CredencialInvalida);
         }
 
@@ -54,6 +76,13 @@ public sealed class AutenticacaoServico(
             // Depois da senha conferida de proposito: antes disso, a diferenca
             // de resposta contaria a quem tentar que aquele e-mail existe.
             return ResultadoAutenticacao.Erro(FalhaAutenticacao.UsuarioInativo);
+        }
+
+        // Um acerto zera o contador. E o que impede o bloqueio de virar arma:
+        // quem sabe a senha recupera o acesso sem depender de administrador.
+        if (usuario.FalhasDeLogin > 0)
+        {
+            usuario.RegistrarEntradaBemSucedida();
         }
 
         return ResultadoAutenticacao.Ok(await EmitirSessaoAsync(usuario, ct));

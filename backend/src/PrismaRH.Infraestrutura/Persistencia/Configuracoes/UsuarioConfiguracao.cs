@@ -30,6 +30,20 @@ public sealed class UsuarioConfiguracao : IEntityTypeConfiguration<Usuario>
         builder.Property(u => u.Ativo).HasColumnName("ativo").IsRequired();
         builder.Property(u => u.CriadoEm).HasColumnName("criado_em").IsRequired();
 
+        // Bloqueio progressivo por conta.
+        //
+        // ⚠️ No BANCO, e nao em memoria: a API roda em Lambda, e memoria de
+        // processo some no proximo cold start - o contador reiniciaria a cada
+        // invocacao e a defesa nao existiria.
+        builder.Property(u => u.FalhasDeLogin)
+            .HasColumnName("falhas_de_login")
+            .HasDefaultValue(0)
+            .IsRequired();
+
+        builder.Property(u => u.BloqueadoAte).HasColumnName("bloqueado_ate");
+
+        builder.Property(u => u.UltimaFalhaEm).HasColumnName("ultima_falha_em");
+
         builder.HasOne<Organizacao>()
             .WithMany()
             .HasForeignKey(u => u.IdOrganizacao)

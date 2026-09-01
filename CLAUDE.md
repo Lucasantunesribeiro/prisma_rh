@@ -1573,7 +1573,7 @@ robustez da API, mapeando `BadHttpRequestException` para 400.
 > `System.Text.Json` costuma incluir um trecho do JSON — que e entrada nao
 > confiavel e pode conter dado pessoal. Ha teste exigindo a ausencia.
 
-### 5. IRRF apurado por folha, sem somar rendimentos do mesmo mês
+### 5. ✅ ENCERRADA — IRRF de férias apurado em separado (era premissa errada)
 
 Registrada em **28/08/2026**, durante a Fase 4E.
 
@@ -1603,6 +1603,63 @@ calculada **depois** da de férias, e como reprocessar.
 >
 > Ou seja: **no 13º, apurar em separado é o comportamento correto**; nas férias é defeito.
 > Esta pendência alcança **férias e mensal do mesmo mês**, e nada mais.
+
+> ### ⚠️ NÃO ERA DEFEITO. Pendência encerrada em 01/09/2026, na revisão pós-roadmap.
+>
+> **A premissa acima está errada, e a fonte oficial diz o contrário.** O comportamento do
+> sistema — apurar o IRRF de férias em separado da mensal — **é o exigido por norma**.
+>
+> **IN RFB 1.500/2014, art. 29** (§ 5º incluído pela IN RFB 2.141/2023; artigo não
+> revogado):
+>
+> > *"Art. 29. No caso de pagamento de férias, inclusive as pagas em dobro (...) a base de
+> > cálculo corresponde ao salário relativo ao mês de férias, acrescido, conforme o caso,
+> > de 1/3 (um terço) do seu valor.*
+> >
+> > *§ 1º O cálculo do imposto deve ser efetuado **em separado de qualquer outro rendimento
+> > pago no mês**, inclusive no caso de férias indenizadas, ainda que proporcionais, pagas
+> > em rescisão de contrato de trabalho.*
+> >
+> > *§ 3º Na determinação da base de cálculo podem ser efetuadas as deduções previstas no
+> > art. 52, desde que correspondentes às férias.*
+> >
+> > *§ 4º Na DAA, as férias devem ser tributadas em conjunto com os demais rendimentos."*
+>
+> O **MAFON da Receita Federal**, seção FÉRIAS, repete: *"deve ser tributado no mês de seu
+> pagamento e em separado de qualquer outro rendimento pago no mês"*.
+>
+> **De onde veio o engano.** A regra geral que a pendência invocou **existe**, e está no
+> mesmo manual, no código 0561: *"se, no mês, houver mais de um pagamento, a qualquer
+> título, pela mesma fonte pagadora, aplicar-se-á a alíquota correspondente à soma dos
+> rendimentos pagos"*. A pendência aplicou essa regra às férias sem saber que o art. 29 é
+> **norma especial**, e norma especial afasta a geral no caso que ela regula.
+>
+> **Não há conflito entre fontes** — há especialidade. Por isso a revisão não parou aqui.
+>
+> **E o "prejuízo" apontado?** Existe, é conhecido, e é o **desenho legal**: apurar em
+> separado retém menos do que a soma reteria, e o § 4º manda somar tudo na **declaração
+> anual**. Retenção é antecipação, não imposto final.
+>
+> **O que mudou no código:** nada de cálculo. O que entrou foi
+> `backend/testes/PrismaRH.Testes/Dominio/IrrfFeriasEmSeparadoTestes.cs`, que **trava** o
+> comportamento correto — para ninguém "corrigir" isto no futuro somando as duas folhas,
+> que erraria contra o contribuinte.
+>
+> **Dois achados colaterais**, ambos vindos de testes meus que falharam:
+>
+> 1. **Abaixo de ~R$ 5.000 a questão é irrelevante**: o redutor da Lei 15.270/2025 zera o
+>    imposto, e separar ou somar dá zero nos dois casos.
+> 2. **A dedução por dependente só muda o resultado quando as deduções legais superam o
+>    desconto simplificado.** Sem INSS na conta, o simplificado (R$ 607,20) vence dois
+>    dependentes (R$ 379,18) e a `CalculadoraIrrf` escolhe o simplificado — que é o art. 29
+>    § 5º, *"caso seja mais benéfico ao contribuinte"*.
+>
+> ⚠️ **Ponto declarado, não resolvido:** se a dedução por dependente pode ser usada **nas
+> duas** apurações do mesmo mês. O texto oficial que consegui diz apenas *"correspondentes
+> às férias"*; fontes secundárias especializadas afirmam que sim, *"sem prejuízo dessa
+> mesma dedução (...) sobre os salários pagos no mesmo mês"*, mas não localizei essa frase
+> em fonte primária. O sistema segue as fontes disponíveis e **não** foi alterado —
+> mudá-lo seria decidir regra fiscal por interpretação, que o `§29` proíbe.
 
 ### 6. ✅ RESOLVIDA — Valor base do FGTS rescisório: sem autor e sem histórico
 

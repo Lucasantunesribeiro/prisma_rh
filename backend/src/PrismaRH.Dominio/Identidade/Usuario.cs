@@ -49,6 +49,63 @@ public sealed class Usuario
     public bool Ativo { get; private set; }
     public DateTimeOffset CriadoEm { get; private set; }
 
+    // ------------------------------------------- bloqueio progressivo por conta
+
+    /// <summary>
+    /// Falhas de login consecutivas. Zera no primeiro acerto.
+    ///
+    /// Mora no BANCO, e nao em memoria, de proposito: a API roda em Lambda, e
+    /// memoria de processo some no proximo cold start - o contador reiniciaria
+    /// a cada invocacao e a defesa nao existiria.
+    /// </summary>
+    public int FalhasDeLogin { get; private set; }
+
+    /// <summary>Ate quando as tentativas sao recusadas. Nulo = liberado.</summary>
+    public DateTimeOffset? BloqueadoAte { get; private set; }
+
+    /// <summary>Quando foi a ultima falha. Usado para esquecer o contador.</summary>
+    public DateTimeOffset? UltimaFalhaEm { get; private set; }
+
+    public bool EstaBloqueado(DateTimeOffset agora) =>
+        BloqueadoAte is { } ate && agora < ate;
+
+    /// <summary>
+    /// Registra uma senha errada e devolve por quanto tempo a conta fica
+    /// esperando.
+    ///
+    /// ⚠️ O contador e ESQUECIDO se a ultima falha for antiga
+    /// (<see cref="PoliticaBloqueioConta.JanelaDeEsquecimento"/>). Sem isso,
+    /// tres erros espalhados por seis meses somariam com o quarto e bloqueariam
+    /// alguem que nunca foi atacado.
+    /// </summary>
+    public TimeSpan RegistrarFalhaDeLogin(DateTimeOffset agora)
+    {
+        var esqueceu = UltimaFalhaEm is not { } ultima
+            || agora - ultima > PoliticaBloqueioConta.JanelaDeEsquecimento;
+
+        FalhasDeLogin = esqueceu ? 1 : FalhasDeLogin + 1;
+        UltimaFalhaEm = agora;
+
+        var espera = PoliticaBloqueioConta.EsperaApos(FalhasDeLogin);
+
+        BloqueadoAte = espera == TimeSpan.Zero ? null : agora + espera;
+
+        return espera;
+    }
+
+    /// <summary>
+    /// ⚠️ **Um acerto zera tudo.**
+    ///
+    /// E o que impede o bloqueio de virar arma: quem sabe a senha recupera o
+    /// acesso assim que a espera termina, sem depender de administrador nenhum.
+    /// </summary>
+    public void RegistrarEntradaBemSucedida()
+    {
+        FalhasDeLogin = 0;
+        BloqueadoAte = null;
+        UltimaFalhaEm = null;
+    }
+
     public void AlterarSenha(string novoHash) => SenhaHash = ValidarSenhaHash(novoHash);
 
     public void AlterarPerfil(Perfil perfil) => Perfil = perfil;
