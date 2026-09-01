@@ -22,6 +22,7 @@ import {
   type Inconsistencia,
   type StatusInconsistencia,
 } from '@/api/workflow'
+import { PerguntaEmPortugues } from '@/paginas/PerguntaEmPortugues'
 import { useSessao } from '@/auth/useSessao'
 import { DataTable, type Coluna } from '@/components/sistema/DataTable'
 import {
@@ -178,6 +179,10 @@ export default function Inconsistencias() {
         titulo="Inconsistências"
         descricao="O que a conferência encontrou, e em que ponto está o tratamento."
       />
+
+      <div className="mb-4">
+        <PerguntaEmPortugues aoAbrir={definirAberta} />
+      </div>
 
       <DataTable
         rotulo="Inconsistências da organização"

@@ -20,6 +20,8 @@ vi.mock('@/api/workflow', async (original) => ({
 vi.mock('@/api/assistente', () => ({
   assistenteDisponivel: vi.fn(),
   explicarInconsistencia: vi.fn(),
+  vocabularioConsulta: vi.fn(),
+  consultarEmPortugues: vi.fn(),
 }))
 
 const api = await import('@/api/workflow')
@@ -111,6 +113,7 @@ beforeEach(() => {
   // Sem IA por padrao: o produto funciona igual, e os testes de workflow nao
   // devem depender de uma camada que e acessorio (`CLAUDE.md secao 1`).
   vi.mocked(ia.assistenteDisponivel).mockResolvedValue(false)
+  vi.mocked(ia.vocabularioConsulta).mockResolvedValue({ disponivel: false, campos: [] })
 })
 
 afterEach(() => {

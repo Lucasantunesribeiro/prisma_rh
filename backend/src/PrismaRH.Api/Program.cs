@@ -116,6 +116,8 @@ builder.Services.AddSingleton<CacheConsultaCnpj>();
 builder.Services.AddHttpClient<ClienteGemini>(c => c.Timeout = OrcamentoIa.Prazo);
 builder.Services.AddSingleton<CacheExplicacoes>();
 builder.Services.AddTransient<AssistenteInconsistencias>();
+builder.Services.AddTransient<ResumoDaFolha>();
+builder.Services.AddTransient<ConsultaLinguagemNatural>();
 builder.Services.AddSingleton<GuardaDestino>();
 
 builder.Services

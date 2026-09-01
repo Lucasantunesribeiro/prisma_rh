@@ -96,6 +96,29 @@ public enum AcaoAuditada
     /// do tenant, e ela ja vive no cache com validade propria.
     /// </summary>
     ExplicacaoIaGerada = 90,
+
+    /// <summary>
+    /// Um resumo executivo de folha foi gerado por IA (Fase 11B).
+    ///
+    /// Auditado pela mesma razao do anterior: se um gestor decidiu fechar a
+    /// folha depois de ler um paragrafo escrito por maquina, isso precisa ser
+    /// recuperavel meses depois.
+    ///
+    /// ⚠️ Os NUMEROS do resumo nao vem do modelo - vem de consulta
+    /// deterministica, e continuam reproduziveis pela propria folha. O que este
+    /// evento registra e que havia PROSA de maquina na tela.
+    /// </summary>
+    ResumoIaGerado = 91,
+
+    /// <summary>
+    /// Uma pergunta em portugues virou filtro (Fase 11C).
+    ///
+    /// O contexto guarda o FILTRO que a aplicacao executou - `Severidade = Alta
+    /// e Status != Resolvida` -, e nao a pergunta digitada. A distincao e
+    /// deliberada: o filtro e o que efetivamente alcancou dado, e e curto,
+    /// comparavel e sem texto livre de usuario dentro da trilha.
+    /// </summary>
+    ConsultaIaExecutada = 92,
 }
 
 /// <summary>Sobre o que a acao foi.</summary>

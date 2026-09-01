@@ -64,7 +64,8 @@ public sealed record RespostaIa(SituacaoIa Situacao, string Texto, int TokensUsa
 public sealed class ClienteGemini(
     HttpClient http,
     GuardaDestino guarda,
-    ILogger<ClienteGemini> log)
+    ILogger<ClienteGemini> log,
+    string? chave = null)
 {
     public const string VariavelChave = "PRISMARH_GEMINI_API_KEY";
 
@@ -73,7 +74,21 @@ public sealed class ClienteGemini(
     /// <summary>Teto do corpo aceito. Uma resposta curta tem alguns KB.</summary>
     public const int TamanhoMaximoResposta = 256 * 1024;
 
-    private readonly string? _chave = Environment.GetEnvironmentVariable(VariavelChave);
+    /// <summary>
+    /// A chave.
+    ///
+    /// ⚠️ **Injetável de propósito, com a variável de ambiente como padrão.**
+    ///
+    /// Ler a variável direto aqui parecia mais simples e era pior: variável de
+    /// ambiente é estado **global do processo**, e os testes rodam em paralelo.
+    /// Um teste apagando a variável enquanto outro constrói o cliente fazia a
+    /// suíte falhar de forma diferente a cada execução — sem defeito nenhum no
+    /// código de produção.
+    ///
+    /// Em produção nada muda: sem argumento, vem da variável.
+    /// </summary>
+    private readonly string? _chave =
+        chave ?? Environment.GetEnvironmentVariable(VariavelChave);
 
     /// <summary>
     /// Há IA configurada? A tela usa isto para não oferecer o que não funciona
@@ -81,11 +96,18 @@ public sealed class ClienteGemini(
     /// </summary>
     public bool Configurada => !string.IsNullOrWhiteSpace(_chave);
 
+    /// <param name="respostaEmJson">
+    /// Pede ao provedor que responda JSON puro (Fase 11C). **Isto não substitui
+    /// validação**: o corpo continua sendo dado não confiável, e quem decide se
+    /// aquilo vira consulta é o <see cref="VocabularioConsulta"/>, nunca o
+    /// modo de resposta pedido ao modelo.
+    /// </param>
     public async Task<RespostaIa> ExplicarAsync(
         string instrucao,
         string dadosDoSistema,
         Guid correlacao,
-        CancellationToken ct)
+        CancellationToken ct,
+        bool respostaEmJson = false)
     {
         ArgumentNullException.ThrowIfNull(instrucao);
         ArgumentNullException.ThrowIfNull(dadosDoSistema);
@@ -133,6 +155,10 @@ public sealed class ClienteGemini(
                 // Temperatura baixa: aqui não se quer criatividade, e sim a
                 // mesma explicação para o mesmo dado.
                 temperature = 0.2,
+
+                // Em JSON o provedor deixa de embrulhar a resposta em cerca de
+                // markdown. É conveniência de parsing, e não garantia de nada.
+                responseMimeType = respostaEmJson ? "application/json" : "text/plain",
             },
         });
 
