@@ -2,7 +2,13 @@
 
 Plataforma B2B de gestão, cálculo, conferência e auditoria de folha de pagamento brasileira.
 
-> **Estado atual: Fase 9 concluída — importação assíncrona por SQS + Lambda, com custo AWS de US$ 0,00.**
+> **Estado atual: Fase 10 concluída — o Prisma RH está no ar.**
+>
+> - **Aplicação:** https://portfolio-prisma-rh.vercel.app
+> - **API:** AWS Lambda com Function URL · **Banco:** Neon PostgreSQL
+> - **Custo AWS previsto: US$ 0,00** — sem S3, API Gateway, NAT ou KMS próprio.
+>
+> Fase 9: importação assíncrona por SQS + Lambda.
 > Fase 8: consulta de CNPJ na Receita, pelo cadastro de empresa.
 > Fase 7: workflow de tratamento, auditoria e painel.
 > Fase 4 concluída: 4A a 4G, os cinco tipos de folha calculam.
@@ -386,6 +392,36 @@ navegador não tem efeito nenhum.
   recusaria a linha — e o erro revelaria que aquele documento existe em outro tenant.
 - **Data só em `dd/mm/aaaa` ou `aaaa-mm-dd`.** Aceitar o que a cultura da máquina entender
   faria `03/04/2026` virar março num servidor e abril noutro, sem ninguém perceber.
+
+**Produção (Fase 10)**
+
+```text
+navegador ──▶ Vercel (React)  ──cross-origin──▶  Lambda Function URL (API)
+                                                      │
+                                          Neon PostgreSQL  ·  SQS ─▶ Lambda worker
+```
+
+**A troca de cookie foi a decisão mais delicada da fase.** Frontend na Vercel e
+API na AWS são **domínios diferentes**: com `SameSite=Lax` o navegador não envia
+o cookie de refresh, e a sessão morre a cada F5. A correção — `SameSite=None;
+Secure` — **reabre o CSRF que o `Lax` fechava de graça**.
+
+Por isso existe `GuardaCsrf`, com duas barreiras: um *double submit cookie*
+(segundo cookie legível por JS, repetido num cabeçalho e comparado em tempo
+constante) e a **validação de `Origin` com hostname exato**. Origem ausente é
+recusa, não exceção.
+
+**Nada de `*.vercel.app` na allowlist**: curinga aprovaria qualquer deployment de
+preview, inclusive de um pull request de terceiro rodando código não revisado.
+
+**Custo AWS: US$ 0,00 previsto.** Lambda, SQS e CloudWatch são *Always Free*. S3
+e API Gateway ficaram de fora por cobrarem desde o primeiro byte — o endpoint
+público é uma **Lambda Function URL**, coberta pela franquia da própria Lambda.
+
+> ⚠️ Free Tier **não é teto de gasto**: passar da franquia não bloqueia, apenas
+> cobra. Os riscos residuais estão listados no Security Gate da Fase 10 do
+> `ROADMAP.md`, incluindo o que **não** foi possível aplicar — *reserved
+> concurrency*, impossível numa conta com limite de 10 execuções.
 
 **Processamento assíncrono (Fase 9)**
 

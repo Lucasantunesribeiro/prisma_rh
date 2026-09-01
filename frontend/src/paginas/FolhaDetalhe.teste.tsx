@@ -6,6 +6,18 @@ import FolhaDetalhe from './FolhaDetalhe'
 import { SessaoContexto } from '@/auth/contexto'
 import type { UsuarioAutenticado } from '@/api/autenticacao'
 
+
+/**
+ * Envolve uma lista no envelope que a API passou a devolver na Fase 10.
+ *
+ * `/api/folhas`, `/api/rubricas` e `/api/cargos` foram paginadas porque crescem
+ * sem limite natural (`CLAUDE.md §24.19 item 3`). O teste reproduz o contrato
+ * real — devolver array cru aqui esconderia a quebra em vez de preveni-la.
+ */
+function paginado<T>(itens: T[]) {
+  return { total: itens.length, paginaAtual: 1, tamanho: 200, itens }
+}
+
 function responder(corpo: unknown): Response {
   return new Response(JSON.stringify(corpo), {
     status: 200,
@@ -119,7 +131,9 @@ function renderizar(perfil: UsuarioAutenticado['perfil'], folha = FOLHA, holerit
     vi.fn().mockImplementation((url: string) => {
       const texto = String(url)
       if (texto.includes('/funcionarios/')) return Promise.resolve(responder(holerite))
-      if (texto.includes('/api/rubricas')) return Promise.resolve(responder(RUBRICAS))
+      // Envelope paginado: /api/rubricas passou a devolver {total,...,itens}
+      // na Fase 10. O teste espelha o contrato real, e nao o antigo.
+      if (texto.includes('/api/rubricas')) return Promise.resolve(responder(paginado(RUBRICAS)))
       if (texto.includes('/api/folhas/')) return Promise.resolve(responder(folha))
       return Promise.resolve(responder({}))
     }),

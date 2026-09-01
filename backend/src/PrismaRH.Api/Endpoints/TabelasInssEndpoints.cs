@@ -1,3 +1,4 @@
+using PrismaRH.Api.Producao;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PrismaRH.Api.Identidade;
@@ -77,6 +78,7 @@ public static class TabelasInssEndpoints
             .AsNoTracking()
             .Include(t => t.Faixas)
             .OrderByDescending(t => t.VigenciaInicio)
+            .ComTeto()
             .ToListAsync(ct);
 
         var hoje = DateOnly.FromDateTime(relogio.Agora.Date);

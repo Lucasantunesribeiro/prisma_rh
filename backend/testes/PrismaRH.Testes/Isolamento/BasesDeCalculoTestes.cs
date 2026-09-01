@@ -104,7 +104,7 @@ public class BasesDeCalculoIntegracaoTestes(BancoPostgresFixture banco) : IDispo
 
         Assert.Equal(HttpStatusCode.Conflict, criacao.StatusCode);
 
-        var existentes = await admin.GetFromJsonAsync<List<RubricaItem>>("/api/rubricas");
+        var existentes = await admin.PaginaDe<RubricaItem>("/api/rubricas");
         var salario = existentes!.Single(r => r.Codigo == "SAL" && r.Ativa);
 
         // Outra classe de teste pode ter criado a SAL sem incidencia. As bases
@@ -219,7 +219,7 @@ public class BasesDeCalculoIntegracaoTestes(BancoPostgresFixture banco) : IDispo
 
         await RubricaAsync(admin, codigo, "Provento", "Inss, Fgts");
 
-        var lista = await admin.GetFromJsonAsync<List<RubricaItem>>("/api/rubricas");
+        var lista = await admin.PaginaDe<RubricaItem>("/api/rubricas");
         var gravada = lista!.Single(r => r.Codigo == codigo);
 
         // Enum de bits trafega como texto: o contrato nao depende do numero.
@@ -402,7 +402,7 @@ public class BasesDeCalculoIntegracaoTestes(BancoPostgresFixture banco) : IDispo
 
         await RubricaAsync(admin, codigo, "Provento", "Inss");
 
-        var daVizinha = await vizinha.GetFromJsonAsync<List<RubricaItem>>("/api/rubricas");
+        var daVizinha = await vizinha.PaginaDe<RubricaItem>("/api/rubricas");
 
         Assert.DoesNotContain(daVizinha!, r => r.Codigo == codigo);
     }

@@ -179,7 +179,7 @@ public class AnalisesHttpTestes(BancoPostgresFixture banco) : IDisposable
             return (await criacao.Content.ReadFromJsonAsync<Identificado>())!.Id;
         }
 
-        var existentes = await admin.GetFromJsonAsync<List<RubricaResumo>>("/api/rubricas");
+        var existentes = await admin.PaginaDe<RubricaResumo>("/api/rubricas");
 
         return existentes!.Single(r => r.Codigo == "VT" && r.Ativa).Id;
     }

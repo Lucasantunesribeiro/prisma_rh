@@ -286,7 +286,7 @@ public class FolhaDeRescisaoTestes(BancoPostgresFixture banco) : IDisposable
         var admin = await AdminAsync();
         await RubricasAsync(admin);
 
-        var rubricas = await admin.GetFromJsonAsync<List<RubricaItem>>("/api/rubricas");
+        var rubricas = await admin.PaginaDe<RubricaItem>("/api/rubricas");
 
         foreach (var (codigo, bases) in Catalogo)
         {
@@ -304,7 +304,7 @@ public class FolhaDeRescisaoTestes(BancoPostgresFixture banco) : IDisposable
         var admin = await AdminAsync();
         await RubricasAsync(admin);
 
-        var rubricas = await admin.GetFromJsonAsync<List<RubricaItem>>("/api/rubricas");
+        var rubricas = await admin.PaginaDe<RubricaItem>("/api/rubricas");
 
         // Ferias GOZADAS (Fase 4E) integram as tres bases; ferias na RESCISAO
         // nao integram nenhuma. Copiar a incidencia de uma para a outra
@@ -319,7 +319,7 @@ public class FolhaDeRescisaoTestes(BancoPostgresFixture banco) : IDisposable
         var admin = await AdminAsync();
         await RubricasAsync(admin);
 
-        var rubricas = await admin.GetFromJsonAsync<List<RubricaItem>>("/api/rubricas");
+        var rubricas = await admin.PaginaDe<RubricaItem>("/api/rubricas");
 
         var proporcional = rubricas!.Single(r => r.Codigo == "DEC13PROP" && r.Ativa);
         var sobreAviso = rubricas!.Single(r => r.Codigo == "DEC13AV" && r.Ativa);

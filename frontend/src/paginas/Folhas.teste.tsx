@@ -7,6 +7,18 @@ import type { UsuarioAutenticado } from '@/api/autenticacao'
 import { SessaoContexto } from '@/auth/contexto'
 import { EmpresaContexto } from '@/layout/contexto'
 
+
+/**
+ * Envolve uma lista no envelope que a API passou a devolver na Fase 10.
+ *
+ * `/api/folhas`, `/api/rubricas` e `/api/cargos` foram paginadas porque crescem
+ * sem limite natural (`CLAUDE.md §24.19 item 3`). O teste reproduz o contrato
+ * real — devolver array cru aqui esconderia a quebra em vez de preveni-la.
+ */
+function paginado<T>(itens: T[]) {
+  return { total: itens.length, paginaAtual: 1, tamanho: 200, itens }
+}
+
 function responder(corpo: unknown): Response {
   return new Response(JSON.stringify(corpo), {
     status: 200,
@@ -71,7 +83,8 @@ function renderizar(perfil: UsuarioAutenticado['perfil']) {
     vi.fn().mockImplementation((url: string) => {
       const texto = String(url)
       if (texto.includes('/api/empresas')) return Promise.resolve(responder(EMPRESAS))
-      if (texto.includes('/api/folhas')) return Promise.resolve(responder(FOLHAS))
+      // Envelope paginado (Fase 10).
+      if (texto.includes('/api/folhas')) return Promise.resolve(responder(paginado(FOLHAS)))
       return Promise.resolve(responder({}))
     }),
   )

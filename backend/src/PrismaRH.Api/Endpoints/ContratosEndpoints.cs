@@ -1,3 +1,4 @@
+using PrismaRH.Api.Producao;
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PrismaRH.Api.Identidade;
@@ -116,6 +117,7 @@ public static class ContratosEndpoints
             .AsNoTracking()
             .Where(c => c.IdFuncionario == idFuncionario)
             .OrderByDescending(c => c.DataAdmissao)
+            .ComTeto()
             .ToListAsync(ct);
 
         return Results.Ok(contratos.Select(ContratoResposta.De).ToList());

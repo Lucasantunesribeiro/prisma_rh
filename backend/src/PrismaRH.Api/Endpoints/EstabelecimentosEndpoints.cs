@@ -1,3 +1,4 @@
+using PrismaRH.Api.Producao;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PrismaRH.Api.Identidade;
@@ -67,6 +68,7 @@ public static class EstabelecimentosEndpoints
             .Where(e => e.IdEmpresa == idEmpresa)
             .OrderBy(e => e.Codigo)
             .Select(e => EstabelecimentoResposta.De(e))
+            .ComTeto()
             .ToListAsync(ct);
 
         return Results.Ok(itens);

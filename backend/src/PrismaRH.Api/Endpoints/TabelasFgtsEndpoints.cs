@@ -1,3 +1,4 @@
+using PrismaRH.Api.Producao;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PrismaRH.Api.Identidade;
@@ -60,6 +61,7 @@ public static class TabelasFgtsEndpoints
         var tabelas = await db.TabelasFgts
             .AsNoTracking()
             .OrderByDescending(t => t.VigenciaInicio)
+            .ComTeto()
             .ToListAsync(ct);
 
         var hoje = DateOnly.FromDateTime(relogio.Agora.Date);

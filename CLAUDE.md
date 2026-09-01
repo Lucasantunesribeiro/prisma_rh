@@ -1479,7 +1479,7 @@ público**.
 > próprio item, porque apagar uma pendência resolvida apaga também a prova de que ela foi
 > encontrada e tratada. Continuam abertos os itens **1 a 5**.
 
-### 1. Não existe rate limiting em nenhum endpoint
+### 1. ✅ RESOLVIDA — Não existe rate limiting em nenhum endpoint
 
 O login já é constante no tempo e não enumera usuários — as duas defesas difíceis estão
 feitas. Mas nada impede milhares de tentativas por minuto contra
@@ -1487,7 +1487,18 @@ feitas. Mas nada impede milhares de tentativas por minuto contra
 
 **Resolver na Fase 10**, como requisito de saída. Não esperar a Fase 12.
 
-### 2. `SameSite=Lax` não sobrevive à topologia de produção
+> **Resolvida em 01/09/2026, na Fase 10.** Limite **por IP** — 10/min em
+> `entrar`, 60/min em `renovar` e `sair`.
+>
+> Por IP, e não por e-mail: no login **não há usuário ainda**, e é isso que o
+> atacante está tentando descobrir. Particionar por e-mail deixaria um script
+> varrer mil endereços sem estourar limite nenhum, que é a forma do *credential
+> stuffing*.
+>
+> ⚠️ Continua **pendente** o bloqueio progressivo **por conta**, que o §24.18
+> pede ao lado do limite por IP. Ele entra na Fase 12.
+
+### 2. ✅ RESOLVIDA — `SameSite=Lax` não sobrevive à topologia de produção
 
 Em produção o frontend fica na Vercel e a API no API Gateway — **domínios registráveis
 diferentes, portanto cross-site**. Com `SameSite=Lax` o navegador **não envia o cookie**,
@@ -1502,14 +1513,38 @@ mesmo domínio registrável, mantendo `Lax`; ou (b) `SameSite=None; Secure` com 
 explícita — *double submit cookie* ou token anti-CSRF, mais validação de `Origin` na
 renovação. Detalhes no Security Gate da Fase 10 do `ROADMAP.md`.
 
-### 3. Listagens sem paginação
+> **Resolvida em 01/09/2026, na Fase 10.** Saída **(b)**, escolhida pelo
+> responsável: `SameSite=None; Secure` com defesa CSRF explícita.
+>
+> `GuardaCsrf` (em `backend/src/PrismaRH.Api/Producao/`) tem **duas** barreiras,
+> e passa a ser controle de segurança implementado para efeito do §35:
+>
+> | Barreira | O que ela impede |
+> |---|---|
+> | **Double submit cookie** — segundo cookie legível por JS, repetido no cabeçalho `X-CSRF-Token`, comparado em **tempo constante** | O site atacante consegue fazer o navegador **enviar** o cookie; a same-origin policy o impede de **ler** o valor |
+> | **Validação de `Origin`**, com allowlist de **hostname exato** | `Origin` é preenchido pelo navegador e não é forjável por script de página. **Ausência é recusa**, não exceção |
+>
+> Em Development o cookie continua `Lax` e a guarda não é exigida — `None` sem
+> HTTPS é descartado pelo navegador.
+
+### 3. ✅ RESOLVIDA — Listagens sem paginação
 
 `GET /api/folhas`, `/api/rubricas`, `/api/cargos`, os estabelecimentos, os holerites e os
 lançamentos devolvem tudo. Empresas e funcionários já têm teto de 100 por página.
 
 **Resolver na Fase 10.** Sem impacto em `localhost`; com volume real, é vetor de exaustão.
 
-### 4. Entrada malformada devolve 500 em vez de 400
+> **Resolvida em 01/09/2026, na Fase 10.** Duas defesas, para dois casos:
+> **envelope paginado** (`{total, paginaAtual, tamanho, itens}`, padrão 50, teto
+> 200) nas listagens que crescem sem limite — folhas, rubricas, cargos; e **teto
+> rígido de 500** nos sub-recursos limitados por natureza, onde paginar seria
+> cerimônia e mudar o contrato quebraria a tela sem ganho.
+>
+> A ordenação é **determinística** em todas: `ORDER BY` que termina em campo
+> único. Sem isso, `OFFSET`/`LIMIT` no PostgreSQL pode repetir ou pular linha
+> entre páginas — o planejador não promete ordem.
+
+### 4. ✅ RESOLVIDA — Entrada malformada devolve 500 em vez de 400
 
 Registrada em **27/08/2026**, durante a Fase 4D.
 
@@ -1527,6 +1562,16 @@ um 500 recorrente mascara falha real no monitoramento.
 A correção mexe no tratamento de erro de **todas** as rotas, e por isso não foi feita
 dentro da subfase que a encontrou. **Resolver na Fase 10**, junto com os demais itens de
 robustez da API, mapeando `BadHttpRequestException` para 400.
+
+> **Resolvida em 01/09/2026, na Fase 10.** `TratamentoDeErro` mapeia falha de
+> **protocolo** para 400, e corpo acima do teto para 413.
+>
+> Precisa ser um `IExceptionHandler` no pipeline, e nao `try/catch` na rota: a
+> falha acontece no **binding do corpo**, antes de o codigo da rota comecar.
+>
+> ⚠️ A resposta **nao** devolve o detalhe do parser. A mensagem do
+> `System.Text.Json` costuma incluir um trecho do JSON — que e entrada nao
+> confiavel e pode conter dado pessoal. Ha teste exigindo a ausencia.
 
 ### 5. IRRF apurado por folha, sem somar rendimentos do mesmo mês
 

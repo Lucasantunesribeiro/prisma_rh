@@ -179,7 +179,7 @@ public class FolhaDeFeriasTestes(BancoPostgresFixture banco) : IDisposable
         var admin = await AdminAsync();
         await RubricasDeFeriasAsync(admin);
 
-        var rubricas = await admin.GetFromJsonAsync<List<RubricaItem>>("/api/rubricas");
+        var rubricas = await admin.PaginaDe<RubricaItem>("/api/rubricas");
 
         foreach (var (codigo, estrategia, bases) in Catalogo)
         {
@@ -339,7 +339,7 @@ public class FolhaDeFeriasTestes(BancoPostgresFixture banco) : IDisposable
             {
                 validoDe = "2035-01-01",
                 salario = 6000.00m,
-                idCargo = (await admin.GetFromJsonAsync<List<Identificado>>("/api/cargos"))![0].Id,
+                idCargo = (await admin.PaginaDe<Identificado>("/api/cargos"))![0].Id,
                 idEstabelecimento = banco.IdEstabelecimentoF,
                 jornadaMensalHoras = 220,
                 motivo = "AlteracaoSalarial",

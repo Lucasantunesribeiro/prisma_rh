@@ -1,4 +1,4 @@
-import { enviar, obter, remover } from './cliente'
+import { enviar, obter, obterPaginado, remover } from './cliente'
 import type { Perfil } from './autenticacao'
 
 // ---------------------------------------------------------------- rubricas
@@ -72,7 +72,7 @@ export const ROTULO_TIPO_RUBRICA: Record<TipoRubrica, string> = {
 }
 
 export const listarRubricas = (somenteAtivas = false): Promise<Rubrica[]> =>
-  obter(`/api/rubricas${somenteAtivas ? '?ativas=true' : ''}`)
+  obterPaginado(`/api/rubricas${somenteAtivas ? '?ativas=true' : ''}`)
 
 export const criarRubrica = (dados: {
   codigo: string
@@ -207,7 +207,7 @@ export function listarFolhas(filtro: { idEmpresa?: string; competencia?: string 
   if (filtro.competencia?.trim()) parametros.set('competencia', filtro.competencia.trim())
 
   const consulta = parametros.toString()
-  return obter(`/api/folhas${consulta ? `?${consulta}` : ''}`)
+  return obterPaginado(`/api/folhas${consulta ? `?${consulta}` : ''}`)
 }
 
 export const obterFolha = (id: string): Promise<FolhaDetalhe> => obter(`/api/folhas/${id}`)

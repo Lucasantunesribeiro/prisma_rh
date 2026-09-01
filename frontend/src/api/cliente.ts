@@ -81,12 +81,50 @@ async function chamar(caminho: string, opcoes: RequestInit, jaRenovou: boolean):
   return resposta
 }
 
+/**
+ * O par do *double submit cookie* (Fase 10).
+ *
+ * Em produção o refresh usa `SameSite=None`, porque o frontend fica na Vercel e
+ * a API na AWS — domínios diferentes, e `Lax` simplesmente não enviaria o
+ * cookie. Só que `None` **reabre o CSRF que o `Lax` fechava de graça**: agora
+ * qualquer site consegue fazer o navegador anexar o cookie.
+ *
+ * A defesa: um segundo cookie, este legível por JavaScript, que a tela repete
+ * num cabeçalho. Um site atacante consegue fazer o navegador **enviar** o
+ * cookie, mas a *same-origin policy* o impede de **ler** o valor para repetir
+ * no cabeçalho — e sem os dois iguais o servidor recusa.
+ */
+export const COOKIE_CSRF = 'prismarh_csrf'
+export const CABECALHO_CSRF = 'X-CSRF-Token'
+
+function tokenCsrf(): string | null {
+  // `document.cookie` é uma string única com tudo separado por `; `. Não há
+  // API melhor, e por isso a leitura é feita à mão.
+  const achado = document.cookie
+    .split('; ')
+    .find((c) => c.startsWith(`${COOKIE_CSRF}=`))
+
+  return achado ? decodeURIComponent(achado.slice(COOKIE_CSRF.length + 1)) : null
+}
+
+/**
+ * Cabeçalhos das rotas que dependem do cookie — `renovar` e `sair`.
+ *
+ * Em desenvolvimento o cookie é `Lax` e o servidor não exige o token; o
+ * cabeçalho simplesmente não é enviado, e nada quebra.
+ */
+export function cabecalhosCsrf(): Record<string, string> {
+  const token = tokenCsrf()
+
+  return token ? { [CABECALHO_CSRF]: token } : {}
+}
+
 /** Tenta trocar o cookie de refresh por um novo access token. */
 export async function renovarSessao(): Promise<boolean> {
   const resposta = await fetch(`${URL_BASE_API}${ROTAS_AUTENTICACAO}/renovar`, {
     method: 'POST',
     credentials: 'include',
-    headers: { Accept: 'application/json' },
+    headers: { Accept: 'application/json', ...cabecalhosCsrf() },
   })
 
   if (!resposta.ok) {
@@ -116,6 +154,35 @@ async function interpretar<T>(resposta: Response): Promise<T> {
     corpo.detail ?? corpo.title ?? corpo.detalhe ?? `Falha na requisicao (${resposta.status}).`,
     corpo.errors,
   )
+}
+
+/**
+ * Envelope das listagens paginadas (Fase 10).
+ *
+ * `/api/folhas`, `/api/rubricas` e `/api/cargos` deixaram de devolver array e
+ * passaram a devolver este formato — as três crescem sem limite natural, e o
+ * `CLAUDE.md §24.19 item 3` as nomeava como vetor de exaustão.
+ */
+export interface PaginaApi<T> {
+  total: number
+  paginaAtual: number
+  tamanho: number
+  itens: T[]
+}
+
+/**
+ * Lê uma listagem paginada e devolve só os itens.
+ *
+ * Pede o teto do servidor (200). As telas que consomem estas listagens são
+ * seletores e catálogos — mostram tudo de uma vez, e paginar a interface delas
+ * seria complicar o que hoje cabe numa lista. Se algum dia passarem de 200, a
+ * tela precisará de paginação de verdade, e este ponto é onde isso aparece.
+ */
+export async function obterPaginado<T>(caminho: string): Promise<T[]> {
+  const separador = caminho.includes('?') ? '&' : '?'
+  const pagina = await obter<PaginaApi<T>>(`${caminho}${separador}tamanho=200`)
+
+  return pagina.itens
 }
 
 export async function obter<T>(caminho: string): Promise<T> {

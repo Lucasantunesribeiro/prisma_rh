@@ -4898,6 +4898,17 @@ nenhum controle enfraquecido.
 
 # FASE 10 — DEPLOY E PRODUÇÃO
 
+> **Status: CONCLUÍDA em 01/09/2026.** O Prisma RH está **público**:
+> frontend na Vercel, API em Lambda com Function URL, banco no Neon, fila e
+> worker da Fase 9 exercitados no ambiente real. **Custo AWS previsto: US$ 0,00.**
+>
+> - Frontend: `https://portfolio-prisma-rh.vercel.app`
+> - API: Lambda Function URL (`*.lambda-url.us-east-1.on.aws`)
+>
+> ⚠️ **API Gateway saiu da arquitetura.** O texto abaixo ainda o cita, porque é
+> o plano original; a decisão de custo zero (`CLAUDE.md §16`) o substituiu pela
+> **Lambda Function URL**, que é coberta pela franquia da própria Lambda.
+
 ## Objetivo
 
 Tornar o Prisma RH 100% demonstrável publicamente.
@@ -4955,6 +4966,105 @@ Criar:
 - folhas fictícias;
 - inconsistências demonstráveis;
 - contas demo por perfil quando seguro.
+
+## O que foi implementado
+
+### O hardening veio antes do deploy, e fechou quatro pendências antigas
+
+| Pendência (`CLAUDE.md §24.19`) | Aberta em | Como foi fechada |
+|---|---|---|
+| **1** — sem rate limiting | 27/08 | Limite **por IP** em `entrar` (10/min) e em `renovar`/`sair` (60/min) |
+| **2** — `SameSite=Lax` não sobrevive à produção | 27/08 | `SameSite=None; Secure` + `GuardaCsrf` (ver abaixo) |
+| **3** — listagens sem paginação | 27/08 | Envelope paginado em folhas, rubricas e cargos; teto rígido em 9 sub-recursos |
+| **4** — entrada malformada devolvia 500 | 27/08 | `TratamentoDeErro` mapeia falha de protocolo para 400/413 |
+
+### ⚠️ O rate limit do login é por IP, e o da Fase 8 era por organização
+
+Não é inconsistência — é a mesma regra aplicada a situações opostas.
+
+Na consulta de CNPJ o usuário **já está autenticado**, e o recurso protegido é a
+cota de um serviço compartilhado: particionar por organização é o que impede uma
+empresa de consumir o que era de todas.
+
+No login **não há usuário ainda** — é exatamente isso que o atacante está
+tentando descobrir. Particionar por e-mail deixaria um script varrer mil
+endereços sem estourar limite nenhum, que é a forma do *credential stuffing*.
+Por IP, o mesmo script bate no teto na décima primeira tentativa.
+
+### A troca de cookie, e por que ela exigiu código novo
+
+Até aqui o refresh usava `SameSite=Lax`, e isso fechava o CSRF **de graça**: o
+navegador não envia um cookie `Lax` num `POST` vindo de outro site, e as duas
+rotas expostas são `POST`.
+
+Em produção o frontend fica na Vercel e a API na AWS — domínios registráveis
+diferentes, portanto **cross-site**. Com `Lax`, o navegador para de enviar o
+cookie e a sessão morre a cada recarga.
+
+`SameSite=None; Secure` resolve o funcional e **reabre exatamente o CSRF que o
+`Lax` fechava**. Trocar por reflexo na pressa do deploy substituiria uma falha
+visível — a sessão que não sobrevive ao F5 — por uma silenciosa.
+
+**`GuardaCsrf` tem duas barreiras, e nenhuma sozinha bastaria:**
+
+1. **Double submit cookie.** Um segundo cookie, este legível por JavaScript,
+   carrega valor aleatório de 32 bytes; a tela o repete no cabeçalho
+   `X-CSRF-Token`. Funciona porque a *same-origin policy* impede o site
+   atacante de **ler** o cookie — ele consegue fazer o navegador enviá-lo, mas
+   não consegue descobrir o valor.
+2. **Validação de `Origin`.** Preenchido pelo navegador e não forjável por
+   JavaScript de página. **Origem ausente é recusa**, e não "provavelmente é o
+   app": aceitar a ausência criaria a brecha que um cliente não-navegador usaria.
+
+A comparação é em **tempo constante** (`FixedTimeEquals`). Comparar com `==`
+vazaria, pelo tempo de resposta, quantos caracteres o atacante acertou — a mesma
+classe de canal lateral que o login já fecha com o hash falso.
+
+Em **Development** o cookie continua `Lax` e a guarda não é exigida: `None` sem
+HTTPS é descartado pelo navegador, e o desenvolvimento pararia.
+
+### ⚠️ O 403 da Function URL, e a linha da documentação que o explicava
+
+A Function URL foi criada com `AuthType: NONE` e a política de recurso que todo
+tutorial mostra — `Principal: *`, `Action: lambda:InvokeFunctionUrl`, condição
+`FunctionUrlAuthType = NONE`. E devolvia **403 AccessDeniedException**.
+
+Descartados por evidência: propagação (10 tentativas em 2 minutos), SCP e RCP na
+organização (`list-policies` devolveu só a `FullAWSAccess`, com os tipos nem
+habilitados no root), e a própria função (invocação direta devolveu **200**).
+
+A causa está na primeira linha de `urls-auth.html`:
+
+> *"Starting in October 2025, new function URLs will require **both**
+> `lambda:InvokeFunctionUrl` **and** `lambda:InvokeFunction` permissions."*
+
+Duas permissões, não uma. E `--function-url-auth-type` só é aceito na primeira —
+a segunda entra sem condição. É mudança recente que a maioria do material ainda
+não reflete.
+
+### CORS: hostname exato, nunca curinga
+
+A allowlist é `https://portfolio-prisma-rh.vercel.app`, e não `*.vercel.app`.
+Curinga aprovaria **qualquer deployment de preview** — inclusive de um pull
+request de terceiro, que roda código não revisado. Preview não recebe acesso à
+API de produção, e essa é a diferença entre allowlist e teatro.
+
+Verificado ao vivo: origem autorizada recebe `allow-origin` exato mais
+`allow-credentials: true`; origem maliciosa recebe **204 sem nenhum header
+CORS**, e o navegador bloqueia. Nunca `*` com credenciais.
+
+### Empacotamento e a razão de 512 MB
+
+A API roda em `provided.al2023` com publicação self-contained em arquivo único
+comprimido — mesma técnica do worker, e pelo mesmo motivo: a Lambda não tem
+runtime gerenciado para .NET 10, e o pacote descomprimido passa de 50 MB (o
+teto do upload direto). Subir por S3 resolveria, e o S3 está proibido por custo.
+
+512 MB porque **128 MB foi provado insuficiente na Fase 9** — timeout com a
+memória no teto. A API carrega o mesmo modelo do EF Core. Medido em produção:
+**273 MB** de pico, cold start 8,1 s.
+
+---
 
 ## Security Gate — Fase 10
 
@@ -5552,6 +5662,93 @@ aquilo é corrigido.
 | 9 | Secrets | Varredura do histórico do Git, não só do estado atual. |
 | 10 | Superfície pública | Inventário final de rotas anônimas, portas e recursos acessíveis. |
 | 11 | Custo/abuso | Revisão dos limites e dos alertas de gasto sob carga real. |
+
+### Security Gate — Fase 10, executado
+
+Todos os itens abaixo foram verificados **contra a produção publicada**, e não só localmente.
+
+| # | Ponto | Evidência |
+|---|---|---|
+| 1 | Ameaças | Força bruta no login, CSRF reaberto pelo `SameSite=None`, CORS permissivo, clickjacking, downgrade HTTP, OpenAPI exposto, health revelando topologia. |
+| 2 | Controles | Rate limit por IP; `GuardaCsrf` com duas barreiras; CORS de hostname exato; CSP, HSTS, `nosniff`, `frame-ancestors`, `Referrer-Policy`; OpenAPI só em Development; health mínimo; `TratamentoDeErro` sem stack trace. |
+| 3 | Testes | **26 novos** em `ProducaoHttpTestes` + bateria contra a produção real: CORS autorizado/malicioso, preflight, CSRF sem/com token, malformado→400, OpenAPI 404, health mínimo, HSTS. |
+| 4 | Multiempresa | **Contra a produção:** organização vizinha acessando empresa da outra por ID → **404, não 403**. Cada uma vê só a sua. Um 403 confirmaria que aquele id existe. |
+| 5 | Exposição | Banco de produção com dados de demonstração, sem CPF ou nome real. Health não nomeia verificações. Erro 400 não devolve trecho do JSON nem stack trace — testado. |
+| 6 | Permissões | Contas demo por perfil, senha vinda de variável de ambiente. Chave JWT de produção **gerada nova**, diferente da de desenvolvimento. |
+| 7 | Logging | CloudWatch com **retenção de 7 dias**, criada à mão antes da função — o grupo nasce com retenção infinita se ninguém definir. |
+| 8 | Dependências | Build com **0 avisos**. A vulnerabilidade em `AWSSDK.Core` encontrada na Fase 9 continua corrigida. |
+| 9 | Secrets | Connection string e chave JWT vão como variável de ambiente da Lambda, passadas por **arquivo** — argumento de linha de comando aparece em listagem de processos e em mensagem de erro. `.env` no `.gitignore`; varredura limpa. Nenhum segredo no bundle da Vercel. |
+| 10 | Superfície pública | **Três** rotas anônimas, todas justificadas: `/health` (mínimo), `/api/autenticacao/entrar` (é o login), `renovar` e `sair` (dependem do cookie, protegidas por CSRF). OpenAPI **404** em produção. |
+| 11 | Custo | Detalhado abaixo. |
+
+#### Custo: US$ 0,00 previsto, e o que ainda poderia cobrar
+
+**Inventário antes → depois:** `lambda 1→2`, `logs 1→2`, `iam_roles 6→7`. Todo o
+resto **inalterado**: zero S3, API Gateway, NAT, EC2, RDS, ELB, ECS.
+**KMS customer-managed: 1 → 1** — a única é a pré-existente do IAM Identity
+Center, alheia ao projeto.
+
+| Serviço | Franquia permanente | Guardrail | Consumo esperado |
+|---|---|---|---|
+| Lambda (API) | 1 M req + 400.000 GB-s/mês | 512 MB, timeout 30 s | portfólio: dezenas de req/dia |
+| Lambda (worker) | idem, compartilhada | 512 MB, timeout 60 s | idem |
+| Function URL | **sem custo próprio** | — | coberta pela franquia da Lambda |
+| SQS | 1 M req/mês | long polling 20 s, sem `ScalingConfig` | piso ocioso ~260 mil (26%) |
+| CloudWatch | 5 GB/mês | retenção 7 dias | dezenas de MB |
+| Vercel | Hobby | — | US$ 0,00 |
+| Neon | Free, 0,5 GB | blobs com teto global de 50 MB | US$ 0,00 |
+
+**Riscos residuais de cobrança, ditos sem enfeite:**
+
+1. **Reserved concurrency continua impossível** — o limite da conta é 10, e a
+   AWS exige ≥ 10 não reservadas. O teto de concorrência é o da conta.
+2. **A Function URL é pública.** Um ataque de volume geraria invocações reais.
+   O rate limit da aplicação corta na porta, mas a invocação já aconteceu — e é
+   ela que conta na franquia. Um WAF resolveria e **tem custo fixo**, então não
+   entra.
+3. **Escalada de pollers da SQS** sob carga sustentada, acima de 1 M/mês.
+4. **A chave KMS do Identity Center**, US$ 1,00/mês — o único gasto real da
+   conta, e não é deste projeto.
+
+Os alertas de orçamento (50%, 80%, 100% e previsto) existem porque a franquia
+**não bloqueia**: passar dela cobra em silêncio.
+
+#### Como destruir tudo
+
+```
+# frontend
+npx vercel remove portfolio-prisma-rh --yes
+
+# API
+aws lambda delete-function-url-config --function-name portfolio-prisma-rh-prod-api --profile portfolio-claude --region us-east-1
+aws lambda delete-function          --function-name portfolio-prisma-rh-prod-api --profile portfolio-claude --region us-east-1
+aws logs   delete-log-group --log-group-name /aws/lambda/portfolio-prisma-rh-prod-api --profile portfolio-claude --region us-east-1
+aws iam    delete-role-policy --role-name portfolio-prisma-rh-prod-api-role --policy-name minima --profile portfolio-claude
+aws iam    delete-role        --role-name portfolio-prisma-rh-prod-api-role --profile portfolio-claude
+
+# Fase 9 (worker e filas) — comandos no bloco da Fase 9
+```
+
+#### Pendências registradas
+
+1. **CI/CD não configurado.** Exige autenticação no GitHub, que não está
+   disponível nesta sessão. É a única parte da fase que ficou de fora, e ela
+   **não bloqueia a produção**, que está no ar e validada. Quando houver acesso:
+   GitHub Actions + **AWS OIDC**, sem chave de acesso armazenada.
+2. **O fluxo autenticado no navegador não foi percorrido com credencial real** —
+   inserir senha em campo é ação que o agente não executa. Coberto de forma
+   equivalente: cookies, CSRF e refresh validados programaticamente com cookies
+   reais contra a produção, e o caminho cross-origin exercitado no navegador com
+   credencial inválida (o 401 chegou à tela, provando preflight, CORS e CSP).
+3. **Teste intermitente.** `DuasConfirmacoesSIMULTANEAS_NaoDeixamEstadoPelaMetade`
+   falhou uma vez sob a carga da suíte inteira (500 em vez de 409) e passou em
+   duas execuções seguintes. Registrado como *flakiness* observada, sem correção
+   — a causa provável é contenção no Postgres do container.
+4. **Sem WAF e sem CDN na frente da API.** Ambos têm custo, e o requisito é
+   US$ 0,00.
+5. **`style-src 'unsafe-inline'` na CSP do frontend.** O Tailwind injeta estilo
+   em runtime; sem isso a tela sobe sem CSS. Não afeta `script-src`, que é
+   estrito.
 
 ## Critérios de aceite
 

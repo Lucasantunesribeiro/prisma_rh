@@ -189,7 +189,7 @@ public class FolhaDe13Testes(BancoPostgresFixture banco) : IDisposable
         var admin = await AdminAsync();
         await RubricasAsync(admin);
 
-        var rubricas = await admin.GetFromJsonAsync<List<RubricaItem>>("/api/rubricas");
+        var rubricas = await admin.PaginaDe<RubricaItem>("/api/rubricas");
 
         Assert.NotNull(rubricas);
 

@@ -1,3 +1,4 @@
+using PrismaRH.Api.Producao;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PrismaRH.Api.Identidade;
@@ -36,12 +37,19 @@ public static class CargosEndpoints
         return rotas;
     }
 
-    private static async Task<IResult> ListarAsync(PrismaRhDbContext db, CancellationToken ct) =>
-        Results.Ok(await db.Cargos
-            .AsNoTracking()
-            .OrderBy(c => c.Codigo)
-            .Select(c => CargoResposta.De(c))
-            .ToListAsync(ct));
+    private static async Task<IResult> ListarAsync(
+        PrismaRhDbContext db,
+        CancellationToken ct,
+        [FromQuery] int? pagina = null,
+        [FromQuery] int? tamanho = null)
+    {
+        // Codigo e unico por organizacao: ordenacao deterministica de verdade.
+        // Sem isso, OFFSET/LIMIT pode repetir ou pular linha entre paginas.
+        var consulta = db.Cargos.AsNoTracking().OrderBy(c => c.Codigo);
+
+        return Results.Ok(await Paginacao.PaginarAsync(
+            consulta, CargoResposta.De, pagina, tamanho, ct));
+    }
 
     private static async Task<IResult> CriarAsync(
         [FromBody] SalvarCargoRequisicao requisicao,

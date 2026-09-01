@@ -77,7 +77,7 @@ public class InssIntegracaoTestes(BancoPostgresFixture banco) : IDisposable
             return (await criacao.Content.ReadFromJsonAsync<Identificado>())!.Id;
         }
 
-        var existentes = await admin.GetFromJsonAsync<List<RubricaItem>>("/api/rubricas");
+        var existentes = await admin.PaginaDe<RubricaItem>("/api/rubricas");
         var salario = existentes!.Single(r => r.Codigo == "SAL" && r.Ativa);
 
         using var ajuste = await admin.PutAsJsonAsync(
@@ -104,7 +104,7 @@ public class InssIntegracaoTestes(BancoPostgresFixture banco) : IDisposable
             return (await criacao.Content.ReadFromJsonAsync<Identificado>())!.Id;
         }
 
-        var existentes = await admin.GetFromJsonAsync<List<RubricaItem>>("/api/rubricas");
+        var existentes = await admin.PaginaDe<RubricaItem>("/api/rubricas");
 
         return existentes!.Single(r => r.Estrategia == "InssProgressivo" && r.Ativa).Id;
     }

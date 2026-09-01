@@ -1,3 +1,4 @@
+using PrismaRH.Api.Producao;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PrismaRH.Api.Identidade;
@@ -68,7 +69,11 @@ public static class RubricasEndpoints
     }
 
     private static async Task<IResult> ListarAsync(
-        [FromQuery] bool? ativas, PrismaRhDbContext db, CancellationToken ct)
+        PrismaRhDbContext db,
+        CancellationToken ct,
+        [FromQuery] bool? ativas = null,
+        [FromQuery] int? pagina = null,
+        [FromQuery] int? tamanho = null)
     {
         var consulta = db.Rubricas.AsNoTracking();
 
@@ -77,10 +82,8 @@ public static class RubricasEndpoints
             consulta = consulta.Where(r => r.Ativa);
         }
 
-        return Results.Ok(await consulta
-            .OrderBy(r => r.Codigo)
-            .Select(r => RubricaResposta.De(r))
-            .ToListAsync(ct));
+        return Results.Ok(await Paginacao.PaginarAsync(
+            consulta.OrderBy(r => r.Codigo), RubricaResposta.De, pagina, tamanho, ct));
     }
 
     private static async Task<IResult> CriarAsync(

@@ -86,7 +86,7 @@ public class FolhaMensalTestes(BancoPostgresFixture banco) : IDisposable
 
         Assert.Equal(HttpStatusCode.Conflict, criacao.StatusCode);
 
-        var existentes = await admin.GetFromJsonAsync<List<RubricaItem>>("/api/rubricas");
+        var existentes = await admin.PaginaDe<RubricaItem>("/api/rubricas");
 
         return existentes!.Single(r => r.Codigo == "SAL" && r.Ativa).Id;
     }
@@ -111,7 +111,7 @@ public class FolhaMensalTestes(BancoPostgresFixture banco) : IDisposable
             return (await criacao.Content.ReadFromJsonAsync<Identificado>())!.Id;
         }
 
-        var existentes = await admin.GetFromJsonAsync<List<RubricaItem>>("/api/rubricas");
+        var existentes = await admin.PaginaDe<RubricaItem>("/api/rubricas");
 
         return existentes!.Single(r => r.Codigo == codigo).Id;
     }
@@ -276,7 +276,7 @@ public class FolhaMensalTestes(BancoPostgresFixture banco) : IDisposable
             {
                 validoDe = "2026-09-15",
                 salario = 3600m,
-                idCargo = (await admin.GetFromJsonAsync<List<CargoItem>>("/api/cargos"))!
+                idCargo = (await admin.PaginaDe<CargoItem>("/api/cargos"))!
                     .First(c => c.Codigo == $"F{sufixo}").Id,
                 idEstabelecimento = banco.IdEstabelecimentoA,
                 jornadaMensalHoras = 220,
@@ -374,11 +374,11 @@ public class FolhaMensalTestes(BancoPostgresFixture banco) : IDisposable
         var folha = await AbrirAsync(adminA, banco.IdEmpresaA, "01/2027");
 
         // PRESENCA: a propria organizacao enxerga.
-        var listaA = await adminA.GetFromJsonAsync<List<FolhaResumo>>("/api/folhas");
+        var listaA = await adminA.PaginaDe<FolhaResumo>("/api/folhas");
         Assert.Contains(listaA!, f => f.Id == folha.Id);
 
         // AUSENCIA: a vizinha nao.
-        var listaB = await adminB.GetFromJsonAsync<List<FolhaResumo>>("/api/folhas");
+        var listaB = await adminB.PaginaDe<FolhaResumo>("/api/folhas");
         Assert.DoesNotContain(listaB!, f => f.Id == folha.Id);
 
         using var acessoDireto = await adminB.GetAsync($"/api/folhas/{folha.Id}");

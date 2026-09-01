@@ -1,4 +1,4 @@
-import { URL_BASE_API, definirAccessToken, enviar } from './cliente'
+import { URL_BASE_API, cabecalhosCsrf, definirAccessToken, enviar } from './cliente'
 
 export type Perfil =
   | 'AdministradorPlataforma'
@@ -76,6 +76,9 @@ export async function sair(): Promise<void> {
   await fetch(`${URL_BASE_API}/api/autenticacao/sair`, {
     method: 'POST',
     credentials: 'include',
+    // `sair` também depende do cookie, e por isso também precisa do token.
+    // Sem ele, o servidor recusa com 403 e a sessão ficaria viva no banco.
+    headers: cabecalhosCsrf(),
   })
   definirAccessToken(null)
 }

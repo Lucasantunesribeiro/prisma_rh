@@ -1,3 +1,4 @@
+using PrismaRH.Api.Producao;
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PrismaRH.Api.Identidade;
@@ -129,10 +130,12 @@ public static class FolhasEndpoints
     // -----------------------------------------------------------------------
 
     private static async Task<IResult> ListarAsync(
-        [FromQuery] Guid? idEmpresa,
-        [FromQuery] string? competencia,
         PrismaRhDbContext db,
-        CancellationToken ct)
+        CancellationToken ct,
+        [FromQuery] Guid? idEmpresa = null,
+        [FromQuery] string? competencia = null,
+        [FromQuery] int? pagina = null,
+        [FromQuery] int? tamanho = null)
     {
         var consulta = db.Folhas.AsNoTracking();
 
@@ -154,8 +157,12 @@ public static class FolhasEndpoints
             consulta = consulta.Where(f => f.Competencia == alvo);
         }
 
-        var folhas = await consulta
+        // Competencia + Id: competencia sozinha EMPATA (varias folhas no mesmo
+        // mes), e empate em OFFSET/LIMIT faz o PostgreSQL repetir ou pular
+        // linha entre paginas. O Id desempata e torna a ordem deterministica.
+        var consultaOrdenada = consulta
             .OrderByDescending(f => f.Competencia)
+            .ThenBy(f => f.Id)
             .Join(db.Empresas, f => f.IdEmpresa, e => e.Id, (f, e) => new { Folha = f, e.RazaoSocial })
             .Select(x => new FolhaResumoResposta(
                 x.Folha.Id,
@@ -170,10 +177,10 @@ public static class FolhasEndpoints
                 x.Folha.TotalDescontos,
                 x.Folha.TotalLiquido,
                 x.Folha.CalculadaEm,
-                x.Folha.FechadaEm))
-            .ToListAsync(ct);
+                x.Folha.FechadaEm));
 
-        return Results.Ok(folhas);
+        return Results.Ok(await Paginacao.PaginarAsync(
+            consultaOrdenada, r => r, pagina, tamanho, ct));
     }
 
     private static async Task<IResult> ObterAsync(Guid id, PrismaRhDbContext db, CancellationToken ct)

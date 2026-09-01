@@ -24,3 +24,13 @@ frontend/src/paginas/entrar.teste.tsx:token de acesso
 # Senha do PostgreSQL local. O arquivo e um EXEMPLO e o banco e efemero;
 # a mesma credencial esta em appsettings.Development.json de proposito.
 .env.example:senha
+
+# Teste de rate limit do login (Fase 10). O valor usado e literalmente
+# invalido: o teste existe para provar que o login FALHA e que o limite por IP
+# corta na 11a tentativa. Conferido linha a linha antes de liberar.
+backend/testes/prismarh.testes/isolamento/producaohttptestes.cs:senha
+
+# O proprio arquivo de allowlist. Ele so guarda CAMINHOS e comentarios, nunca
+# valores - por isso escanea-lo so produz falso positivo, vindo das proprias
+# entradas que terminam no nome do tipo detectado.
+.varredura-permitido:senha

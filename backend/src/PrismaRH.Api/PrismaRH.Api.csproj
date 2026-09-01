@@ -7,6 +7,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Amazon.Lambda.AspNetCoreServer.Hosting" Version="2.2.1" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.11" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.11" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.11">
@@ -19,5 +20,30 @@
     <ProjectReference Include="..\PrismaRH.Aplicacao\PrismaRH.Aplicacao.csproj" />
     <ProjectReference Include="..\PrismaRH.Infraestrutura\PrismaRH.Infraestrutura.csproj" />
   </ItemGroup>
+
+
+  <!--
+    Publicacao para a Lambda (Fase 10).
+
+    Ligado por `-p:PublicarLambda=true` no `dotnet publish`. Sem a propriedade,
+    o build local continua produzindo `PrismaRH.Api` e rodando no Kestrel - o
+    mesmo projeto serve os dois mundos.
+
+    `provided.al2023` + self-contained porque a Lambda nao tem runtime
+    gerenciado para .NET 10. Arquivo unico COM compressao pelo mesmo motivo do
+    worker: o pacote descomprimido passa de 50 MB, e o upload direto para
+    nesse numero - subir por S3 resolveria, e o S3 esta proibido por custo.
+  -->
+  <PropertyGroup Condition="'$(PublicarLambda)' == 'true'">
+    <AssemblyName>bootstrap</AssemblyName>
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>linux-x64</RuntimeIdentifier>
+    <PublishSingleFile>true</PublishSingleFile>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <PublishTrimmed>false</PublishTrimmed>
+    <DebugType>none</DebugType>
+  </PropertyGroup>
 
 </Project>

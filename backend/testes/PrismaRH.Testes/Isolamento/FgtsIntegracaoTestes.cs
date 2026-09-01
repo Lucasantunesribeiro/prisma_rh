@@ -74,7 +74,7 @@ public class FgtsIntegracaoTestes(BancoPostgresFixture banco) : IDisposable
             return;
         }
 
-        var existentes = await admin.GetFromJsonAsync<List<RubricaItem>>("/api/rubricas");
+        var existentes = await admin.PaginaDe<RubricaItem>("/api/rubricas");
         var salario = existentes!.Single(r => r.Codigo == "SAL" && r.Ativa);
 
         using var ajuste = await admin.PutAsJsonAsync(
@@ -99,7 +99,7 @@ public class FgtsIntegracaoTestes(BancoPostgresFixture banco) : IDisposable
             return (await criacao.Content.ReadFromJsonAsync<Identificado>())!.Id;
         }
 
-        var existentes = await admin.GetFromJsonAsync<List<RubricaItem>>("/api/rubricas");
+        var existentes = await admin.PaginaDe<RubricaItem>("/api/rubricas");
 
         return existentes!.Single(r => r.Estrategia == "FgtsMensal" && r.Ativa).Id;
     }
@@ -424,7 +424,7 @@ public class FgtsIntegracaoTestes(BancoPostgresFixture banco) : IDisposable
         await RubricaFgtsAsync(adminD);
 
         var adminB = await _fabrica.ClienteComoAsync(BancoPostgresFixture.EmailAdminB);
-        var rubricasB = await adminB.GetFromJsonAsync<List<RubricaItem>>("/api/rubricas");
+        var rubricasB = await adminB.PaginaDe<RubricaItem>("/api/rubricas");
 
         Assert.DoesNotContain(rubricasB!, r => r.Estrategia == "FgtsMensal");
     }

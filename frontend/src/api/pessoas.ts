@@ -1,4 +1,4 @@
-import { enviar, obter, remover } from './cliente'
+import { enviar, obter, obterPaginado, remover } from './cliente'
 
 // ---------------------------------------------------------------- cargos
 
@@ -9,7 +9,7 @@ export interface Cargo {
   ativo: boolean
 }
 
-export const listarCargos = (): Promise<Cargo[]> => obter('/api/cargos')
+export const listarCargos = (): Promise<Cargo[]> => obterPaginado('/api/cargos')
 
 export const criarCargo = (dados: { codigo: string; nome: string }): Promise<Cargo> =>
   enviar('/api/cargos', dados)

@@ -1,3 +1,4 @@
+using PrismaRH.Api.Producao;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PrismaRH.Api.Identidade;
@@ -100,6 +101,7 @@ public static class DependentesEndpoints
             .AsNoTracking()
             .Where(d => d.IdFuncionario == idFuncionario)
             .OrderBy(d => d.DataNascimento)
+            .ComTeto()
             .ToListAsync(ct);
 
         return Results.Ok(dependentes.Select(DependenteResposta.De).ToList());

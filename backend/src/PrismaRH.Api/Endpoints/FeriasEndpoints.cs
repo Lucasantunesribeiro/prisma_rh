@@ -1,3 +1,4 @@
+using PrismaRH.Api.Producao;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PrismaRH.Api.Identidade;
@@ -147,6 +148,7 @@ public static class FeriasEndpoints
         var concessoes = await db.ConcessoesFerias
             .AsNoTracking()
             .Where(c => c.IdContrato == idContrato)
+            .ComTeto()
             .ToListAsync(ct);
 
         var periodos = Montar(PeriodosAquisitivos.De(contrato, hoje), concessoes);
@@ -206,6 +208,7 @@ public static class FeriasEndpoints
         var concessoes = await db.ConcessoesFerias
             .AsNoTracking()
             .Where(c => c.IdContrato == idContrato)
+            .ComTeto()
             .ToListAsync(ct);
 
         var comSaldo = new PeriodoComSaldo(periodo, [.. concessoes.Where(c => c.EDoPeriodo(periodo))]);

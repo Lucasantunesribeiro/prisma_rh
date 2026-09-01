@@ -1,3 +1,4 @@
+using Amazon.Lambda.AspNetCoreServer.Hosting;
 ﻿using System.Text;
 using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
@@ -7,6 +8,7 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.Extensions.Options;
 using PrismaRH.Api.Endpoints;
 using PrismaRH.Api.Identidade;
+using PrismaRH.Api.Producao;
 using PrismaRH.Api.Saude;
 using PrismaRH.Api.Servicos;
 using PrismaRH.Aplicacao.Identidade;
@@ -19,11 +21,30 @@ var builder = WebApplication.CreateBuilder(args);
 
 const string PoliticaCors = "origens-permitidas";
 
+
+// ------------------------------------------------------ Lambda (Fase 10)
+//
+// Quando `AWS_LAMBDA_FUNCTION_NAME` existe, a aplicacao roda DENTRO da Lambda e
+// precisa falar o protocolo dela em vez de abrir um socket. Fora da Lambda a
+// linha nao faz nada, e o Kestrel sobe normal - o mesmo binario serve os dois.
+//
+// `HttpApiV2` e o formato de evento da **Function URL**, que e o endpoint
+// publico escolhido. Nao ha API Gateway: ele nao esta na tabela de Free Tier
+// permanente da AWS e cobraria desde a primeira requisicao.
+if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("AWS_LAMBDA_FUNCTION_NAME")))
+{
+    builder.Services.AddAWSLambdaHosting(LambdaEventSource.HttpApi);
+}
+
 builder.Services.AddOpenApi();
 builder.Services.AdicionarInfraestrutura(builder.Configuration);
 
 // Retorna erros nao tratados no formato ProblemDetails (RFC 9457), sem expor stack trace.
 builder.Services.AddProblemDetails();
+
+// Traduz falha de PROTOCOLO em 400/413, em vez de 500. Fecha a pendencia
+// `CLAUDE.md 24.19 item 4`. Ver TratamentoDeErro.
+builder.Services.AddExceptionHandler<TratamentoDeErro>();
 
 // Enum vira texto no JSON. Sem isto, "perfil" sai como 3 em vez de "AnalistaRh":
 // o frontend passaria a depender da ORDEM da enum, e reordena-la quebraria o
@@ -108,6 +129,50 @@ builder.Services.AddRateLimiter(opcoes =>
 {
     opcoes.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
 
+    // ------------------------------------------------ autenticacao (Fase 10)
+    //
+    // `CLAUDE.md 24.19 item 1`: nada impedia milhares de tentativas por minuto
+    // contra POST /api/autenticacao/entrar. Forca bruta e credential stuffing
+    // estavam abertos. Esta e a correcao.
+    //
+    // ⚠️ O particionamento e POR IP, e a razao e o oposto da Fase 8.
+    //
+    // Na consulta de CNPJ o limite e por organizacao, porque o usuario ja esta
+    // autenticado e a cota protegida e a de um servico compartilhado.
+    //
+    // No LOGIN nao ha usuario ainda - e exatamente isso que o atacante esta
+    // tentando descobrir. Particionar por e-mail deixaria um script varrer mil
+    // e-mails diferentes sem estourar limite nenhum, que e o formato do
+    // credential stuffing. Por IP, o mesmo script bate no teto na 11a
+    // tentativa.
+    //
+    // O `24.18` pede combinar IP e identidade; a identidade entra na Fase 12,
+    // junto com o bloqueio progressivo por conta.
+    opcoes.AddPolicy(AutenticacaoEndpoints.PoliticaLoginPorIp, contexto =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            contexto.Connection.RemoteIpAddress?.ToString() ?? "sem-ip",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                // Dez por minuto. Uma pessoa erra a senha tres, quatro vezes;
+                // dez cobrem isso com folga e nao cobrem um dicionario.
+                PermitLimit = 10,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+            }));
+
+    // Renovar e sair sao chamadas do proprio app, e acontecem com frequencia
+    // legitima maior - o access token vive 15 minutos. Teto mais alto, mas
+    // ainda teto: sem ele, um loop de refresh quebrado viraria tempestade.
+    opcoes.AddPolicy(AutenticacaoEndpoints.PoliticaSessaoPorIp, contexto =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            contexto.Connection.RemoteIpAddress?.ToString() ?? "sem-ip",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 60,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+            }));
+
     opcoes.AddPolicy(IntegracoesEndpoints.PoliticaLimite, contexto =>
         RateLimitPartition.GetFixedWindowLimiter(
             // Sem organizacao no token nao ha o que particionar. "anonimo" e uma
@@ -125,6 +190,11 @@ builder.Services.AddRateLimiter(opcoes =>
 });
 
 var app = builder.Build();
+
+// Cabecalhos de seguranca ANTES de tudo: eles precisam sair mesmo nas
+// respostas de erro, e um handler que retorne cedo pularia um middleware
+// registrado depois.
+app.UsarCabecalhosSeguranca(!app.Environment.IsDevelopment());
 
 app.UseExceptionHandler();
 app.UseStatusCodePages();
@@ -154,9 +224,17 @@ if (app.Environment.IsDevelopment())
     await SemeadorDesenvolvimento.SemearAsync(app.Services);
 }
 
+// ⚠️ Fora de Development o /health devolve apenas "saudavel" ou nao.
+//
+// A versao detalhada lista as verificacoes por NOME - "banco-de-dados" - e o
+// item 10 do Security Gate manda que o health nao revele detalhe interno.
+// Numa rota ANONIMA, isso conta a topologia para qualquer varredura: saber
+// que ha um banco, e que ele responde, e informacao gratuita para quem sonda.
 app.MapHealthChecks("/health", new HealthCheckOptions
 {
-    ResponseWriter = EscritorRespostaSaude.EscreverAsync
+    ResponseWriter = app.Environment.IsDevelopment()
+        ? EscritorRespostaSaude.EscreverAsync
+        : EscritorRespostaSaude.EscreverMinimoAsync
 }).AllowAnonymous();
 
 app.MapearAutenticacao();

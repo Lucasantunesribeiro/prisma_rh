@@ -1,3 +1,4 @@
+using PrismaRH.Api.Producao;
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PrismaRH.Api.Identidade;
@@ -268,6 +269,7 @@ public static class RescisaoEndpoints
         var concessoes = await db.ConcessoesFerias
             .AsNoTracking()
             .Where(c => c.IdContrato == idContrato)
+            .ComTeto()
             .ToListAsync(ct);
 
         var diasVencidas = PeriodosAquisitivos.Adquiridos(contrato, desligamento)

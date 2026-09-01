@@ -6,6 +6,18 @@ import FuncionarioDetalhe from './FuncionarioDetalhe'
 import { SessaoContexto } from '@/auth/contexto'
 import type { UsuarioAutenticado } from '@/api/autenticacao'
 
+
+/**
+ * Envolve uma lista no envelope que a API passou a devolver na Fase 10.
+ *
+ * `/api/folhas`, `/api/rubricas` e `/api/cargos` foram paginadas porque crescem
+ * sem limite natural (`CLAUDE.md §24.19 item 3`). O teste reproduz o contrato
+ * real — devolver array cru aqui esconderia a quebra em vez de preveni-la.
+ */
+function paginado<T>(itens: T[]) {
+  return { total: itens.length, paginaAtual: 1, tamanho: 200, itens }
+}
+
 function responder(corpo: unknown): Response {
   return new Response(JSON.stringify(corpo), {
     status: 200,
@@ -190,7 +202,8 @@ function rotear(url: string, dependentes: unknown = DEPENDENTES, ferias: unknown
   if (url.includes('/ferias')) return responder(ferias)
   if (url.includes('/vigencias')) return responder(VIGENCIAS)
   if (url.includes('/contratos')) return responder([CONTRATO])
-  if (url.includes('/api/cargos')) return responder(CARGOS)
+  // Envelope paginado (Fase 10).
+  if (url.includes('/api/cargos')) return responder(paginado(CARGOS))
   if (url.includes('/api/funcionarios/')) return responder(FUNCIONARIO)
   return responder({})
 }
