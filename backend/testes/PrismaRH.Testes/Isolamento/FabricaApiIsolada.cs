@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using PrismaRH.Infraestrutura.Ia;
 using PrismaRH.Infraestrutura.Integracoes;
 
 namespace PrismaRH.Testes.Isolamento;
@@ -16,7 +17,8 @@ namespace PrismaRH.Testes.Isolamento;
 /// </summary>
 public sealed class FabricaApiIsolada(
     string stringConexao,
-    Func<HttpMessageHandler>? parceiroExterno = null) : WebApplicationFactory<Program>
+    Func<HttpMessageHandler>? parceiroExterno = null,
+    Func<HttpMessageHandler>? provedorIa = null) : WebApplicationFactory<Program>
 {
     private const string VariavelConexao = "ConnectionStrings__PrismaRh";
     private const string VariavelJwt = "Jwt__ChaveAssinatura";
@@ -40,6 +42,16 @@ public sealed class FabricaApiIsolada(
             builder.ConfigureServices(servicos => servicos
                 .AddHttpClient<ConsultaCnpjBrasilApi>()
                 .ConfigurePrimaryHttpMessageHandler(parceiroExterno));
+        }
+
+        // O provedor de IA (Fase 11) entra pela mesma porta e pela mesma razao:
+        // trocar so o ultimo elo deixa a guarda de destino, o prazo, o parsing e
+        // o cache sendo exercitados de verdade.
+        if (provedorIa is not null)
+        {
+            builder.ConfigureServices(servicos => servicos
+                .AddHttpClient<ClienteGemini>(c => c.Timeout = OrcamentoIa.Prazo)
+                .ConfigurePrimaryHttpMessageHandler(provedorIa));
         }
 
         return base.CreateHost(builder);

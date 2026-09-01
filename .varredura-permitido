@@ -34,3 +34,8 @@ backend/testes/prismarh.testes/isolamento/producaohttptestes.cs:senha
 # valores - por isso escanea-lo so produz falso positivo, vindo das proprias
 # entradas que terminam no nome do tipo detectado.
 .varredura-permitido:senha
+
+# Linha COMENTADA no arquivo de exemplo, com o valor literal
+# "cole-a-chave-aqui". A chave real do Gemini fica no .env, que o .gitignore
+# barra (regra *.env) e a varredura nem chega a ler. Conferido antes de liberar.
+.env.example:token de acesso

@@ -5502,6 +5502,74 @@ validação não bastam, porque a entrada é legítima por definição.
 
 ---
 
+## FASE 11A — EXECUTADA em 01/09/2026
+
+Entregue: **assistente de inconsistências**. As subfases 11B (resumo executivo da folha) e
+11C (consulta em linguagem natural) **não** foram implementadas e continuam abertas.
+
+### Provedor: Google Gemini `gemini-3.5-flash-lite`
+
+Escolhido pelo responsável, que forneceu a chave. Chamado **direto pela API do Google**, e
+não via AWS Bedrock — o que deixa o teto de US$ 6,50/mês da AWS (`CLAUDE.md §16`)
+inteiramente livre para as Fases 9 e 10. Registro completo da decisão em `CLAUDE.md §37.8`.
+
+⚠️ **`gemini-2.5-flash-lite` foi a primeira escolha e não funciona**: o provedor devolve
+`404` com *"no longer available to new users"*. O modelo continuava aparecendo na listagem
+de modelos — **só a chamada real revelou a aposentadoria**. Daí uma regra que vale para
+qualquer integração externa deste projeto: **suíte verde com dublê não prova que o parceiro
+existe**, e por isso a fase inclui verificação contra o provedor de verdade.
+
+### Decisões desta subfase
+
+| Decisão | Por quê |
+|---|---|
+| **Nome, CPF e matrícula não são enviados** ao provedor | A explicação de *"desligado em 20/07 e mesmo assim tem holerite"* não fica pior sem o nome, e mandá-lo transformaria cada chamada numa transferência de dado pessoal identificável para fora (`CLAUDE.md §37.6`). Prova: `AssistenteIaTestes.NenhumDadoPessoalEEnviadoAoProvedor`, inspecionando o corpo HTTP. |
+| **O prompt é montado campo a campo**, nunca serializando a entidade | Serializar seria mais curto e mandaria junto tudo o que a entidade ganhar no futuro: um campo novo com dado pessoal passaria a vazar sem ninguém decidir isso. |
+| **Falha do provedor devolve `200` com o motivo dentro**, não `502` | A IA é acessório (`CLAUDE.md §1`). Com ela fora do ar, o analista continua com a descrição que o motor determinístico gerou — que é a informação que importa. Um `502` faria a tela inteira parecer quebrada. |
+| **Reusa a `GuardaDestino` da Fase 8**, com o host do Gemini na allowlist | Chamar provedor de IA **é** integração HTTP externa. Mesma allowlist, mesma checagem de IP depois do DNS, mesmo controle de redirect — em vez de uma segunda defesa que ninguém revisa. |
+| **A chave vai em cabeçalho `x-goog-api-key`**, nunca na query string | URL vai para log de acesso, histórico e painel de proxy. Cabeçalho, não. |
+| **Cache com a organização na chave** | O cache de CNPJ da Fase 8 **não** tem tenant na chave, e não é inconsistência: lá o valor é registro público da Receita, igual para quem perguntar. Aqui o texto é derivado de dado do tenant, e cache sem tenant na chave é vazamento com desempenho (`CLAUDE.md §24.5`). |
+| **Política `ProcessarFolha`**, e não leitura geral | Cada chamada gasta cota de um serviço que cobra por token. Auditor e Visualizador leem o achado do motor determinístico normalmente. |
+| **A auditoria registra que houve explicação — nunca o texto** | Guardar a saída criaria uma segunda cópia de conteúdo derivado de dado do tenant, com retenção própria. O que a trilha precisa responder é *"havia texto de máquina na tela quando isto foi justificado?"*, e para isso basta o evento. |
+| **A explicação só é gerada quando alguém clica** | Gerar ao abrir a gaveta pagaria por explicação que ninguém leu. |
+| **11B e 11C não foram implementadas** | `ROADMAP.md §0`: fase futura não se antecipa. O assistente de inconsistências é a subfase que as Fases 6 e 7 já sustentam. |
+
+### Security Gate — Fase 11, executado
+
+| # | Ponto | O que foi feito |
+|---|---|---|
+| 1 | Ameaças introduzidas | Threat model curto feito antes do código. As sete ameaças da tabela de planejamento foram endereçadas; **tool abuse não se aplica** — não há ferramenta, o modelo devolve texto e nada mais. |
+| 2 | Controles | A IA não recebe credencial, secret nem token. Não há SQL, comando nem escrita iniciados por resposta de modelo: a única escrita da rota é o evento de auditoria, e ele acontece independentemente do que o modelo respondeu. Dado do sistema entra num bloco `=== DADOS ===` rotulado, com instrução explícita de tratá-lo como conteúdo. Teto de 4.000 caracteres de entrada, 300 tokens de saída, 12 s de prazo, 20 chamadas/hora por organização. |
+| 3 | Testes | 17 unitários + 10 de integração contra PostgreSQL real + 4 de tela. Inclui *mutation testing*: acrescentar o nome do funcionário ao prompt **faz o teste de privacidade falhar** — verificado, e revertido. |
+| 4 | Multiempresa | ⚠️ O item central. `AssistenteHttpTestes.InconsistenciaDaVizinhaDevolve404ENaoChamaOProvedor` prova as duas metades: a vizinha recebe **404, não 403**, e o provedor **não é chamado** — o filtro global barra antes, então nem existe requisição de onde o dado poderia sair. O isolamento é arquitetural. |
+| 5 | Exposição de dados | Minimização provada por inspeção do corpo HTTP. Saem: nome da regra, categoria, severidade, descrição gerada pelo motor e valores. **Não saem**: nome, CPF, matrícula, nascimento, endereço. |
+| 6 | Permissões | Política `ProcessarFolha` declarada na rota; `LerDadosEmpresariais` no `/disponivel`. Testes provam 401 sem token e 403 para Auditor e Visualizador. |
+| 7 | Logging e auditoria | Log técnico registra correlação e código de status — **nunca o prompt nem a chave**. Auditoria de negócio registra `ExplicacaoIaGerada` com modelo, tokens e correlação, e teste prova que o texto do modelo **não** está na trilha. |
+| 8 | Dependências | **Nenhuma dependência nova.** A chamada usa `HttpClient` e `System.Text.Json`, que já existem. Nada de SDK de provedor nem framework de agente — cada um seria superfície de ataque para resolver uma requisição HTTP de dez linhas. |
+| 9 | Secrets | Chave em `PRISMARH_GEMINI_API_KEY`, lida pelo backend. Não está no repositório, não vai para o bundle do Vite, não aparece em log nem em relatório. A chamada sai do servidor. |
+| 10 | Superfície pública | Duas rotas, ambas autenticadas. Nenhuma anônima. |
+| 11 | Custo/abuso | Limite de 20 chamadas por hora **por organização** (partição por claim de organização, não por IP). Cache de 24 h por inconsistência e versão de regra. Modelo mais barato da família. Explicação só sob clique. ⚠️ **Não há alerta de gasto configurado no console do Google** — ver risco residual abaixo. |
+
+### Verificação executada
+
+- suíte backend: **1120/1120**;
+- testes frontend: **148/148**;
+- `oxlint` sem avisos; build backend com **0 avisos, 0 erros**; build frontend concluído;
+- **verificação ao vivo contra o Gemini real**, exercitando o código de produção — resposta
+  em português, três frases, sem inventar número, e **sem citar o nome da pessoa**, porque
+  ele não foi enviado.
+
+### Riscos residuais
+
+| Risco | Situação |
+|---|---|
+| **Faturamento do projeto Google não confirmado** | A API não informa, e doze chamadas seguidas não bateram no limite gratuito de 10/min — o que sugere faturamento ligado. Os tetos foram dimensionados para o pior caso: mesmo cobrando, o uso de portfólio fica em centavos/mês. |
+| **Sem alerta de gasto no console do Google** | Fora do alcance do repositório: depende de configuração na conta do responsável. Os limites técnicos são a defesa disponível hoje. |
+| **Política de retenção do provedor não confirmada** | O nível gratuito do Gemini **pode** usar o conteúdo para melhorar os produtos do Google; o pago, não. Sem saber qual vale, assume-se o pior — e é por isso que a minimização não é formalidade. Confirmar antes de qualquer uso com dado real. |
+| **O nome do modelo envelhece sozinho** | Já aconteceu uma vez nesta fase. Quando cair, a resposta vira `Indisponivel` e o produto continua de pé — mas o assistente para até alguém trocar a constante. |
+| **Prompt injection indireto não tem garantia absoluta** | Nenhum prompt tem. A garantia real é arquitetural: a saída é texto exibido como texto, e nenhum caminho iniciado por resposta de modelo escreve no banco. |
+---
+
 # FASE 12 — HARDENING E QUALIDADE DE PRODUÇÃO
 
 ## Objetivo

@@ -58,7 +58,17 @@ public sealed class GuardaDestino
     /// campo que alguem preenche com pressa. Trocar de parceiro e alterar
     /// codigo, com revisao - que e exatamente o peso que a decisao tem.
     /// </summary>
-    private static readonly string[] HostsPermitidos = ["brasilapi.com.br"];
+    private static readonly string[] HostsPermitidos =
+    [
+        // Fase 8 - consulta de CNPJ na Receita.
+        "brasilapi.com.br",
+
+        // Fase 11 - a camada de IA. Chamar um provedor de modelo E uma
+        // integracao HTTP externa, e reusa esta guarda em vez de inventar
+        // outra: mesma allowlist, mesma checagem de IP depois do DNS, mesmo
+        // controle de redirect.
+        "generativelanguage.googleapis.com",
+    ];
 
     private readonly Func<string, CancellationToken, Task<IPAddress[]>> _resolver;
 

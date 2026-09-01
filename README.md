@@ -2,12 +2,13 @@
 
 Plataforma B2B de gestão, cálculo, conferência e auditoria de folha de pagamento brasileira.
 
-> **Estado atual: Fase 10 concluída — o Prisma RH está no ar.**
+> **Estado atual: Fase 11A concluída — o Prisma RH está no ar, com assistente de IA.**
 >
 > - **Aplicação:** https://portfolio-prisma-rh.vercel.app
 > - **API:** AWS Lambda com Function URL · **Banco:** Neon PostgreSQL
 > - **Custo AWS previsto: US$ 0,00** — sem S3, API Gateway, NAT ou KMS próprio.
 >
+> Fase 11A: assistente que explica inconsistências em linguagem simples (Google Gemini).
 > Fase 9: importação assíncrona por SQS + Lambda.
 > Fase 8: consulta de CNPJ na Receita, pelo cadastro de empresa.
 > Fase 7: workflow de tratamento, auditoria e painel.
@@ -392,6 +393,50 @@ navegador não tem efeito nenhum.
   recusaria a linha — e o erro revelaria que aquele documento existe em outro tenant.
 - **Data só em `dd/mm/aaaa` ou `aaaa-mm-dd`.** Aceitar o que a cultura da máquina entender
   faria `03/04/2026` virar março num servidor e abril noutro, sem ninguém perceber.
+
+**Assistente de inconsistências (Fase 11A)**
+
+Na gaveta de uma inconsistência, quem trata a folha pode pedir uma explicação em linguagem
+simples do que o motor determinístico detectou. O texto aparece rotulado como gerado por
+IA e passível de erro.
+
+Provedor: **Google Gemini `gemini-3.5-flash-lite`**, chamado direto pela API do Google — e
+não via AWS Bedrock, o que deixa o teto de US$ 6,50/mês da AWS intocado.
+
+> ⚠️ **A IA explica; ela não calcula.** Nenhum valor financeiro tem origem no modelo. O
+> critério é o do `CLAUDE.md §37.3`: se o número entra numa conta, num holerite ou numa
+> obrigação, ele veio do C#. O que a IA produz é frase sobre números que o motor já
+> apurou — e a camada inteira é de **leitura**: nenhum caminho iniciado por resposta de
+> modelo escreve no banco.
+
+- **Nome, CPF e matrícula não são enviados.** A explicação de *"desligado em 20/07 e mesmo
+  assim tem holerite"* não fica pior sem o nome, e mandá-lo transformaria cada chamada
+  numa transferência de dado pessoal identificável para fora. Saem apenas: regra,
+  categoria, severidade, a descrição que o motor gerou e os valores. Um teste inspeciona o
+  corpo HTTP e falha se algo mais aparecer.
+- **O prompt é montado campo a campo**, nunca serializando a entidade — assim um campo
+  novo com dado pessoal não passa a vazar sem ninguém decidir isso.
+- **Dado do sistema entra num bloco delimitado**, com instrução explícita de tratá-lo como
+  conteúdo e nunca como ordem. É a defesa contra *prompt injection indireto*: instrução
+  escondida num campo que alguém preencheu. Não é garantia absoluta — nenhum prompt é. A
+  garantia real é arquitetural: a saída é texto exibido como texto.
+- **Uma inconsistência de outra organização devolve 404, e o provedor nem é chamado.** O
+  filtro global barra antes, então não existe requisição de onde o dado poderia sair.
+- **Provedor fora do ar não quebra a tela.** A API devolve `200` com o motivo dentro, e o
+  achado do motor determinístico continua legível. Sem a chave configurada, o botão
+  simplesmente não aparece e o produto funciona igual.
+- **A trilha registra que houve explicação — modelo, tokens, correlação —, nunca o texto.**
+- **Custo:** modelo mais barato da família, 300 tokens de saída, cache de 24 h por
+  inconsistência, 20 chamadas por hora **por organização**, e explicação só sob clique.
+- **A chave fica no backend**, em `PRISMARH_GEMINI_API_KEY`. Nunca no bundle do Vite.
+
+> ⚠️ **Riscos residuais declarados:** o faturamento do projeto Google não pôde ser
+> confirmado pela API, e não há alerta de gasto no console — os limites técnicos são a
+> defesa disponível. A política de retenção do provedor também não foi confirmada, e por
+> isso a minimização não é formalidade. Detalhes no Security Gate da Fase 11 do
+> [ROADMAP.md](ROADMAP.md).
+
+**Resumo executivo da folha (11B) e consulta em linguagem natural (11C) não existem.**
 
 **Produção (Fase 10)**
 
@@ -779,8 +824,8 @@ subsequentes) e **art. 137** (fora do prazo, remuneração **em dobro**).
 
 ## O que ainda NÃO existe
 
-Afastamentos, importações, motor de análises, integrações, recursos AWS e CI/CD. Tudo isso
-pertence às fases seguintes.
+**Afastamentos** e **CI/CD**. Importações, motor de análises, workflow, integração de CNPJ,
+processamento assíncrono, produção e assistente de IA já existem — ver acima.
 
 Os **cinco tipos de folha** calculam: mensal, férias, rescisão, adiantamento de 13º e a
 folha anual de 13º.
@@ -801,20 +846,17 @@ empregador e a 4D fechou o imposto de renda. **A folha mensal está completa**, 
 de **férias (4E)** e de **rescisão (4G)** também. O **13º (4F)** continua bloqueado por
 contradição entre fontes oficiais sobre o momento da incidência.
 
-### Camada de IA — planejada, não implementada
+### Camada de IA — 11A existe; 11B e 11C, não
 
-Está previsto um **assistente inteligente** para a **Fase 11** do roadmap: explicar
-inconsistências em linguagem simples, resumir uma folha já processada e converter
-perguntas em português em consultas controladas pela aplicação.
+O **assistente de inconsistências** está implementado e descrito acima. O que continua
+apenas planejado é o **resumo executivo da folha** (11B) e a **consulta em linguagem
+natural** (11C) — converter uma pergunta em português num filtro controlado pela
+aplicação.
 
-**Nada disso existe hoje.** Não há SDK, endpoint, chave de provedor nem chamada a
-modelo no repositório — e o provedor sequer foi escolhido.
-
-Quando existir, a IA será uma camada **complementar e de leitura**: o motor de cálculo
-continuará 100% determinístico em C#, e nenhum valor financeiro ou obrigação legal terá
-origem num modelo de linguagem. O escopo, as restrições e os critérios de aceite estão
-na Fase 11 do [ROADMAP.md](ROADMAP.md); as regras permanentes, no `CLAUDE.md §37`.
-
+A IA é uma camada **complementar e de leitura**: o motor de cálculo é 100% determinístico
+em C#, e nenhum valor financeiro ou obrigação legal tem origem num modelo de linguagem. O
+escopo e os critérios de aceite estão na Fase 11 do [ROADMAP.md](ROADMAP.md); as regras
+permanentes, no `CLAUDE.md §37`.
 ---
 
 ## Stack atual
@@ -1007,6 +1049,8 @@ Todos usam a senha de `PRISMARH_SEED_SENHA`.
 | `GET /api/auditoria` | todos os 5 | Trilha de auditoria — **só leitura, para todos os perfis** |
 | `GET /api/auditoria/{entidade}/{id}` | todos os 5 | Tudo o que aconteceu com uma entidade |
 | `POST /api/integracoes/cnpj/consultas` | Adm. Empresa | Busca razão social na Receita, pela BrasilAPI — **20/min por organização** |
+| `GET /api/assistente/disponivel` | todos os 5 | Há IA configurada neste ambiente? A tela pergunta antes de mostrar o botão |
+| `POST /api/assistente/inconsistencias/{id}/explicacao` | Adm. Empresa, Analista | Explica o achado em linguagem simples — **20/hora por organização**, cache de 24 h |
 | `POST /api/importacoes/funcionarios/assincrona` | Adm. Empresa, Analista | Manda a planilha para a fila. **202** com o trabalho; **507** se o espaço acabou |
 | `GET /api/trabalhos` | todos os 5 | Trabalhos assíncronos da organização, paginado |
 | `GET /api/trabalhos/{id}` | todos os 5 | Status de um trabalho — é o que a tela pergunta |

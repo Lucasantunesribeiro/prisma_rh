@@ -80,6 +80,22 @@ public enum AcaoAuditada
     /// sistema ja contou a terceiros?" ter resposta.
     /// </summary>
     CnpjConsultado = 80,
+
+    // ------------------------------------------------------- IA (Fase 11)
+
+    /// <summary>
+    /// Uma explicacao foi gerada por IA para uma inconsistencia.
+    ///
+    /// `CLAUDE.md secao 37.5` manda registrar **quando uma sugestao de IA
+    /// participa de uma decisao**. A razao e direta: meses depois, ao revisar
+    /// por que uma divergencia foi justificada de determinado jeito, precisa
+    /// ficar claro se havia um texto de maquina na tela naquele momento.
+    ///
+    /// O evento registra QUE houve explicacao - nunca o texto dela. Guardar a
+    /// saida do modelo criaria uma segunda copia de conteudo derivado de dado
+    /// do tenant, e ela ja vive no cache com validade propria.
+    /// </summary>
+    ExplicacaoIaGerada = 90,
 }
 
 /// <summary>Sobre o que a acao foi.</summary>
@@ -105,6 +121,14 @@ public enum EntidadeAuditada
     /// partir da trilha de negocio e achar a linha do log, e vice-versa.
     /// </summary>
     ConsultaCnpj = 10,
+
+    /// <summary>
+    /// A chamada de IA em si (Fase 11). Como a consulta de CNPJ, nao e uma
+    /// entidade do sistema: o `IdEntidade` do evento e o resultado de analise
+    /// que foi explicado, para a trilha responder "esta inconsistencia teve
+    /// explicacao de maquina?".
+    /// </summary>
+    ExplicacaoIa = 11,
 }
 
 /// <summary>

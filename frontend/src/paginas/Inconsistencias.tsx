@@ -1,6 +1,11 @@
-import { MessageSquare, Paperclip, UserRound } from 'lucide-react'
+import { MessageSquare, Paperclip, Sparkles, UserRound } from 'lucide-react'
 import { useCallback, useEffect, useId, useMemo, useState } from 'react'
 import { ROTULO_SEVERIDADE, TOM_SEVERIDADE, type Severidade } from '@/api/analises'
+import {
+  assistenteDisponivel,
+  explicarInconsistencia,
+  type Explicacao,
+} from '@/api/assistente'
 import {
   EXPLICACAO_STATUS,
   ROTULO_ANDAMENTO,
@@ -309,6 +314,8 @@ function PainelTratamento({
             <>
               <Resumo item={item} />
 
+              {editavel && <Assistente key={item.id} id={item.id} />}
+
               {editavel && <Acoes item={item} meuId={meuId} aoAplicar={aplicar} />}
 
               <LinhaDoTempo andamentos={item.andamentos ?? []} />
@@ -317,6 +324,117 @@ function PainelTratamento({
         </div>
       </DrawerContent>
     </Drawer>
+  )
+}
+
+const MOTIVO: Record<Explicacao['situacao'], string> = {
+  Respondeu: '',
+  NaoConfigurada: 'O assistente não está configurado neste ambiente.',
+  LimiteAtingido: 'Limite de explicações atingido. Tente de novo mais tarde.',
+  Indisponivel: 'O assistente está indisponível no momento.',
+  Recusada: 'O assistente não conseguiu explicar esta inconsistência.',
+}
+
+/**
+ * O assistente de inconsistências (Fase 11).
+ *
+ * ## Ele explica, e não calcula
+ *
+ * `CLAUDE.md §37.3`: **se o valor entra numa conta, num holerite ou numa
+ * obrigação, ele veio do C#.** O que aparece aqui é frase sobre números que o
+ * motor determinístico já produziu — e nada nesta caixa alimenta cálculo algum.
+ *
+ * ## Por que o rótulo é obrigatório, e não decoração
+ *
+ * Sem ele, um texto de máquina fica visualmente indistinguível de apuração do
+ * sistema, e quem lê meses depois não tem como saber a diferença. O aviso vem
+ * do próprio backend, junto da resposta.
+ *
+ * ## Por que só carrega quando alguém pede
+ *
+ * Cada chamada custa token. Gerar ao abrir a gaveta pagaria por explicação que
+ * ninguém leu.
+ *
+ * ## Texto do modelo é texto
+ *
+ * Renderizado como conteúdo, nunca como markup — mesma regra do comentário de
+ * outro usuário (`§24.9`). Não há `dangerouslySetInnerHTML` no projeto.
+ */
+function Assistente({ id }: { id: string }) {
+  const [disponivel, definirDisponivel] = useState<boolean | null>(null)
+  const [explicacao, definirExplicacao] = useState<Explicacao | null>(null)
+  const [pedindo, definirPedindo] = useState(false)
+  const [falha, definirFalha] = useState<string | null>(null)
+
+  // ⚠️ O `key={item.id}` na chamada remonta este componente quando a gaveta
+  // troca de inconsistência. É de propósito: zerar o estado dentro do efeito
+  // dispararia uma segunda renderização, e — pior — deixaria a explicação da
+  // inconsistência anterior visível durante ela.
+  useEffect(() => {
+    let vivo = true
+
+    assistenteDisponivel()
+      .then((r) => vivo && definirDisponivel(r))
+      .catch(() => vivo && definirDisponivel(false))
+
+    return () => {
+      vivo = false
+    }
+  }, [id])
+
+  // Sem IA configurada a caixa não existe. O produto funciona igual.
+  if (disponivel !== true) return null
+
+  const pedir = async () => {
+    definirPedindo(true)
+    definirFalha(null)
+
+    try {
+      definirExplicacao(await explicarInconsistencia(id))
+    } catch {
+      definirFalha('Não foi possível falar com o assistente.')
+    } finally {
+      definirPedindo(false)
+    }
+  }
+
+  return (
+    <section aria-labelledby={`ia-${id}`} className="border-t border-border pt-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3
+          id={`ia-${id}`}
+          className="flex items-center gap-1.5 text-[13px] font-semibold text-foreground"
+        >
+          <Sparkles aria-hidden className="size-3.5 text-muted-foreground" />
+          Assistente
+        </h3>
+
+        {!explicacao && (
+          <Button size="sm" variant="outline" onClick={pedir} disabled={pedindo}>
+            {pedindo ? 'Explicando…' : 'Explicar em linguagem simples'}
+          </Button>
+        )}
+      </div>
+
+      {falha && (
+        <Alert variant="destructive" role="alert" className="mt-2">
+          <AlertDescription>{falha}</AlertDescription>
+        </Alert>
+      )}
+
+      {explicacao && explicacao.situacao !== 'Respondeu' && (
+        <p className="mt-2 text-[13px] text-muted-foreground">{MOTIVO[explicacao.situacao]}</p>
+      )}
+
+      {explicacao?.geradoPorIa && (
+        <div className="mt-2 rounded-md border border-border bg-muted/30 px-3 py-2">
+          <p className="whitespace-pre-wrap text-[13px] text-foreground">{explicacao.texto}</p>
+
+          {/* ⚠️ O rótulo é requisito, não enfeite (`CLAUDE.md §37.3`). */}
+          <p className="mt-2 text-[11px] text-muted-foreground">{explicacao.aviso}</p>
+        </div>
+      )}
+    </section>
   )
 }
 

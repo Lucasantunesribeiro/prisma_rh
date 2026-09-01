@@ -2232,13 +2232,41 @@ pedir autorização.
 
 ## 37.8 Provedor
 
-**Não escolhido**, de propósito. A avaliação acontece na Fase 11 e considerará
-qualidade em português, privacidade, custo por token, Free Tier/créditos e o teto de
-US$ 6,50/mês quando o serviço for AWS. AWS Bedrock, Google Gemini, Anthropic e OpenAI
-são candidatos, sem preferência estabelecida.
+> **Decisão registrada em 01/09/2026, ao executar a Fase 11.** Antes esta seção dizia
+> "não escolhido, de propósito". A escolha agora está feita.
 
-A arquitetura deve permitir trocar de provedor **sem tocar no domínio**, pelo mesmo
-padrão de adaptador da Fase 8.
+**Google Gemini**, modelo `gemini-3.5-flash-lite`, escolhido pelo responsável do projeto,
+que forneceu a chave. Chamado direto pela API do provedor, e **não** via AWS Bedrock — o
+que mantém o teto de US$ 6,50/mês da AWS (§16) inteiramente livre para as Fases 9 e 10.
+
+O modelo é o mais barato da família, e a tarefa justifica: explicar em português um
+resultado que o C# já produziu não exige raciocínio complexo. Um modelo maior custaria
+mais para produzir texto mais longo, que o analista não lê.
+
+⚠️ **O nome do modelo envelhece sozinho.** `gemini-2.5-flash-lite` foi a primeira escolha
+e já não aceita contas novas — o provedor devolve `404` indicando o substituto. O modelo
+continuava aparecendo na listagem de modelos: só a chamada real revelou a aposentadoria.
+Daí duas consequências permanentes:
+
+1. **A fase tem verificação contra o provedor real**, e não apenas contra dublês. Suíte
+   verde com provedor falso não prova que o modelo existe.
+2. **O produto não pode depender do modelo estar de pé.** Quando ele cair, a resposta vira
+   `Indisponivel`, a tela mostra o aviso e o achado do motor determinístico permanece
+   legível. É o `§1` na prática: o Prisma RH não depende de outro sistema para funcionar.
+
+⚠️ **Não foi possível confirmar se o projeto Google tem faturamento ativado** — a API não
+informa. Os limites do `OrcamentoIa` são dimensionados para o **pior caso**: mesmo com
+cobrança por token ativa, o gasto de uso de portfólio fica em centavos por mês.
+
+**Retenção e treinamento do provedor:** a política do Gemini distingue o nível gratuito,
+onde o conteúdo **pode** ser usado para melhorar os produtos do Google, do nível pago,
+onde não é. Como não se sabe qual está valendo nesta conta, vale a suposição mais
+conservadora — **o que for enviado pode ser retido** —, e é por isso que a minimização do
+`§37.6` não é formalidade: nome, CPF e matrícula **não saem**. Antes de qualquer uso com
+dado real, essa política precisa ser confirmada no console do provedor.
+
+A arquitetura permite trocar de provedor **sem tocar no domínio**: o `ClienteGemini` vive
+em `Infraestrutura/Ia`, e o domínio não sabe que IA existe.
 
 ## 37.9 Ameaças específicas da camada de IA
 

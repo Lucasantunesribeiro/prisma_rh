@@ -14,6 +14,7 @@ using PrismaRH.Api.Servicos;
 using PrismaRH.Aplicacao.Identidade;
 using PrismaRH.Infraestrutura;
 using PrismaRH.Infraestrutura.Identidade;
+using PrismaRH.Infraestrutura.Ia;
 using PrismaRH.Infraestrutura.Integracoes;
 using PrismaRH.Infraestrutura.Persistencia;
 
@@ -101,6 +102,20 @@ builder.Services.AddHostedService<VarreduraBlobs>();
 // O cache e singleton porque guardar em cache por requisicao nao guarda nada. E
 // ele tem teto proprio de entradas - ver CacheConsultaCnpj.
 builder.Services.AddSingleton<CacheConsultaCnpj>();
+
+// ------------------------------------------------------------- IA (Fase 11)
+//
+// O CACHE e singleton - cache por requisicao nao guarda nada. O ASSISTENTE e
+// transitorio, e a distincao e deliberada: ele depende do `HttpClient` tipado,
+// e um singleton segurando typed HttpClient e dependencia cativa - nunca
+// receberia o handler renovado, e a conexao envelheceria sem ninguem notar.
+//
+// Sem a chave, `ClienteGemini.Configurada` e falso, a rota responde "nao
+// configurada" e a tela nem mostra o botao: o produto inteiro funciona sem IA
+// (`CLAUDE.md secao 1`).
+builder.Services.AddHttpClient<ClienteGemini>(c => c.Timeout = OrcamentoIa.Prazo);
+builder.Services.AddSingleton<CacheExplicacoes>();
+builder.Services.AddTransient<AssistenteInconsistencias>();
 builder.Services.AddSingleton<GuardaDestino>();
 
 builder.Services
@@ -170,6 +185,19 @@ builder.Services.AddRateLimiter(opcoes =>
             {
                 PermitLimit = 60,
                 Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+            }));
+
+    // IA: 20 por hora POR ORGANIZACAO. Cada chamada custa por token, e o
+    // `CLAUDE.md secao 37.9` nomeia a ameaca: "cobranca por token torna o abuso
+    // lucrativo para quem ataca e caro para quem mantem".
+    opcoes.AddPolicy(AssistenteEndpoints.PoliticaLimite, contexto =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            contexto.User.FindFirst(GeradorJwt.ClaimOrganizacao)?.Value ?? "anonimo",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = OrcamentoIa.MaximoChamadasPorHora,
+                Window = TimeSpan.FromHours(1),
                 QueueLimit = 0,
             }));
 
@@ -249,6 +277,7 @@ app.MapearImportacoes();
 app.MapearTrabalhos();
 app.MapearAnalises();
 app.MapearIntegracoes();
+app.MapearAssistente();
 app.MapearInconsistencias();
 app.MapearAuditoria();
 app.MapearPainel();

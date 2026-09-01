@@ -17,7 +17,13 @@ vi.mock('@/api/workflow', async (original) => ({
   registrarEvidencia: vi.fn(),
 }))
 
+vi.mock('@/api/assistente', () => ({
+  assistenteDisponivel: vi.fn(),
+  explicarInconsistencia: vi.fn(),
+}))
+
 const api = await import('@/api/workflow')
+const ia = await import('@/api/assistente')
 
 const DETECTADA: Inconsistencia = {
   id: 'i1',
@@ -101,6 +107,10 @@ beforeEach(() => {
     itens: [DETECTADA],
   })
   vi.mocked(api.obterInconsistencia).mockResolvedValue(DETECTADA)
+
+  // Sem IA por padrao: o produto funciona igual, e os testes de workflow nao
+  // devem depender de uma camada que e acessorio (`CLAUDE.md secao 1`).
+  vi.mocked(ia.assistenteDisponivel).mockResolvedValue(false)
 })
 
 afterEach(() => {
@@ -336,5 +346,96 @@ describe('Inconsistências', () => {
     expect(
       await screen.findByText('Adiantamento combinado com o funcionário.'),
     ).toBeInTheDocument()
+  })
+
+  // ------------------------------------------------------ assistente (Fase 11)
+
+  it('sem IA configurada a caixa do assistente não existe', async () => {
+    vi.mocked(ia.assistenteDisponivel).mockResolvedValue(false)
+
+    renderizar()
+
+    await userEvent.click(await screen.findByText('Desligado presente na folha mensal'))
+
+    // A gaveta abriu de verdade — as ações do workflow estão lá.
+    expect(await screen.findByLabelText('Mudar para')).toBeInTheDocument()
+
+    expect(screen.queryByRole('button', { name: /explicar em linguagem simples/i }))
+      .not.toBeInTheDocument()
+  })
+
+  it('só pede a explicação quando alguém clica', async () => {
+    vi.mocked(ia.assistenteDisponivel).mockResolvedValue(true)
+
+    renderizar()
+
+    await userEvent.click(await screen.findByText('Desligado presente na folha mensal'))
+
+    const botao = await screen.findByRole('button', { name: /explicar em linguagem simples/i })
+
+    // ⚠️ Abrir a gaveta NÃO chama a IA: cada chamada custa token, e gerar
+    // explicação que ninguém leu é dinheiro jogado fora.
+    expect(ia.explicarInconsistencia).not.toHaveBeenCalled()
+
+    vi.mocked(ia.explicarInconsistencia).mockResolvedValue({
+      situacao: 'Respondeu',
+      texto: 'A pessoa saiu antes do fechamento desta folha.',
+      geradoPorIa: true,
+      doCache: false,
+      aviso: 'Texto gerado por inteligência artificial. Pode conter erro.',
+    })
+
+    await userEvent.click(botao)
+
+    expect(await screen.findByText('A pessoa saiu antes do fechamento desta folha.'))
+      .toBeInTheDocument()
+
+    expect(ia.explicarInconsistencia).toHaveBeenCalledWith('i1')
+  })
+
+  it('a explicação vem rotulada como gerada por IA', async () => {
+    vi.mocked(ia.assistenteDisponivel).mockResolvedValue(true)
+    vi.mocked(ia.explicarInconsistencia).mockResolvedValue({
+      situacao: 'Respondeu',
+      texto: 'Explicação qualquer.',
+      geradoPorIa: true,
+      doCache: false,
+      aviso: 'Texto gerado por inteligência artificial. Pode conter erro.',
+    })
+
+    renderizar()
+
+    await userEvent.click(await screen.findByText('Desligado presente na folha mensal'))
+    await userEvent.click(
+      await screen.findByRole('button', { name: /explicar em linguagem simples/i }),
+    )
+
+    // ⚠️ `CLAUDE.md §37.3`: sem o rótulo, texto de máquina fica visualmente
+    // indistinguível de apuração do sistema.
+    expect(await screen.findByText(/inteligência artificial/i)).toBeInTheDocument()
+  })
+
+  it('provedor indisponível mostra o motivo e mantém a inconsistência legível', async () => {
+    vi.mocked(ia.assistenteDisponivel).mockResolvedValue(true)
+    vi.mocked(ia.explicarInconsistencia).mockResolvedValue({
+      situacao: 'Indisponivel',
+      texto: '',
+      geradoPorIa: false,
+      doCache: false,
+      aviso: 'O assistente está indisponível no momento.',
+    })
+
+    renderizar()
+
+    await userEvent.click(await screen.findByText('Desligado presente na folha mensal'))
+    await userEvent.click(
+      await screen.findByRole('button', { name: /explicar em linguagem simples/i }),
+    )
+
+    expect(await screen.findByText(/indisponível no momento/i)).toBeInTheDocument()
+
+    // ⚠️ A descrição do motor determinístico continua ali — é a informação que
+    // importa, e a IA é acessório (`CLAUDE.md §1`).
+    expect(screen.getAllByText('Desligado presente na folha mensal').length).toBeGreaterThan(0)
   })
 })
