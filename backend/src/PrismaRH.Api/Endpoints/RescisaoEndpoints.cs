@@ -103,7 +103,23 @@ public static class RescisaoEndpoints
             .WithSummary("Informa o valor base do FGTS para fins rescisorios")
             .RequireAuthorization(PoliticasAutorizacao.AdministrarPessoas);
 
-        grupo.MapGet("/matriz", MatrizAsync)
+        // ⚠️ Movida em 01/09/2026, na Fase 12, de
+        // `/api/contratos/{idContrato}/rescisao/matriz` para ca.
+        //
+        // A varredura de IDOR encontrou a rota antiga devolvendo 200 para um
+        // contrato de ninguem. Nao vazava dado - `MatrizAsync` nao recebe
+        // parametro e devolve tabela de referencia do sistema, igual para todo
+        // mundo. O defeito era de CONTRATO DE API: a rota se apresentava como
+        // sub-recurso de um contrato e ignorava o contrato.
+        //
+        // Isso importa porque a promessa falsa envelhece mal: no dia em que
+        // alguem acrescentar ali algo especifico do contrato, a validacao que
+        // deveria existir ja nao existe, e ninguem vai lembrar de escreve-la.
+        //
+        // Tabela de referencia nao e sub-recurso de tenant. Fica na raiz.
+        var referencia = rotas.MapGroup("/api/rescisao").WithTags("Rescisao");
+
+        referencia.MapGet("/matriz", MatrizAsync)
             .WithSummary("O que cada motivo de desligamento gera, com a fonte")
             .RequireAuthorization(PoliticasAutorizacao.LerDadosEmpresariais);
 

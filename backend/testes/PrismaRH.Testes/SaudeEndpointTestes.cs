@@ -40,13 +40,24 @@ public class SaudeEndpointTestes(FabricaApiTestes fabrica) : IClassFixture<Fabri
         Assert.Equal(StatusSaude.Indisponivel, banco.Status);
     }
 
+    /// <summary>
+    /// ⚠️ Mudou na Fase 12: o documento OpenAPI **deixou de ser anonimo**.
+    ///
+    /// Ele nao ganhou `RequireAuthorization` - passou a ser coberto pela
+    /// `FallbackPolicy`, criada porque `CLAUDE.md secao 24.4` manda negar por
+    /// padrao. E o efeito e desejado: o documento descreve as 85 rotas com os
+    /// esquemas de entrada, ou seja, o mapa do sistema.
+    ///
+    /// Ele so e mapeado em Development (`Program.cs`), entao em producao nao
+    /// existe nem autenticado.
+    /// </summary>
     [Fact]
-    public async Task OpenApi_EstaDisponivelEmDesenvolvimento()
+    public async Task OpenApi_ExisteEmDesenvolvimentoMasNaoEAnonimo()
     {
         using var cliente = fabrica.CreateClient();
 
         using var resposta = await cliente.GetAsync("/openapi/v1.json");
 
-        Assert.Equal(HttpStatusCode.OK, resposta.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, resposta.StatusCode);
     }
 }

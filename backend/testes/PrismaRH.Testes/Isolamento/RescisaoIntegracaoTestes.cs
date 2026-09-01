@@ -130,8 +130,11 @@ public class RescisaoIntegracaoTestes(BancoPostgresFixture banco) : IDisposable
     {
         var cliente = await _fabrica.ClienteComoAsync(BancoPostgresFixture.EmailAdminA);
 
-        var matriz = await cliente.GetFromJsonAsync<List<MatrizItem>>(
-            $"/api/contratos/{Guid.CreateVersion7()}/rescisao/matriz");
+        // ⚠️ Rota movida na Fase 12: era
+        // `/api/contratos/{id}/rescisao/matriz` e devolvia 200 para contrato de
+        // ninguem, porque o handler nunca olhou o contrato. E tabela de
+        // referencia do sistema, e nao sub-recurso de tenant.
+        var matriz = await cliente.GetFromJsonAsync<List<MatrizItem>>("/api/rescisao/matriz");
 
         Assert.Equal(8, matriz!.Count);
         Assert.Equal(5, matriz.Count(m => m.Suportado));

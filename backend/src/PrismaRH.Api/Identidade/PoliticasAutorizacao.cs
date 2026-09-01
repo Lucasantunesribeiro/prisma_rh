@@ -18,6 +18,24 @@ public static class PoliticasAutorizacao
 
     public static AuthorizationBuilder Adicionar(this AuthorizationBuilder builder) =>
         builder
+            // ⚠️ FALHA FECHADA (Fase 12).
+            //
+            // `CLAUDE.md secao 24.4`: "Negar por padrao. Rota sem politica
+            // declarada e erro de implementacao, nao rota liberada."
+            //
+            // Sem esta linha, uma rota nova onde alguem esquecesse
+            // `RequireAuthorization` nasceria ANONIMA - e ninguem percebe uma
+            // rota que funciona. Com ela, a rota esquecida devolve 401 e o
+            // defeito aparece na primeira chamada.
+            //
+            // Nao substitui a politica por rota: o fallback so exige usuario
+            // autenticado, e nao o PERFIL certo. Ele e a rede, nao o piso. O
+            // `InventarioDeRotasTestes` continua exigindo politica explicita em
+            // toda rota.
+            .SetFallbackPolicy(new AuthorizationPolicyBuilder()
+                .RequireAuthenticatedUser()
+                .Build())
+
             .AddPolicy(AdministradorPlataforma, p => ExigirPerfis(p, Perfil.AdministradorPlataforma))
 
             // Quem cria, altera e remove empresa ou estabelecimento.
