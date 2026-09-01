@@ -6199,6 +6199,167 @@ captura leve cinco minutos, com as regras do item 2 do gate desta fase.
 | **Tradução para inglês** | Fora de escopo por decisão do projeto (`CLAUDE.md §19`): produto e documentação em português. |
 ---
 
+# PÓS-ROADMAP — CORREÇÕES E ENTREGA FINAL
+
+> **Isto não é uma Fase 14.** O roadmap terminou na Fase 13. Esta seção registra uma
+> revisão de correção e entrega, executada em **01/09/2026**, que **não ampliou o produto**:
+> nenhuma funcionalidade nova entrou.
+
+## Defeitos corrigidos
+
+| # | O que era | O que foi feito |
+|---|---|---|
+| 1 | **Aviso permanente do EF Core** — `TipoFolha.Tipo` tinha `HasDefaultValue` sem *sentinel*, e o aviso saía em **toda** execução de `dotnet ef` | O default existia para o *backfill* da Fase 4E, trabalho que terminou naquela migration. Removido, com a migration `RemoveDefaultObsoletoDoTipoDeFolha`. Aviso permanente ensina a ignorar aviso, e aí o próximo — que importa — passa junto. |
+| 2 | **Bloqueio progressivo por conta não existia** (`CLAUDE.md §24.19 item 1`, ⚠️ residual desde a Fase 10) | Implementado, **somado** ao limite por IP que já existia. Detalhe abaixo. |
+| 3 | **Backup nunca testado** | Exercício real de restauração executado. Detalhe abaixo. |
+
+### O bloqueio progressivo por conta
+
+O limite por IP da Fase 10 corta *um IP tentando muitas contas*. Ele não vê o inverso —
+*muitos IPs tentando uma conta* —, que é a forma do **credential stuffing distribuído**:
+mil máquinas, dez tentativas cada, nenhuma perto do limite de 10/min por IP.
+
+> ⚠️ **O risco maior desta funcionalidade não é o atacante entrar — é a defesa virar arma.**
+> Bloqueio que precisa de alguém para destravar deixa qualquer um trancar qualquer conta
+> errando a senha algumas vezes. Vira negação de serviço contra o usuário legítimo.
+
+Por isso o desenho:
+
+| Decisão | Por quê |
+|---|---|
+| O bloqueio **expira sozinho**, sem intervenção | É o que impede a defesa de virar arma |
+| **Progressivo**, dobrando a partir de 30 s até um **teto de 15 min** | Cresce rápido o bastante para inviabilizar automação; o teto impede o bloqueio eterno |
+| **Um acerto zera tudo** | Quem sabe a senha recupera o acesso sem depender de administrador |
+| Falhas **antigas são esquecidas** depois de 1 h | Sem isso, três erros espalhados por seis meses somariam com o quarto e bloqueariam alguém que nunca foi atacado |
+| A senha é conferida **mesmo com a conta bloqueada**, e o resultado é descartado | Sair antes devolveria rápido demais e contaria ao atacante que aquela conta existe |
+| Resposta **byte a byte idêntica** nos três casos — e-mail inexistente, senha errada, conta em espera | Se qualquer uma se distinguisse, o bloqueio viraria oráculo de existência (`§24.3`) |
+| O contador mora **no banco**, não em memória | A API roda em Lambda; memória de processo some no *cold start*, e o contador reiniciaria a cada invocação |
+
+Provado por *mutation testing*: desligar a verificação de bloqueio derruba dois testes.
+
+### O exercício de restauração
+
+Ciclo completo, em ambiente **isolado** — container próprio, porta 5434, volume próprio.
+`pg_dump` é leitura; nada destrutivo tocou a base de origem.
+
+**backup → restore → aplicação no ar → migração → dados preservados**
+
+| Estrutura | Origem | Restaurado | |
+|---|---|---|---|
+| Tabelas | 34 | 34 | ✅ |
+| Linhas por tabela | — | — | ✅ **nenhuma diferença** |
+| Constraints | 81 | 81 | ✅ |
+| Índices | 98 | 98 | ✅ |
+| Colunas | 285 | 285 | ✅ |
+
+A aplicação subiu contra a base restaurada, `/health` respondeu `saudavel`, e
+`GET /api/empresas` sem token devolveu **401** — a autorização continua valendo no
+restaurado. Depois, `dotnet ef database update` trouxe o backup ao dia sem perder dado.
+
+> ⚠️ A `ex_vigencias_sem_sobreposicao` sobreviveu. É o caso em que contar linhas não
+> bastaria: um restore que a perdesse deixaria a base **estruturalmente mais fraca** sem
+> nenhuma contagem acusar, e o defeito só apareceria meses depois.
+
+Procedimento reproduzível, RPO/RTO medidos e limitações em
+[docs/backup-e-restore.md](docs/backup-e-restore.md).
+
+## Uma pendência que não era defeito
+
+**`CLAUDE.md §24.19 item 5` — IRRF de férias e mensal na mesma competência.** Aberta desde
+a Fase 4E como defeito de correção fiscal. **A premissa estava errada.**
+
+**IN RFB 1.500/2014, art. 29, § 1º:** *"O cálculo do imposto deve ser efetuado **em separado
+de qualquer outro rendimento pago no mês**, inclusive no caso de férias indenizadas, ainda
+que proporcionais, pagas em rescisão de contrato de trabalho."* O **MAFON da Receita
+Federal**, seção FÉRIAS, repete. O **§ 4º** manda somar tudo na declaração anual.
+
+O sistema já fazia o exigido. A pendência aplicou às férias a regra geral do MAFON código
+0561 — *"se, no mês, houver mais de um pagamento (...) aplicar-se-á a alíquota
+correspondente à soma"* — sem saber que o art. 29 é **norma especial**, e especial afasta
+a geral. **Não há conflito entre fontes; há especialidade**, e por isso a revisão não parou.
+
+Nenhum cálculo mudou. Entrou `IrrfFeriasEmSeparadoTestes`, que **trava** o comportamento
+correto: quem "consertar" isso somando as duas folhas passa a quebrar a suíte — porque
+somar erraria contra o contribuinte.
+
+**Dois achados colaterais**, ambos de testes meus que falharam antes de passar:
+
+1. Abaixo de ~R$ 5.000 a questão é irrelevante — o redutor da Lei 15.270/2025 zera o
+   imposto, e separar ou somar dá zero.
+2. A dedução por dependente só muda o resultado quando as deduções legais superam o
+   desconto simplificado. Sem INSS, o simplificado (R$ 607,20) vence dois dependentes
+   (R$ 379,18) — que é o art. 29 § 5º, *"caso seja mais benéfico ao contribuinte"*.
+
+## Achado novo da auditoria
+
+**`CLAUDE.md §24.19 item 9` — segredos de produção em variável de ambiente de Lambda.**
+
+`aws lambda list-functions` devolve as variáveis de ambiente em **texto puro**. As duas
+funções guardam ali a senha do banco de produção, e a da API guarda também a
+**`Jwt__ChaveAssinatura`**.
+
+⚠️ Combinado com o `item 8` — a chave IAM com `AdministratorAccess` que foi exposta e que o
+responsável decidiu não rotacionar —, a cadeia é: chave → variáveis → senha do banco **e
+chave de assinatura do JWT**. Com a chave do JWT um atacante **forja token para qualquer
+usuário de qualquer organização**, o que derruba de uma vez o filtro global, a matriz de
+perfis e o isolamento inteiro.
+
+Não corrigido aqui: mover segredo de lugar exige **deploy**, e o `§31` condiciona deploy a
+autorização explícita. Recomendação e caminho proposto no item 9.
+
+## Pendências deliberadamente não implementadas
+
+| | Por quê |
+|---|---|
+| **Afastamentos** | Ampliação funcional do domínio, não correção final. Decisão registrada do responsável. |
+| **Três motivos de rescisão** | Sem fonte oficial suficiente, continuam **explicitamente não suportados**. O sistema diz isso em vez de chutar. |
+| **13º com incidência na primeira parcela** | Contradição entre fontes oficiais, registrada. |
+| **`xunit 2.9.3` marcado como Legacy** | Migrar 1258 testes para `xunit.v3` é mudança de framework: `§35` exige aprovação. Não é vulnerabilidade — é fim de linha anunciado. |
+| **Segredos para o Parameter Store** | Exige deploy (`§31`). |
+| **DAST e SAST** | O `ROADMAP.md` os condiciona a *"opção gratuita adequada"* e a *"quando o produto estabilizar"*. Ferramenta que ninguém lê é ruído com aparência de segurança. |
+| **Automatizar o exercício de restore** | Testado uma vez é melhor que nunca; e pior que periodicamente. |
+
+## Limitações conhecidas
+
+- **O motor de cálculo carrega todos os contratos da empresa** para processar uma folha.
+  Não é listagem exposta — é carga interna de uma ação autenticada, e não dá para calcular
+  folha "por página". Mas uma empresa com dezenas de milhares de vínculos exigiria
+  processar em lotes, o que seria mudança de escopo.
+- **O RTO medido (~2 min) vale para o volume atual** — 125 KB, 34 tabelas. Ele cresce com
+  os dados.
+- **O exercício de restore usou a base de desenvolvimento como origem**, não o Neon. O
+  procedimento é o mesmo a partir do passo 2.
+- **Capturas de tela do portfólio continuam pendentes** — exigem login, e a lista está em
+  `docs/imagens/README.md`.
+
+## Validação final executada
+
+| Verificação | Resultado |
+|---|---|
+| Suíte backend, com Testcontainers/PostgreSQL real | **1258/1258** |
+| Suíte frontend | **163/163** |
+| Build Release com `-warnaserror` | **0 avisos, 0 erros** |
+| Typecheck (`tsc --noEmit`) | 0 erros |
+| Lint (`oxlint`) | sem avisos |
+| Build de produção do frontend | ✅ |
+| Migrations × modelo (`has-pending-model-changes`) | *"No changes have been made to the model"* |
+| Dependências NuGet (6 projetos, com transitivas) | 0 vulnerabilidades |
+| Dependências npm | 0 vulnerabilidades |
+| Varredura de segredos no repositório | limpa |
+| `TODO`/`FIXME`/`HACK` | **nenhum** — os dois acertos do grep são a palavra "TODOS" |
+| Testes ignorados (`Skip`, `.skip`, `xit`) | **nenhum** |
+| Rotas anônimas | 4, cada uma no inventário com motivo, travadas por teste |
+| `IgnoreQueryFilters` em produção | todas justificadas — identidade (antes de haver organização), orçamento global, semeadura, jobs sem requisição |
+| AWS: recursos pagos por existência | **nenhum** — 0 EC2, 0 RDS, 0 ALB, 0 NAT, 0 S3 |
+| AWS: inventário | 2 Lambdas (512 MB), 2 filas SQS |
+
+⚠️ **Uma correção do próprio processo de auditoria fica registrada.** Uma consulta minha
+com `--query starts_with(...)` voltou vazia e eu quase concluí que a infraestrutura AWS
+tinha sumido. Ela existe: o shell mastigou as aspas da consulta. A Function URL respondendo
+`200` foi o que contradisse a conclusão errada. **Comando que volta vazio não é prova de
+ausência** — é prova de que o comando voltou vazio.
+---
+
 # 5. MAPA DE EVOLUÇÃO RESUMIDO
 
 ```text

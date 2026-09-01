@@ -1768,6 +1768,55 @@ razão que apagar do código não o tira do histórico do Git.
 
 **Bloqueante antes de qualquer uso que não seja portfólio pessoal.**
 
+### 9. Segredos de produção em variável de ambiente de Lambda, legíveis por `ListFunctions`
+
+Registrada em **01/09/2026**, na auditoria pós-roadmap.
+
+As duas funções Lambda guardam segredos em **variáveis de ambiente**, e a AWS as devolve em
+**texto puro** para qualquer chamada de `lambda:ListFunctions` ou
+`lambda:GetFunctionConfiguration`:
+
+| Função | Segredo exposto |
+|---|---|
+| `portfolio-prisma-rh-prod-api` | `PRISMARH_NEON_CONNECTION` (senha do banco) e **`Jwt__ChaveAssinatura`** |
+| `portfolio-prisma-rh-worker-importacao` | `PRISMARH_NEON_CONNECTION` |
+
+Os valores **não são reproduzidos aqui**, nem truncados (`§24.15`).
+
+**Isto não é uma configuração errada** — é o comportamento documentado da AWS. O problema é
+o que ele significa combinado com o resto:
+
+> **A cadeia completa.** O `item 8` registra que existe uma chave de acesso IAM com
+> `AdministratorAccess` que foi exposta e que o responsável decidiu **não rotacionar**.
+> Quem tiver aquela chave lê estas variáveis com um comando. E lendo-as obtém a senha do
+> banco de produção **e a chave de assinatura do JWT**.
+
+⚠️ **A chave do JWT é a pior das duas.** Com ela um atacante **forja token para qualquer
+usuário de qualquer organização** — o que derruba de uma vez o filtro global, a matriz de
+perfis e o isolamento multiempresa inteiro. Nenhuma das defesas construídas nas Fases 1 a
+12 resiste a um token legitimamente assinado.
+
+⚠️ **A senha do banco apareceu na saída de um comando durante esta auditoria**, e ficou
+gravada no histórico da sessão. Isso soma ao caso do `item 8`: a recomendação é
+**rotacionar**, não apagar o registro — apagar não remove de onde já foi escrito.
+
+**O que se recomenda, em ordem:**
+
+1. **Rotacionar a `Jwt__ChaveAssinatura`.** É a de maior alcance, e a rotação é barata: o
+   efeito colateral é derrubar as sessões ativas, o que num portfólio não custa nada.
+2. **Rotacionar a senha do Neon** e atualizar as duas funções.
+3. **Mover os segredos para o SSM Parameter Store (`SecureString`)**, lidos no *cold start*.
+   Parâmetro padrão não tem custo mensal, e o `SecureString` usa a chave gerenciada pela
+   AWS, que também não tem — as chamadas de `Decrypt` caem na franquia do KMS. ⚠️ O preço
+   vigente precisa ser confirmado antes de criar qualquer coisa (`§16`), e criar recurso
+   AWS exige autorização explícita.
+
+**Por que não foi corrigido nesta revisão:** mover segredo de lugar é alteração de
+infraestrutura e exige **deploy**, que o `§31` condiciona a autorização explícita na
+mensagem. A revisão pós-roadmap não a tinha.
+
+**Bloqueante antes de qualquer uso que não seja portfólio pessoal.**
+
 ## 24.20 Headers, CORS e navegador
 
 **Headers** a planejar e validar contra o frontend real na Fase 10:

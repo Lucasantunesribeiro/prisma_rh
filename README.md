@@ -71,9 +71,9 @@ problema que microserviço resolve, e teria todos os que ele traz.
 
 | | |
 |---|---|
-| Testes backend | **1231**, incluindo integração contra PostgreSQL real via Testcontainers |
+| Testes backend | **1258**, incluindo integração contra PostgreSQL real via Testcontainers |
 | Testes frontend | **163** |
-| Testes de segurança | **33**, em suíte própria e permanente |
+| Testes de segurança | **39**, em suíte própria e permanente |
 | Rotas | **85**, das quais **4 anônimas** — cada uma com motivo escrito e travada por teste |
 | Custo AWS previsto | **US$ 0,00** |
 
@@ -85,6 +85,7 @@ problema que microserviço resolve, e teria todos os que ele traz.
 | [docs/entrevista.md](docs/entrevista.md) | As perguntas difíceis, com a resposta e o arquivo |
 | [docs/adr/](docs/adr/) | As decisões que sustentam o resto, cada uma com a alternativa recusada |
 | [docs/imagens/](docs/imagens/) | O que capturar da demo, e o que **não** pode aparecer na imagem |
+| [docs/backup-e-restore.md](docs/backup-e-restore.md) | O exercício de restauração **executado**, com RPO e RTO medidos |
 | [ROADMAP.md](ROADMAP.md) | As 13 fases, com o Security Gate executado de cada uma |
 | [CLAUDE.md](CLAUDE.md) | As regras permanentes do projeto |
 
@@ -103,9 +104,11 @@ Um portfólio que só lista acertos não é evidência de nada. O que **não** f
   a redução de férias por faltas (art. 130) não é aplicada.
 - **Três dos oito motivos de rescisão ficam bloqueados** por falta de fonte oficial
   confiável. O sistema **diz isso** em vez de chutar.
-- **IRRF de férias e mensal na mesma competência** são apurados em separado, o que subestima
-  a retenção — a tabela é progressiva. Registrado, não corrigido.
-- **Restore de backup nunca foi testado**, e backup não testado é hipótese, não garantia.
+- **O motor de cálculo carrega todos os contratos da empresa** para processar uma folha.
+  Não é listagem exposta — é carga interna de uma ação autenticada —, mas uma empresa com
+  dezenas de milhares de vínculos exigiria processar em lotes.
+- **O restore foi testado uma vez, em 01/09/2026** — não é automatizado. Testado uma vez
+  é melhor que nunca, e pior que periodicamente.
 - A lista completa está no fim da [Fase 12 do ROADMAP](ROADMAP.md).
 
 ## Dados

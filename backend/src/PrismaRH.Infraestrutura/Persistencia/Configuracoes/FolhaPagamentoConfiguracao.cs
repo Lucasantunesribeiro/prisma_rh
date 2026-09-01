@@ -42,16 +42,21 @@ public sealed class FolhaPagamentoConfiguracao : IEntityTypeConfiguration<FolhaP
             .HasForeignKey(f => f.IdEmpresa)
             .OnDelete(DeleteBehavior.Restrict);
 
-        // O default existe para o BACKFILL: as folhas criadas antes da Fase 4E
-        // sao todas mensais, e a migration as marca assim.
+        // ⚠️ O `HasDefaultValue(TipoFolha.Mensal)` foi REMOVIDO na revisao
+        // pos-roadmap, em 01/09/2026.
         //
-        // O EF avisa que o default do banco so entra quando a propriedade vale
-        // 0, o CLR default. Aqui isso nunca acontece: TipoFolha nao tem membro
-        // 0 (Mensal = 1) e o construtor recusa valor nao definido. Ou seja, o
-        // default nunca decide nada em INSERT novo - so preencheu o passado.
+        // Ele existiu para uma coisa so: o BACKFILL da Fase 4E, marcando como
+        // mensais as folhas criadas antes de o tipo existir. Esse trabalho
+        // terminou naquela migration e nao se repete.
+        //
+        // O que ele continuava fazendo era emitir um aviso do EF em TODA
+        // execucao de `dotnet ef` - "configured with a database-generated
+        // default, but has no configured sentinel value". O aviso era inofensivo
+        // (TipoFolha nao tem membro 0, e o construtor sempre define o valor),
+        // mas aviso permanente ensina a ignorar aviso, e ai o proximo - que
+        // importa - passa junto.
         builder.Property(f => f.Tipo)
-            .HasColumnName("tipo").HasConversion<int>().IsRequired()
-            .HasDefaultValue(TipoFolha.Mensal);
+            .HasColumnName("tipo").HasConversion<int>().IsRequired();
 
         // Uma folha por empresa, por competencia E POR TIPO. Abrir agosto
         // duas vezes do mesmo tipo produziria dois totais divergentes para o
