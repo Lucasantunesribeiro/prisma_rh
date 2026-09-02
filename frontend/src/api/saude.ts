@@ -13,7 +13,17 @@ export interface VerificacaoSaude {
 
 export interface RespostaSaude {
   status: StatusSaude
-  verificacoes: VerificacaoSaude[]
+
+  /**
+   * ⚠️ OPCIONAL porque a produção NÃO envia este campo.
+   *
+   * O `/health` é rota anônima. Em produção, `EscritorRespostaSaude.EscreverMinimoAsync`
+   * escreve só `{status}` de propósito — listar as verificações por nome
+   * contaria a topologia (que há um banco) para qualquer varredura. O detalhe
+   * só existe em Development. Tipar como obrigatório era mentira do tipo: em
+   * produção `verificacoes` é `undefined`, e um `.find` nele derrubava a tela.
+   */
+  verificacoes?: VerificacaoSaude[]
 }
 
 /** Nome da verificacao de banco devolvida pela API (ConfiguracaoInfraestrutura.NomeVerificacaoBanco). */

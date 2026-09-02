@@ -35,6 +35,24 @@ describe('Status', () => {
     expect(screen.getAllByText('disponível')).toHaveLength(2)
   })
 
+  it('NAO quebra com a resposta MINIMA de producao (sem verificacoes)', async () => {
+    // ⚠️ Regressao de 02/09/2026: producao devolve so `{status}` (rota anonima
+    // nao revela topologia), e a tela fazia `.find` num `verificacoes`
+    // undefined, derrubando o app inteiro. O corpo abaixo e o que a producao
+    // realmente manda; a tela tem de renderizar e mostrar o banco como saudavel
+    // por proxy do status geral.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(responderCom({ status: 'saudavel' } as RespostaSaude)),
+    )
+
+    render(<Status />)
+
+    expect(await screen.findByText('Sistema operacional')).toBeInTheDocument()
+    expect(screen.getByText('Banco de dados')).toBeInTheDocument()
+    expect(screen.getAllByText('disponível')).toHaveLength(2)
+  })
+
   it('mostra o banco indisponivel quando apenas o banco falha', async () => {
     vi.stubGlobal(
       'fetch',

@@ -23,6 +23,8 @@ describe('consultarSaude', () => {
 
     expect(fetchSimulado).toHaveBeenCalledWith(`${URL_BASE_API}/health`, expect.anything())
     expect(saude.status).toBe('saudavel')
-    expect(saude.verificacoes[0].nome).toBe('banco-de-dados')
+    // `verificacoes` e opcional (producao a omite); este teste usa a forma
+    // detalhada de desenvolvimento, entao afirma a presenca explicitamente.
+    expect(saude.verificacoes?.[0].nome).toBe('banco-de-dados')
   })
 })

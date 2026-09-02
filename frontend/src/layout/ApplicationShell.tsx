@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Outlet } from 'react-router'
+import { Outlet, useLocation } from 'react-router'
 import { listarEmpresas, type Empresa } from '@/api/empresas'
+import { LimiteDeErro } from '@/components/LimiteDeErro'
 import { ProvedorTooltip } from '@/components/ui/tooltip'
 import { EmpresaContexto, PaginaContexto, type Trilha } from './contexto'
 import { Sidebar } from './Sidebar'
@@ -23,6 +24,9 @@ const CHAVE_EMPRESA = 'prisma-rh:empresa'
  * limitam a própria largura, individualmente.
  */
 export function ApplicationShell() {
+  // A rota atual reseta o error boundary: um crash numa pagina nao trava as
+  // outras, porque a `key` muda a cada navegacao e o boundary remonta limpo.
+  const { pathname } = useLocation()
   const [recolhida, definirRecolhida] = useState(() => lerBooleano(CHAVE_RECOLHIDA))
   const [empresas, definirEmpresas] = useState<Empresa[]>([])
   const [idEmpresa, definirIdEmpresa] = useState<string | null>(() => lerTexto(CHAVE_EMPRESA))
@@ -101,7 +105,9 @@ export function ApplicationShell() {
               <Topbar trilha={trilha} competencia={competencia} />
 
               <main className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
-                <Outlet />
+                <LimiteDeErro key={pathname}>
+                  <Outlet />
+                </LimiteDeErro>
               </main>
             </div>
           </div>

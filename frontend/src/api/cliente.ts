@@ -242,6 +242,16 @@ export async function renovarSessao(): Promise<boolean> {
 
   if (!resposta.ok) {
     definirAccessToken(null)
+
+    // ⚠️ Limpa o token do double submit ao falhar.
+    //
+    // O token vive no `sessionStorage`, que SOBREVIVE ao cookie de refresh.
+    // Quando a família de refresh morre (expira, é rotacionada ou derrubada por
+    // reúso) mas o token velho continua guardado, `haSessaoRestauravel()` acha
+    // que há sessão, dispara `renovar` e leva 403 a cada navegação. Apagar aqui
+    // faz a sessão morta parar de bater numa porta já trancada, depois de UMA
+    // tentativa — em vez de um 403 repetido no console.
+    guardarTokenCsrf(null)
     return false
   }
 

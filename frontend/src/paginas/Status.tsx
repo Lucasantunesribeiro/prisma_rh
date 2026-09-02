@@ -1,4 +1,4 @@
-import { VERIFICACAO_BANCO, type StatusSaude } from '@/api/saude'
+import { VERIFICACAO_BANCO, type RespostaSaude, type StatusSaude } from '@/api/saude'
 import { LinhaStatus } from '@/components/LinhaStatus'
 import { CabecalhoPagina } from '@/components/sistema/Primitivos'
 import { Button } from '@/components/ui/button'
@@ -39,7 +39,7 @@ export default function Status() {
         {estado.situacao === 'sucesso' && (
           <div className="px-4">
             <LinhaStatus rotulo="API" status="saudavel" />
-            <LinhaStatus rotulo="Banco de dados" status={statusDoBanco(estado.saude.verificacoes)} />
+            <LinhaStatus rotulo="Banco de dados" status={statusDoBanco(estado.saude)} />
           </div>
         )}
 
@@ -63,10 +63,16 @@ export default function Status() {
   )
 }
 
-function statusDoBanco(verificacoes: { nome: string; status: StatusSaude }[]): StatusSaude {
+function statusDoBanco(saude: RespostaSaude): StatusSaude {
+  // ⚠️ Em produção, /health devolve só o status geral, SEM `verificacoes` — de
+  // propósito (rota anônima não revela topologia; ver `saude.ts` e
+  // `EscritorRespostaSaude.EscreverMinimoAsync`). Sem o detalhe, o status geral
+  // é o proxy correto do banco: /health só responde `saudavel` (200) quando
+  // TODAS as verificações passam, inclusive a do banco; senão devolve 503.
+  // Cair para 'indisponivel' aqui daria alarme falso com o sistema saudável.
   return (
-    verificacoes.find((verificacao) => verificacao.nome === VERIFICACAO_BANCO)?.status ??
-    'indisponivel'
+    saude.verificacoes?.find((verificacao) => verificacao.nome === VERIFICACAO_BANCO)?.status ??
+    saude.status
   )
 }
 
