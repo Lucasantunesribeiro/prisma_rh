@@ -27,6 +27,30 @@ export function registrarPerdaDeSessao(callback: (() => void) | null): void {
   aoPerderSessao = callback
 }
 
+/**
+ * Mensagem para as respostas que chegam **sem corpo**.
+ *
+ * O limitador de taxa do ASP.NET devolve só o **429**, sem `ProblemDetails` —
+ * e `Falha na requisicao (429)` não diz a quem está usando o que aconteceu nem
+ * o que fazer. Num portfólio público isso importa mais que o normal: a cota de
+ * IA é **por organização**, e todos os visitantes da demonstração entram pela
+ * mesma conta, então dividem o mesmo teto.
+ *
+ * ⚠️ A mensagem diz **espere**, e não "tente de novo": repetir na hora é o que
+ * mantém a janela cheia.
+ */
+function mensagemPadrao(status: number): string {
+  if (status === 429) {
+    return 'Muitas requisições em pouco tempo. Espere um instante antes de repetir.'
+  }
+
+  if (status === 503) {
+    return 'O serviço está indisponível no momento.'
+  }
+
+  return `Falha na requisicao (${status}).`
+}
+
 export class ErroApi extends Error {
   // Campos declarados fora do construtor: o tsconfig usa erasableSyntaxOnly,
   // que proibe propriedades de parametro por nao serem apagaveis na compilacao.
@@ -97,14 +121,70 @@ async function chamar(caminho: string, opcoes: RequestInit, jaRenovou: boolean):
 export const COOKIE_CSRF = 'prismarh_csrf'
 export const CABECALHO_CSRF = 'X-CSRF-Token'
 
-function tokenCsrf(): string | null {
-  // `document.cookie` é uma string única com tudo separado por `; `. Não há
-  // API melhor, e por isso a leitura é feita à mão.
-  const achado = document.cookie
-    .split('; ')
-    .find((c) => c.startsWith(`${COOKIE_CSRF}=`))
+/**
+ * Onde o token do *double submit* fica **nesta origem**.
+ *
+ * ## Por que não dá para ler do cookie
+ *
+ * ⚠️ Descoberto em 02/09/2026, recarregando a página em produção: a sessão
+ * caía. A leitura era `document.cookie`, e `document.cookie` é **por origem**.
+ *
+ * ```text
+ * tela  ->  portfolio-prisma-rh.vercel.app
+ * API   ->  ...lambda-url.us-east-1.on.aws     <- o cookie mora AQUI
+ * ```
+ *
+ * A página da Vercel nunca enxergou aquele cookie. Funcionava em
+ * desenvolvimento — onde tudo é `localhost` — e **nunca** funcionou publicado:
+ * `renovar` e `sair` respondiam 403, e um F5 deslogava.
+ *
+ * O navegador continua **enviando** o cookie sozinho (`SameSite=None`), então
+ * o servidor tem a metade dele. O que faltava era a nossa metade, e ela agora
+ * chega **no corpo** de `entrar` e `renovar`.
+ *
+ * ## Por que `sessionStorage`, e não memória
+ *
+ * Memória morre no F5, que é exatamente o momento em que o token é preciso
+ * para pedir a renovação. `sessionStorage` sobrevive ao recarregamento e morre
+ * ao fechar a aba — mais curto que `localStorage`, e suficiente.
+ *
+ * ⚠️ Não enfraquece o double submit. A proteção é o site atacante **não
+ * descobrir o valor**, e ele continua sem: não lê esta origem, não lê o cookie
+ * (agora `HttpOnly`) e não lê a resposta (o CORS tem allowlist).
+ */
+const CHAVE_CSRF = 'prismarh.csrf'
 
-  return achado ? decodeURIComponent(achado.slice(COOKIE_CSRF.length + 1)) : null
+/** Acesso tolerante: navegador com armazenamento bloqueado não pode quebrar a tela. */
+function armazenamento(): Storage | null {
+  try {
+    return window.sessionStorage
+  } catch {
+    return null
+  }
+}
+
+export function guardarTokenCsrf(token: string | null): void {
+  const alvo = armazenamento()
+
+  if (!alvo) return
+
+  try {
+    if (token) alvo.setItem(CHAVE_CSRF, token)
+    else alvo.removeItem(CHAVE_CSRF)
+  } catch {
+    // Cota cheia ou modo restrito. A tela continua funcionando; o que se perde
+    // e a restauracao apos recarregar, e nao a sessao atual.
+  }
+}
+
+function tokenCsrf(): string | null {
+  try {
+    const valor = armazenamento()?.getItem(CHAVE_CSRF)?.trim()
+
+    return valor ? valor : null
+  } catch {
+    return null
+  }
 }
 
 /**
@@ -119,8 +199,41 @@ export function cabecalhosCsrf(): Record<string, string> {
   return token ? { [CABECALHO_CSRF]: token } : {}
 }
 
+/**
+ * Há sessão que valha a pena tentar restaurar?
+ *
+ * ## Por que isto existe
+ *
+ * Toda primeira visita disparava `POST /renovar`, que voltava **403** — sem o
+ * par do *double submit* não há o que repetir no cabeçalho. O comportamento
+ * estava certo, mas quem abrisse o console via um erro vermelho na cara logo
+ * ao entrar no site, e erro vermelho de rotina ensina a ignorar erro vermelho.
+ *
+ * ## Qual é o sinal certo
+ *
+ * O token guardado nesta origem, e **não** o cookie: em produção a tela e a
+ * API estão em domínios diferentes, e a tela nunca enxergou aquele cookie. Ver
+ * `CHAVE_CSRF`.
+ *
+ * Sem token guardado não houve login nesta aba, então não há refresh a
+ * restaurar e a chamada seria uma ida à rede garantidamente perdida.
+ *
+ * ⚠️ **Isto não enfraquece a guarda.** O endpoint continua exigindo tudo o que
+ * exigia; o que muda é a tela parar de bater numa porta que ela já sabe estar
+ * trancada. Um atacante não ganha nada — ele nunca dependeu desta função.
+ */
+export function haSessaoRestauravel(): boolean {
+  return tokenCsrf() !== null
+}
+
 /** Tenta trocar o cookie de refresh por um novo access token. */
 export async function renovarSessao(): Promise<boolean> {
+  // Sem o par do double submit, `renovar` responderia 403. Poupa a requisicao
+  // e o erro no console (ver `haSessaoRestauravel`).
+  if (!haSessaoRestauravel()) {
+    return false
+  }
+
   const resposta = await fetch(`${URL_BASE_API}${ROTAS_AUTENTICACAO}/renovar`, {
     method: 'POST',
     credentials: 'include',
@@ -132,7 +245,14 @@ export async function renovarSessao(): Promise<boolean> {
     return false
   }
 
-  const sessao = (await resposta.json()) as { accessToken: string }
+  const sessao = (await resposta.json()) as { accessToken: string; tokenCsrf?: string }
+
+  // ⚠️ O token do double submit ROTACIONA junto com o refresh. Guardar o novo
+  // e obrigatorio: manter o antigo faria a renovacao seguinte falhar com 403.
+  if (sessao.tokenCsrf) {
+    guardarTokenCsrf(sessao.tokenCsrf)
+  }
+
   definirAccessToken(sessao.accessToken)
   return true
 }
@@ -151,7 +271,7 @@ async function interpretar<T>(resposta: Response): Promise<T> {
 
   throw new ErroApi(
     resposta.status,
-    corpo.detail ?? corpo.title ?? corpo.detalhe ?? `Falha na requisicao (${resposta.status}).`,
+    corpo.detail ?? corpo.title ?? corpo.detalhe ?? mensagemPadrao(resposta.status),
     corpo.errors,
   )
 }

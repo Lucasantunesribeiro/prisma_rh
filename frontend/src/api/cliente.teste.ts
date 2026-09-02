@@ -1,5 +1,29 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { definirAccessToken, obter, registrarPerdaDeSessao } from './cliente'
+import {
+  definirAccessToken,
+  guardarTokenCsrf,
+  obter,
+  registrarPerdaDeSessao,
+} from './cliente'
+
+/**
+ * Simula a sessao existente.
+ *
+ * ⚠️ Desde 02/09/2026 `renovarSessao` NAO chama a API quando falta o cookie de
+ * CSRF: sem ele nao ha refresh vivo, e a chamada voltaria 403 - um erro
+ * vermelho no console de toda primeira visita.
+ *
+ * Os testes que exercitam a RENOVACAO precisam, portanto, do token que uma
+ * sessao real teria guardado. Sem isto eles passariam a testar o
+ * curto-circuito, e nao a renovacao.
+ */
+function comSessaoNoNavegador() {
+  guardarTokenCsrf('token-de-teste')
+}
+
+function semSessaoNoNavegador() {
+  guardarTokenCsrf(null)
+}
 
 function responder(corpo: unknown, status = 200): Response {
   return new Response(JSON.stringify(corpo), {
@@ -11,11 +35,13 @@ function responder(corpo: unknown, status = 200): Response {
 beforeEach(() => {
   definirAccessToken(null)
   registrarPerdaDeSessao(null)
+  semSessaoNoNavegador()
 })
 
 afterEach(() => {
   vi.unstubAllGlobals()
   definirAccessToken(null)
+  semSessaoNoNavegador()
 })
 
 describe('cliente HTTP', () => {
@@ -32,6 +58,7 @@ describe('cliente HTTP', () => {
   })
 
   it('renova UMA vez ao receber 401 e repete a chamada original', async () => {
+    comSessaoNoNavegador()
     const fetchSimulado = vi
       .fn()
       // 1) chamada original -> 401
@@ -55,6 +82,7 @@ describe('cliente HTTP', () => {
   })
 
   it('nao entra em laco quando a renovacao tambem falha', async () => {
+    comSessaoNoNavegador()
     const fetchSimulado = vi
       .fn()
       .mockResolvedValueOnce(responder({ title: 'expirado' }, 401))

@@ -1,5 +1,7 @@
 using PrismaRH.Api.Producao;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using PrismaRH.Infraestrutura.Persistencia;
 using PrismaRH.Aplicacao.Identidade;
 
 namespace PrismaRH.Api.Endpoints;
@@ -9,7 +11,47 @@ public sealed record EntrarRequisicao(string Email, string Senha);
 public sealed record SessaoResposta(
     string AccessToken,
     DateTimeOffset ExpiraEm,
-    UsuarioAutenticado Usuario);
+    UsuarioAutenticado Usuario,
+
+    /// <summary>
+    /// O par do *double submit*, entregue **no corpo**.
+    ///
+    /// ## O defeito que isto corrige
+    ///
+    /// ⚠️ Descoberto em **02/09/2026**, recarregando a pagina em producao: a
+    /// sessao caia e voltava para a tela de login. A causa estava um nivel
+    /// abaixo do sintoma.
+    ///
+    /// O frontend lia o token com `document.cookie`. Isso funcionava em
+    /// desenvolvimento, onde tela e API vivem em `localhost`, e **nunca
+    /// funcionou em producao**, onde a tela esta em `portfolio-prisma-rh.
+    /// vercel.app` e a API em `*.lambda-url.us-east-1.on.aws`. `document.
+    /// cookie` e **por origem**: a pagina da Vercel jamais enxergou um cookie
+    /// gravado pelo dominio da Lambda.
+    ///
+    /// Consequencia: o cabecalho `X-CSRF-Token` nunca era enviado, `renovar` e
+    /// `sair` respondiam **403** — o 403 que aparecia no console —, e um F5
+    /// deslogava.
+    ///
+    /// ## Por que entregar no corpo NAO enfraquece nada
+    ///
+    /// O que protege o *double submit* nao e o cookie ser legivel: e o site
+    /// atacante **nao conseguir descobrir o valor**. Ele continua sem
+    /// conseguir:
+    ///
+    /// | Caminho | Por que falha para o atacante |
+    /// |---|---|
+    /// | Ler o cookie | *same-origin policy*, e agora o cookie e `HttpOnly` |
+    /// | Ler este corpo | o CORS tem **allowlist de origem**; a resposta nao chega a ele |
+    /// | Adivinhar | valor aleatorio, comparado em tempo constante |
+    ///
+    /// E o servidor nao afrouxou: continua exigindo cookie **e** cabecalho
+    /// iguais, mais `Origin` na allowlist, com **ausencia = recusa**.
+    ///
+    /// ⚠️ O cookie passou a ser `HttpOnly`, o que e **mais** restrito que
+    /// antes — o JavaScript deixou de precisar le-lo.
+    /// </summary>
+    string TokenCsrf);
 
 public static class AutenticacaoEndpoints
 {
@@ -53,7 +95,7 @@ public static class AutenticacaoEndpoints
             .RequireRateLimiting(PoliticaSessaoPorIp)
             .AllowAnonymous();
 
-        grupo.MapGet("/eu", Eu)
+        grupo.MapGet("/eu", EuAsync)
             .WithSummary("Usuario autenticado no token atual")
             .RequireAuthorization();
 
@@ -116,22 +158,62 @@ public static class AutenticacaoEndpoints
         return Results.NoContent();
     }
 
-    private static IResult Eu(IContextoUsuario usuario) =>
-        Results.Ok(new
+    /// <summary>
+    /// Quem esta autenticado.
+    ///
+    /// ## O defeito que isto corrige
+    ///
+    /// ⚠️ Ate 02/09/2026 esta rota devolvia **so** id, organizacao e perfil,
+    /// lidos das claims do token. `POST entrar` devolvia o usuario completo, e
+    /// esta nao - entao **depois de um F5 o nome e o e-mail sumiam da tela**,
+    /// e a barra lateral passava a mostrar apenas "Visualizador".
+    ///
+    /// A lacuna estava registrada como "depende de decisao do responsavel", e a
+    /// decisao era mais simples do que parecia: a rota de restaurar sessao tem
+    /// de devolver **o mesmo contrato** da rota de entrar. Duas respostas
+    /// diferentes para a mesma pergunta e que era o defeito.
+    ///
+    /// ## Por que ler o banco, e nao inchar o token
+    ///
+    /// A alternativa seria carregar nome e e-mail como claims. Nao: o access
+    /// token viaja em todo cabecalho e e legivel por quem o tiver — colocar
+    /// dado pessoal ali o espalha sem necessidade (`CLAUDE.md §24.13`). Uma
+    /// leitura por restauracao de sessao e barata e mantem o dado onde ele mora.
+    ///
+    /// ⚠️ A consulta passa pelo **filtro global**: o usuario e procurado dentro
+    /// da organizacao do proprio token, e nao por id solto.
+    /// </summary>
+    private static async Task<IResult> EuAsync(
+        IContextoUsuario usuario,
+        PrismaRhDbContext db,
+        CancellationToken ct)
+    {
+        var encontrado = await db.Usuarios
+            .AsNoTracking()
+            .Where(u => u.Id == usuario.IdUsuario)
+            .Select(u => new { u.Nome, u.Email })
+            .FirstOrDefaultAsync(ct);
+
+        return Results.Ok(new
         {
             id = usuario.IdUsuario,
             idOrganizacao = usuario.IdOrganizacao,
-            perfil = usuario.Perfil.ToString()
+            perfil = usuario.Perfil.ToString(),
+            nome = encontrado?.Nome,
+            email = encontrado?.Email,
         });
+    }
 
     private static IResult Responder(HttpContext contexto, SessaoEmitida sessao)
     {
-        GravarCookie(contexto, sessao.RefreshTokenBruto, sessao.RefreshTokenExpiraEm);
+        var tokenCsrf = GravarCookie(
+            contexto, sessao.RefreshTokenBruto, sessao.RefreshTokenExpiraEm);
 
         return Results.Ok(new SessaoResposta(
             sessao.AccessToken,
             sessao.AccessTokenExpiraEm,
-            sessao.Usuario));
+            sessao.Usuario,
+            tokenCsrf));
     }
 
     private static IResult Recusar(FalhaAutenticacao falha) => falha switch
@@ -186,7 +268,11 @@ public static class AutenticacaoEndpoints
         return (producao, producao ? SameSiteMode.None : SameSiteMode.Lax);
     }
 
-    private static void GravarCookie(HttpContext contexto, string valor, DateTimeOffset expiraEm)
+    /// <summary>
+    /// Grava os dois cookies e **devolve** o token do double submit, para que
+    /// ele siga tambem no corpo da resposta. Ver <see cref="SessaoResposta"/>.
+    /// </summary>
+    private static string GravarCookie(HttpContext contexto, string valor, DateTimeOffset expiraEm)
     {
         var (seguro, modo) = ModoDoCookie(contexto);
 
@@ -203,20 +289,26 @@ public static class AutenticacaoEndpoints
         // O par do double submit. Emitido JUNTO com o refresh, e com a mesma
         // validade: um sem o outro nao serve para nada.
         //
-        // ⚠️ `HttpOnly = false` de proposito - o frontend precisa LER este
-        // valor para repetir no cabecalho. Ele nao autentica ninguem; quem
-        // autentica e o refresh, que continua inacessivel ao script.
-        contexto.Response.Cookies.Append(GuardaCsrf.Cookie, GuardaCsrf.GerarToken(), new CookieOptions
+        // ⚠️ `HttpOnly = true` desde 02/09/2026. Antes era `false`, porque o
+        // frontend lia o valor com `document.cookie` - o que NUNCA funcionou em
+        // producao, onde tela e API estao em dominios diferentes. O valor agora
+        // vai no corpo da resposta, entao o script nao precisa mais do cookie,
+        // e fecha-lo e ganho liquido. Ver `SessaoResposta.TokenCsrf`.
+        var tokenCsrf = GuardaCsrf.GerarToken();
+
+        contexto.Response.Cookies.Append(GuardaCsrf.Cookie, tokenCsrf, new CookieOptions
         {
-            HttpOnly = false,
+            HttpOnly = true,
             Secure = seguro,
             SameSite = modo,
-            // Path RAIZ, e nao o do refresh: o JavaScript da tela precisa
-            // enxergar este cookie de qualquer pagina para montar o cabecalho.
+            // Path RAIZ, e nao o do refresh: o navegador precisa envia-lo em
+            // `renovar` e em `sair`, que ficam em caminhos diferentes.
             Path = "/",
             Expires = expiraEm,
             IsEssential = true
         });
+
+        return tokenCsrf;
     }
 
     private static void LimparCookie(HttpContext contexto)

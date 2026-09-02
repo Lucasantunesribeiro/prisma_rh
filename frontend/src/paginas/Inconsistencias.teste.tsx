@@ -90,7 +90,7 @@ function renderizar(perfil: Perfil = 'AnalistaRh') {
     <MemoryRouter>
       <SessaoContexto.Provider
         value={{
-          usuario: { id: 'u1', idOrganizacao: 'o1', nome: 'Quem trata', perfil },
+          usuario: { id: 'u1', idOrganizacao: 'o1', nome: 'Quem trata', email: 'teste@teste.exemplo', perfil },
           carregando: false,
           entrar: async () => {},
           sair: async () => {},

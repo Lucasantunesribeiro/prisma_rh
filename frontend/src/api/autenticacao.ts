@@ -1,4 +1,10 @@
-import { URL_BASE_API, cabecalhosCsrf, definirAccessToken, enviar } from './cliente'
+import {
+  URL_BASE_API,
+  cabecalhosCsrf,
+  definirAccessToken,
+  enviar,
+  guardarTokenCsrf,
+} from './cliente'
 
 export type Perfil =
   | 'AdministradorPlataforma'
@@ -13,27 +19,28 @@ export interface UsuarioAutenticado {
   perfil: Perfil
 
   /**
-   * ⚠️ OPCIONAIS PORQUE A API NEM SEMPRE OS ENVIA.
+   * ⚠️ Foram OPCIONAIS ate 02/09/2026, e nao sao mais.
    *
-   * POST /api/autenticacao/entrar devolve o usuario completo, mas
-   * GET /api/autenticacao/eu - usado ao restaurar a sessao num F5 - devolve
-   * apenas id, idOrganizacao e perfil. Depois de recarregar a pagina, nome e
-   * e-mail somem.
+   * `POST /entrar` devolvia o usuario completo, mas `GET /eu` - usado ao
+   * restaurar a sessao num F5 - devolvia so id, organizacao e perfil. Depois de
+   * recarregar, o nome sumia da barra lateral.
    *
-   * Tipar como obrigatorio era mentira do tipo: o codigo antigo renderizava
-   * `undefined` em silencio e ninguem via. Marcar como opcional obriga cada
-   * uso a decidir o que mostrar quando falta.
-   *
-   * A correcao definitiva e no backend, e depende de decisao do responsavel.
+   * O tipo estava certo em admitir a ausencia; o **contrato da API** e que
+   * estava errado, com duas respostas diferentes para a mesma pergunta. `eu`
+   * passou a devolver os mesmos campos, e ha teste comparando as duas respostas
+   * campo a campo.
    */
-  nome?: string
-  email?: string
+  nome: string
+  email: string
 }
 
 interface SessaoResposta {
   accessToken: string
   expiraEm: string
   usuario: UsuarioAutenticado
+
+  /** O par do *double submit*. Ver `guardarTokenCsrf` em `cliente.ts`. */
+  tokenCsrf: string
 }
 
 export const ROTULO_PERFIL: Record<Perfil, string> = {
@@ -68,6 +75,14 @@ export function podeAdministrarPessoas(perfil: Perfil | undefined): boolean {
 
 export async function entrar(email: string, senha: string): Promise<UsuarioAutenticado> {
   const sessao = await enviar<SessaoResposta>('/api/autenticacao/entrar', { email, senha })
+
+  // ⚠️ O par do double submit chega no CORPO, e nao pelo cookie.
+  //
+  // Em producao a tela esta na Vercel e a API na Lambda - dominios diferentes -
+  // e `document.cookie` e por origem, entao a tela nunca enxergou aquele
+  // cookie. Ver `CHAVE_CSRF` em `cliente.ts`.
+  guardarTokenCsrf(sessao.tokenCsrf)
+
   definirAccessToken(sessao.accessToken)
   return sessao.usuario
 }
@@ -80,5 +95,9 @@ export async function sair(): Promise<void> {
     // Sem ele, o servidor recusa com 403 e a sessão ficaria viva no banco.
     headers: cabecalhosCsrf(),
   })
+  // Sair apaga os DOIS lados: o access token da memoria e o par do double
+  // submit desta origem. Deixar o token para tras faria a proxima visita achar
+  // que ha sessao a restaurar e bater numa porta ja fechada.
+  guardarTokenCsrf(null)
   definirAccessToken(null)
 }
