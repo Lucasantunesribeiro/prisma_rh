@@ -45,3 +45,9 @@ backend/testes/prismarh.testes/isolamento/producaohttptestes.cs:senha
 # intencionalmente publico - conta Visualizador, somente leitura, com teste
 # provando 403 em TODA rota de escrita - e mesmo assim nao esta no repositorio.
 frontend/src/paginas/entrar.tsx:senha
+
+# Os dois testes novos de 02/09/2026 usam `BancoPostgresFixture.Senha`, que e
+# a credencial do container descartavel do Testcontainers - a mesma ja liberada
+# acima para a fixture. Criado e destruido dentro do proprio teste.
+backend/testes/prismarh.testes/isolamento/sessaorestauradatestes.cs:senha
+backend/testes/prismarh.testes/seguranca/tokencsrfnocorpotestes.cs:senha
