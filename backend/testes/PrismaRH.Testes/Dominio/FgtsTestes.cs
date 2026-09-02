@@ -87,7 +87,7 @@ public class FgtsTestes
         var apuracao = CalculadoraFgts.Apurar(3000.00m, Tabela());
 
         Assert.Equal(2, apuracao.Passos.Count);
-        Assert.Equal("Base de calculo do FGTS", apuracao.Passos[0].Descricao);
+        Assert.Equal("Base de cálculo do FGTS", apuracao.Passos[0].Descricao);
         Assert.Equal(3000.00m, apuracao.Passos[0].Valor);
         Assert.Contains("8%", apuracao.Passos[1].Descricao);
         Assert.Equal("3.000,00 x 8%", apuracao.Passos[1].Expressao);

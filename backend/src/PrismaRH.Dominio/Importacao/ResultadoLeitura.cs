@@ -68,18 +68,47 @@ public sealed record ResultadoLeitura(
     public static bool NomesDeColunaIguais(string a, string b) =>
         string.Equals(Normalizar(a), Normalizar(b), StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Tira acento **sem depender de ICU**.
+    ///
+    /// ## O defeito que isto corrige
+    ///
+    /// ⚠️ Descoberto em **02/09/2026**, rodando a suíte com
+    /// `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1` — o modo em que a Lambda de
+    /// produção roda, porque o runtime `provided.al2023` não traz ICU.
+    ///
+    /// A versão anterior usava `Normalize(NormalizationForm.FormD)` para separar
+    /// a letra do acento e depois descartava as marcas. Isso funciona na máquina
+    /// de desenvolvimento e no runner do CI, e **não funciona em produção**: sem
+    /// ICU, `Normalize` devolve a string **intacta**, sem lançar. Nada estoura;
+    /// a coluna simplesmente não é encontrada.
+    ///
+    /// O efeito era silencioso e caro: um CSV com cabeçalho `Salário` importava
+    /// como se a coluna não existisse. **Falha silenciosa em importação de folha
+    /// é pior que erro**, porque o arquivo é aceito e o dado some.
+    ///
+    /// ## Por que uma tabela, e não a normalização
+    ///
+    /// O conjunto de letras acentuadas do português é **fechado e pequeno**.
+    /// Uma tabela explícita resolve exatamente esse conjunto, se comporta igual
+    /// em toda máquina, e não fica na dependência do que está instalado.
+    ///
+    /// Caractere fora da tabela passa inalterado — o objetivo é casar cabeçalho
+    /// de planilha brasileira, não transliterar o Unicode inteiro.
+    /// </summary>
+    private const string ComAcento = "áàâãäéèêëíìîïóòôõöúùûüçÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇñÑ";
+    private const string SemAcento = "aaaaaeeeeiiiiooooouuuucAAAAAEEEEIIIIOOOOOUUUUCnN";
+
     private static string Normalizar(string valor)
     {
-        var semAcento = valor.Trim().Normalize(System.Text.NormalizationForm.FormD);
-        var construtor = new System.Text.StringBuilder(semAcento.Length);
+        var recortado = valor.Trim();
+        var construtor = new System.Text.StringBuilder(recortado.Length);
 
-        foreach (var caractere in semAcento)
+        foreach (var caractere in recortado)
         {
-            if (System.Globalization.CharUnicodeInfo.GetUnicodeCategory(caractere)
-                != System.Globalization.UnicodeCategory.NonSpacingMark)
-            {
-                construtor.Append(caractere);
-            }
+            var posicao = ComAcento.IndexOf(caractere, StringComparison.Ordinal);
+
+            construtor.Append(posicao >= 0 ? SemAcento[posicao] : caractere);
         }
 
         return construtor.ToString();

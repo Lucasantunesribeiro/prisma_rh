@@ -169,7 +169,7 @@ public class InssTabela2026Testes
 
         // 1 base + 4 faixas + 1 total
         Assert.Equal(6, apuracao.Passos.Count);
-        Assert.Equal("Base de contribuicao", apuracao.Passos[0].Descricao);
+        Assert.Equal("Base de contribuição", apuracao.Passos[0].Descricao);
         Assert.Equal("Total do INSS", apuracao.Passos[^1].Descricao);
         Assert.Equal(501.51m, apuracao.Passos[^1].Valor);
     }

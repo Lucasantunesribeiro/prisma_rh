@@ -32,7 +32,13 @@ public sealed record ApuracaoInss(
 /// </summary>
 public static class CalculadoraInss
 {
-    private static readonly CultureInfo Brasil = CultureInfo.GetCultureInfo("pt-BR");
+    // ⚠️ Formato montado a mao, e nao `CultureInfo.GetCultureInfo("pt-BR")`.
+    //
+    // A Lambda roda em modo globalization-invariant (sem ICU), onde pedir uma
+    // cultura por nome LANCA. Como isto era `static readonly`, a excecao subia
+    // no primeiro toque na classe e derrubava o calculo inteiro. Ver
+    // `FormatoBrasileiro`.
+    private static readonly IFormatProvider Brasil = FormatoBrasileiro.Numero;
 
     /// <summary>
     /// ⚠️ PENDENCIA LEGAL REGISTRADA EM 27/08/2026 - CONFERIR ANTES DE PRODUCAO.
@@ -78,7 +84,7 @@ public static class CalculadoraInss
         var limitada = Math.Min(baseInss, tabela.Teto);
 
         passos.Add(new PassoCalculo(
-            "Base de contribuicao",
+            "Base de contribuição",
             limitada < baseInss
                 ? $"{Moeda(baseInss)} limitada ao teto de {Moeda(tabela.Teto)}"
                 : Moeda(baseInss),

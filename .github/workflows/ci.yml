@@ -60,6 +60,22 @@ jobs:
         # nao prova nada, porque o EF InMemory nao gera SQL (`CLAUDE.md §24.5`).
         run: dotnet test PrismaRH.sln --no-build --configuration Release
 
+      # ⚠️ A MESMA suite, no modo em que a producao roda.
+      #
+      # A Lambda usa DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1, porque o runtime
+      # provided.al2023 nao traz ICU. Sem esta etapa, codigo que depende de ICU
+      # passa verde aqui e quebra la - foi exatamente o que aconteceu em
+      # 02/09/2026, com o motor de calculo devolvendo 500 em producao enquanto
+      # 1258 testes passavam.
+      #
+      # Roda depois da suite normal, e nao no lugar dela: as duas execucoes
+      # cobrem coisas diferentes, e uma verde nao implica a outra.
+      - name: Testes em modo globalization-invariant (como a Lambda)
+        working-directory: backend
+        env:
+          DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: '1'
+        run: dotnet test PrismaRH.sln --no-build --configuration Release
+
       - name: Dependencias vulneraveis (NuGet)
         working-directory: backend
         # ⚠️ `dotnet list package --vulnerable` devolve exit code ZERO mesmo

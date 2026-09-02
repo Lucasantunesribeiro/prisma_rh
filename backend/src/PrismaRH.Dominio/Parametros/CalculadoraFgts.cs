@@ -28,7 +28,13 @@ public sealed record ApuracaoFgts(
 /// </summary>
 public static class CalculadoraFgts
 {
-    private static readonly CultureInfo Brasil = CultureInfo.GetCultureInfo("pt-BR");
+    // ⚠️ Formato montado a mao, e nao `CultureInfo.GetCultureInfo("pt-BR")`.
+    //
+    // A Lambda roda em modo globalization-invariant (sem ICU), onde pedir uma
+    // cultura por nome LANCA. Como isto era `static readonly`, a excecao subia
+    // no primeiro toque na classe e derrubava o calculo inteiro. Ver
+    // `FormatoBrasileiro`.
+    private static readonly IFormatProvider Brasil = FormatoBrasileiro.Numero;
 
     /// <summary>
     /// Arredonda uma vez, no valor final da rubrica, com o mesmo criterio do
@@ -51,7 +57,7 @@ public static class CalculadoraFgts
 
         var passos = new List<PassoCalculo>
         {
-            new("Base de calculo do FGTS", Moeda(baseFgts), baseFgts),
+            new("Base de cálculo do FGTS", Moeda(baseFgts), baseFgts),
             new(
                 $"Deposito do empregador, aliquota {Percentual(tabela.AliquotaPercentual)}",
                 exato == valor

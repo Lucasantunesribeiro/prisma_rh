@@ -42,7 +42,13 @@ public static class MotorCalculoFolha
     /// desenvolvedor e "3,900.00" no servidor - a folha ficaria correta e a
     /// explicacao dela, ilegivel.
     /// </summary>
-    private static readonly CultureInfo Brasil = CultureInfo.GetCultureInfo("pt-BR");
+    // ⚠️ Formato montado a mao, e nao `CultureInfo.GetCultureInfo("pt-BR")`.
+    //
+    // A Lambda roda em modo globalization-invariant (sem ICU), onde pedir uma
+    // cultura por nome LANCA. Como isto era `static readonly`, a excecao subia
+    // no primeiro toque na classe e derrubava o calculo inteiro. Ver
+    // `FormatoBrasileiro`.
+    private static readonly IFormatProvider Brasil = FormatoBrasileiro.Numero;
 
     /// <summary>
     /// O trecho da competencia em que o contrato esteve vigente, ou nulo se
@@ -177,7 +183,7 @@ public static class MotorCalculoFolha
 
             passos.Add(new PassoCalculo(
                 trechos.Count == 1
-                    ? $"Salario vigente desde {trecho.Vigencia.ValidoDe:dd/MM/yyyy}"
+                    ? $"Salário vigente desde {trecho.Vigencia.ValidoDe:dd/MM/yyyy}"
                     : $"Vigencia de {trecho.Inicio:dd/MM} a {trecho.Fim:dd/MM}",
                 string.Create(Brasil, $"{trecho.Vigencia.Salario:N2} x {avos[i]}/{DivisorMensal}"),
                 parcela));

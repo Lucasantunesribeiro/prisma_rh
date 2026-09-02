@@ -158,7 +158,7 @@ public static class RescisaoEndpoints
     /// servidor e "10.000,00" noutro - dois textos para o mesmo fato.
     /// </summary>
     private static string Reais(decimal valor) =>
-        valor.ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("pt-BR"));
+        valor.ToString("N2", PrismaRH.Dominio.Folha.FormatoBrasileiro.Numero);
 
     /// <summary>Dinheiro no contexto tecnico: invariante, para poder comparar.</summary>
     private static string Tecnico(decimal? valor) => valor is { } v

@@ -307,5 +307,5 @@ public static class CalculadoraRescisao
     }
 
     private static string Moeda(decimal valor) =>
-        valor.ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("pt-BR"));
+        valor.ToString("N2", PrismaRH.Dominio.Folha.FormatoBrasileiro.Numero);
 }

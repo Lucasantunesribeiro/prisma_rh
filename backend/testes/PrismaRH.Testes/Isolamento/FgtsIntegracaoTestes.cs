@@ -323,7 +323,7 @@ public class FgtsIntegracaoTestes(BancoPostgresFixture banco) : IDisposable
 
         // A memoria sobreviveu ao banco: base + deposito.
         Assert.Equal(2, fgts.Memoria.Count);
-        Assert.Equal("Base de calculo do FGTS", fgts.Memoria[0].Descricao);
+        Assert.Equal("Base de cálculo do FGTS", fgts.Memoria[0].Descricao);
         Assert.Equal("3.000,00 x 8%", fgts.Memoria[1].Expressao);
         Assert.Equal(240.00m, fgts.Memoria[1].Valor);
     }

@@ -32,7 +32,7 @@ public sealed class DesligadoNaFolhaRegra : IRegraAnalise
     public string Nome => "Desligado presente na folha mensal";
 
     public string Explicacao =>
-        "Procura quem foi desligado antes do primeiro dia da competencia e mesmo assim "
+        "Procura quem foi desligado antes do primeiro dia da competência e mesmo assim "
         + "recebeu holerite na folha mensal.";
 
     public IReadOnlyList<DefinicaoParametro> Parametros => [];
@@ -100,10 +100,10 @@ public sealed class AusenteDaFolhaRegra : IRegraAnalise
 
     public Severidade SeveridadePadrao => Severidade.Alta;
 
-    public string Nome => "Funcionario elegivel ausente da folha";
+    public string Nome => "Funcionário elegível ausente da folha";
 
     public string Explicacao =>
-        "Procura contrato vigente em algum dia da competencia que nao recebeu holerite "
+        "Procura contrato vigente em algum dia da competência que não recebeu holerite "
         + "na folha mensal.";
 
     public IReadOnlyList<DefinicaoParametro> Parametros => [];
@@ -150,7 +150,13 @@ public sealed class AusenteDaFolhaRegra : IRegraAnalise
 /// </summary>
 internal static class TextoMonetario
 {
-    private static readonly CultureInfo Brasil = CultureInfo.GetCultureInfo("pt-BR");
+    // ⚠️ Formato montado a mao, e nao `CultureInfo.GetCultureInfo("pt-BR")`.
+    //
+    // A Lambda roda em modo globalization-invariant (sem ICU), onde pedir uma
+    // cultura por nome LANCA. Como isto era `static readonly`, a excecao subia
+    // no primeiro toque na classe e derrubava o calculo inteiro. Ver
+    // `FormatoBrasileiro`.
+    private static readonly IFormatProvider Brasil = FormatoBrasileiro.Numero;
 
     internal static string Reais(decimal valor) => valor.ToString("C2", Brasil);
 

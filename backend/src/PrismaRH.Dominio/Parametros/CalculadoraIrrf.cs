@@ -42,7 +42,13 @@ public sealed record ApuracaoIrrf(
 /// </summary>
 public static class CalculadoraIrrf
 {
-    private static readonly CultureInfo Brasil = CultureInfo.GetCultureInfo("pt-BR");
+    // ⚠️ Formato montado a mao, e nao `CultureInfo.GetCultureInfo("pt-BR")`.
+    //
+    // A Lambda roda em modo globalization-invariant (sem ICU), onde pedir uma
+    // cultura por nome LANCA. Como isto era `static readonly`, a excecao subia
+    // no primeiro toque na classe e derrubava o calculo inteiro. Ver
+    // `FormatoBrasileiro`.
+    private static readonly IFormatProvider Brasil = FormatoBrasileiro.Numero;
 
     /// <summary>
     /// Apura o IRRF do mes.
@@ -135,7 +141,7 @@ public static class CalculadoraIrrf
             }
         }
 
-        passos.Add(new("Base de calculo do IRRF", Moeda(baseCalculo), baseCalculo));
+        passos.Add(new("Base de cálculo do IRRF", Moeda(baseCalculo), baseCalculo));
 
         var faixa = FaixaDe(baseCalculo, tabela);
         var impostoExato = 0m;

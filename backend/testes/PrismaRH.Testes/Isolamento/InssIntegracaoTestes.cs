@@ -255,7 +255,7 @@ public class InssIntegracaoTestes(BancoPostgresFixture banco) : IDisposable
 
         // A memoria sobreviveu ao banco: base + 4 faixas + total.
         Assert.Equal(6, inss.Memoria.Count);
-        Assert.Equal("Base de contribuicao", inss.Memoria[0].Descricao);
+        Assert.Equal("Base de contribuição", inss.Memoria[0].Descricao);
         Assert.Equal("1.621,00 x 7,5% = 121,575", inss.Memoria[1].Expressao);
         Assert.Equal("Total do INSS", inss.Memoria[^1].Descricao);
         Assert.Equal(501.51m, inss.Memoria[^1].Valor);

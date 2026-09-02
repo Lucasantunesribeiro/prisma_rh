@@ -80,7 +80,13 @@ public sealed record ApuracaoAnualDecimoTerceiro(
 /// </summary>
 public static class CalculadoraDecimoTerceiro
 {
-    private static readonly CultureInfo Brasil = CultureInfo.GetCultureInfo("pt-BR");
+    // ⚠️ Formato montado a mao, e nao `CultureInfo.GetCultureInfo("pt-BR")`.
+    //
+    // A Lambda roda em modo globalization-invariant (sem ICU), onde pedir uma
+    // cultura por nome LANCA. Como isto era `static readonly`, a excecao subia
+    // no primeiro toque na classe e derrubava o calculo inteiro. Ver
+    // `FormatoBrasileiro`.
+    private static readonly IFormatProvider Brasil = FormatoBrasileiro.Numero;
 
     /// <summary>Os doze avos. Mesmo divisor de <see cref="AvosDecimoTerceiro"/>.</summary>
     public const int Divisor = AvosDecimoTerceiro.MesesDoAno;

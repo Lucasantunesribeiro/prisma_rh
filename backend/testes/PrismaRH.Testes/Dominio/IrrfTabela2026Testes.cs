@@ -234,7 +234,7 @@ public class IrrfTabela2026Testes
         Assert.Equal("Rendimentos tributaveis", a.Passos[0].Descricao);
         Assert.Equal("Deducao do INSS", a.Passos[1].Descricao);
         Assert.Contains("1 dependente", a.Passos[2].Descricao);
-        Assert.Equal("Base de calculo do IRRF", a.Passos[3].Descricao);
+        Assert.Equal("Base de cálculo do IRRF", a.Passos[3].Descricao);
         Assert.Contains("Redutor", a.Passos[5].Descricao);
         Assert.Equal("Total do IRRF", a.Passos[^1].Descricao);
         Assert.Equal(a.Valor, a.Passos[^1].Valor);
