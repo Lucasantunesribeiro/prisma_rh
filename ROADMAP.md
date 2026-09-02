@@ -6788,6 +6788,81 @@ PARE.
 
 ---
 
+# 10.9 ENDURECIMENTO DA DEMONSTRAÇÃO PÚBLICA — 02/09/2026
+
+Executado depois do roadmap, a pedido do responsável. **Não é uma fase.** Nenhuma
+funcionalidade nova entrou; o objetivo era transformar a produção numa demonstração que se
+sustenta sozinha diante de um recrutador.
+
+## O que mudou de fato
+
+| | |
+|---|---|
+| **Entrada pública** | Botão *"Entrar na demonstração"* com conta `Visualizador`, somente leitura. Sem bypass: mesmo login, mesmo token, mesmo rate limiting |
+| **Dados curados** | 7 achados, 4 regras, ambas as severidades e os **cinco** estados do workflow — todos alcançados pela API real |
+| **Lixo removido** | 12 funcionários de teste, conferidos um a um, apagados por lista explícita de ids dentro de transação com guarda |
+| **IA no ar** | Chave no cofre SSM, IAM restrita àquele parâmetro; 11A, 11B e 11C provados em produção |
+| **Capturas** | Seis imagens no `README.md`, cada uma com legenda que diz **por que** aquela tela importa |
+
+## Os quatro defeitos que só o uso real encontrou
+
+Nenhum deles foi achado por teste. Todos apareceram **usando a produção**.
+
+| # | Defeito | Por que a suíte não pegou |
+|---|---|---|
+| 1 | **Motor de cálculo devolvia 500** desde sempre — dependência de ICU num inicializador estático | máquina e runner do CI **têm** ICU |
+| 2 | **Busca de coluna do CSV falhava em silêncio** — `Normalize` não lança em modo invariante, devolve a string intacta | idem |
+| 3 | **Guarda CSRF impossível de satisfazer** — `document.cookie` é por origem, e tela e API estão em domínios diferentes | `jsdom` é *same-origin* |
+| 4 | **Um hash de senha para seis usuários** | nenhum teste perguntava se eram distintos |
+
+Detalhe de cada um em `CLAUDE.md §24.19`, itens 10 a 12 e a correção do formato numérico.
+
+⚠️ **A defesa que ficou é a terceira camada, não a correção.** O CI passou a rodar a suíte
+**duas vezes**, a segunda com `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1`. Corrigir os nove
+pontos resolve o que existe; só a execução em modo de produção pega o próximo.
+
+## O que a captura de tela encontrou, e nenhum teste encontraria
+
+Fotografar a interface expôs **texto sem acento** em todo o produto visível: *"Liquido
+negativo"*, *"Rubrica lancada em duplicidade"*, *"Base de contribuicao"*, *"Salario
+base"*, *"Comissao"*, além de `ExplicacaoIa` cru na coluna *Sobre* da auditoria.
+
+Corrigido o que aparece na tela — 23 strings nas regras, 4 nas calculadoras, 17 nomes de
+rubrica no código **e** no banco, 2 rótulos e o mapa de entidades do frontend.
+
+⚠️ **Medido e não corrigido:** restam ~330 strings sem acento no backend, quase todas
+mensagens de exceção interna que o usuário não lê. Corrigi-las em massa arriscaria mudar
+comportamento verificado por teste sem ganho visível. **Fica registrado com o número, não
+escondido.**
+
+## Um erro meu, registrado
+
+⚠️ **Derrubei a produção por cerca de quatro minutos.** Publiquei sem
+`-p:PublicarLambda=true` e subiu um executável **Windows** na Lambda
+(`Runtime.InvalidEntrypoint`). Restaurado em seguida.
+
+Descobri no mesmo passo que `Compress-Archive` do Windows **não grava o bit de execução**
+do `bootstrap` — o pacote passou a ser montado com `0755` explícito.
+
+⚠️ **E um segundo, mais sutil:** as justificativas do workflow enviadas por `curl` a
+partir do Git Bash chegaram em **Latin-1** e ficaram gravadas como `Promo��o a
+Analista S�nior`. O produto estava certo; o cliente é que mandou errado. Refeito por
+um cliente que serializa UTF-8 de verdade.
+
+## Uma correção que eu decidi NÃO fazer
+
+O Neon suspende a computação ociosa, e uma consulta comum devolveu 500 transitório
+(`EndOfStreamException`). A resposta padrão seria `EnableRetryOnFailure` — e ela **quebrou
+18 testes**, porque a estratégia de retentativa do EF exige que toda transação explícita
+seja idempotente sob reexecução. As três deste projeto **criam entidades**: repeti-las
+criaria **funcionário duplicado**.
+
+Trocar um 500 ocasional por duplicata silenciosa em folha de pagamento seria um péssimo
+negócio. A correção foi atacar a causa — poda de conexão ociosa no pool, mais `KeepAlive`
+—, que não tem esse risco.
+
+---
+
 # 11. PRINCÍPIO FINAL
 
 O objetivo não é terminar o Prisma RH o mais rápido possível.

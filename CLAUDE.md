@@ -1890,6 +1890,108 @@ mensagem. A revisão pós-roadmap não a tinha.
 > está no ambiente desta máquina e o AWS CLI v1 **não lê `AWS_REGION`**. Localizado numa
 > varredura por região e **excluído**. Só `us-east-1` tem parâmetros.
 
+### 10. ✅ RESOLVIDA — Guarda CSRF impossível de satisfazer em produção
+
+Registrada e resolvida em **02/09/2026**, no endurecimento da demonstração pública.
+
+O frontend lia o token do *double submit* com `document.cookie`. Isso funcionava em
+desenvolvimento, onde tela e API vivem em `localhost`, e **nunca funcionou publicado**:
+
+```text
+tela  ->  portfolio-prisma-rh.vercel.app
+API   ->  ...lambda-url.us-east-1.on.aws     <- o cookie mora AQUI
+```
+
+`document.cookie` é **por origem**. A página da Vercel jamais enxergou o cookie gravado
+pelo domínio da Lambda, então o cabeçalho `X-CSRF-Token` nunca era enviado e `renovar` e
+`sair` respondiam **403** — o 403 que aparecia no console de toda visita.
+
+⚠️ **A guarda estava correta; a tela é que não conseguia satisfazê-la.** O efeito visível
+era pior que o erro no console: **um F5 deslogava**, porque o access token vive só em
+memória e a renovação era o único caminho de volta.
+
+> **Correção:** o token passa a vir **no corpo** de `entrar` e de `renovar`, e a tela o
+> guarda no `sessionStorage` da própria origem.
+>
+> Nada afrouxou. O que protege o *double submit* não é o cookie ser legível — é o site
+> atacante **não descobrir o valor**, e ele continua sem: não lê a origem da tela, não lê
+> o cookie e não lê a resposta, porque o CORS tem allowlist de origem. O servidor segue
+> exigindo cookie **e** cabeçalho iguais, mais `Origin`, com ausência = recusa.
+>
+> ⚠️ E o cookie ficou **mais** restrito: virou `HttpOnly`, já que o script não precisa
+> mais lê-lo.
+
+**Por que a suíte não pegou:** os testes de front rodam em `jsdom`, que é *same-origin* —
+o cookie escrito pelo teste era lido pelo mesmo código. O ambiente de teste não
+reproduzia a topologia da produção.
+
+### 11. ✅ RESOLVIDA — Motor de cálculo quebrado em produção por dependência de ICU
+
+Registrada e resolvida em **02/09/2026**, usando a produção como usuário.
+
+`POST /api/folhas/{id}/calcular` devolvia **500** desde o primeiro deploy:
+
+```text
+System.TypeInitializationException: The type initializer for
+  'PrismaRH.Dominio.Folha.MotorCalculoFolha' threw an exception.
+---> CultureNotFoundException: Only the invariant culture is supported in
+  globalization-invariant mode.
+```
+
+Nove classes tinham `static readonly CultureInfo Brasil =
+CultureInfo.GetCultureInfo("pt-BR")`. A Lambda roda com
+`DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1`, porque o runtime `provided.al2023` não traz
+ICU — e nesse modo pedir cultura por nome **lança**. Por ser inicializador **estático**, a
+falha derrubava a classe inteira antes da primeira conta.
+
+⚠️ **1258 testes verdes não pegaram**, porque a máquina de desenvolvimento e o runner do
+CI têm ICU. O mesmo código passa nos dois e falha só onde importa.
+
+Um segundo defeito da mesma família apareceu junto: a busca de coluna do CSV usava
+`Normalize(FormD)` para ignorar acento. Em modo invariante isso **não lança** — devolve a
+string intacta. Um cabeçalho `Salário` simplesmente não era encontrado, e a importação
+aceitava o arquivo com a coluna faltando. **Falha silenciosa em importação de folha é pior
+que erro.**
+
+> **Correção em três camadas:**
+>
+> | Camada | O quê |
+> |---|---|
+> | `FormatoBrasileiro` | `NumberFormatInfo` montado à mão, sem ICU, sem pacote maior |
+> | `ResultadoLeitura` | tabela explícita de letras acentuadas do português, determinística em qualquer máquina |
+> | **CI** | a suíte roda **duas vezes**, a segunda com `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1` |
+>
+> A terceira é a que impede a classe de defeito de voltar. As duas primeiras corrigem o
+> que existe; só a terceira pega o próximo.
+
+**A lição, e ela é geral:** *ambiente de teste verde não prova ambiente de produção.* É a
+mesma família do modelo de IA aposentado (`§37.8`) — em ambos, a suíte passava e a
+realidade não.
+
+### 12. ✅ RESOLVIDA — Senha compartilhada entre os seis usuários da semeadura
+
+Registrada e resolvida em **02/09/2026**, ao publicar a conta pública da demonstração.
+
+`SemeadorDesenvolvimento` gerava **um** hash e o atribuía aos seis usuários. Conferido em
+produção antes de qualquer mudança:
+
+```sql
+SELECT count(DISTINCT senha_hash), count(*) FROM usuarios;  -- 1 | 6
+```
+
+⚠️ **Publicar a senha do Visualizador publicaria a do Administrador da Plataforma**, e os
+endereços seguem um padrão óbvio, visível no próprio arquivo de semeadura. Uma senha
+compartilhada vale o **menor** privilégio de quem a usa, não o maior.
+
+> **Correção:** a conta pública ganhou senha própria, por `PRISMARH_SEED_SENHA_DEMO`, no
+> código e em produção. Sem essa variável o Visualizador nasce com a senha comum — que é o
+> certo em desenvolvimento, onde nada é publicado.
+>
+> A prova que autoriza publicar a credencial é
+> `testes/Isolamento/VisualizadorSomenteLeituraTestes.cs`: ele **descobre as rotas de
+> escrita em tempo de execução** pelo `EndpointDataSource` e exige 403 em todas. Rota de
+> escrita criada amanhã entra no teste sozinha.
+
 ## 24.20 Headers, CORS e navegador
 
 **Headers** a planejar e validar contra o frontend real na Fase 10:

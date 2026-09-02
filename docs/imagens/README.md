@@ -2,9 +2,18 @@
 
 Esta pasta guarda as capturas de tela referenciadas no `README.md`.
 
-> ⚠️ **As capturas ainda não foram feitas, e o motivo está registrado.** Tirá-las exige
-> **entrar na aplicação**, e digitar senha em formulário é ação que o agente que construiu
-> este projeto não executa. A lista abaixo existe para que a captura leve cinco minutos.
+> ✅ **Capturadas em 02/09/2026**, contra a produção, entrando pela conta pública da
+> demonstração (`visualizador@prisma.exemplo`, somente leitura). O que antes impedia era a
+> ausência de um caminho de entrada sem digitar senha; o botão *"Entrar na demonstração"*
+> resolveu isso.
+>
+> ⚠️ **São `.jpg`, e não `.png`.** A ferramenta de captura entrega JPEG; reconverter para
+> PNG não recupera qualidade nenhuma e **quadruplicou** o peso (520 KB → 2,4 MB). Extensão
+> tem de dizer a verdade sobre o conteúdo.
+>
+> ⚠️ **1568×705 a 751 px, e não 1440×900.** A janela foi ajustada para 1440 de largura — é
+> o que define a densidade do layout, e é o que a regra abaixo realmente quer —, mas a
+> ferramenta normaliza a imagem exportada. O layout capturado é o largo, que é o ponto.
 
 ## O que capturar
 
@@ -13,12 +22,12 @@ que é confiável".
 
 | # | Arquivo | Tela | Por que esta |
 |---|---|---|---|
-| 1 | `01-painel.png` | `/painel` | Primeira impressão: indicadores, pendências por responsável, evolução por competência |
-| 2 | `02-folha-detalhe.png` | `/folhas/{id}`, com um holerite aberto | O centro do produto: totais, bases de INSS/FGTS/IRRF e lançamentos |
-| 3 | `03-memoria-calculo.png` | O mesmo holerite, memória expandida | **A imagem mais importante.** É o diferencial: o número **e a conta que levou até ele** |
-| 4 | `04-inconsistencias.png` | `/inconsistencias`, com a gaveta aberta | Workflow, linha do tempo e o assistente de IA rotulado |
-| 5 | `05-pergunta-em-portugues.png` | `/inconsistencias`, após uma consulta | Mostrando **"Entendi como: Severidade = Alta e Status ≠ Resolvida"** — a prova de que o modelo propõe e a aplicação decide |
-| 6 | `06-auditoria.png` | `/auditoria` | Trilha somente-inserção: quem, o quê, quando, de quanto para quanto |
+| 1 | `01-painel.jpg` | `/painel` | Primeira impressão: indicadores, pendências por responsável, evolução por competência |
+| 2 | `02-folha-detalhe.jpg` | `/folhas/{id}`, com um holerite aberto | O centro do produto: totais, bases de INSS/FGTS/IRRF e lançamentos |
+| 3 | `03-memoria-calculo.jpg` | O mesmo holerite, memória expandida | **A imagem mais importante.** É o diferencial: o número **e a conta que levou até ele** |
+| 4 | `04-inconsistencias.jpg` | `/inconsistencias`, com a gaveta aberta | Workflow, justificativa e linha do tempo — os cinco estados visíveis na lista atrás |
+| 5 | `05-pergunta-em-portugues.jpg` | `/inconsistencias`, após uma consulta | Mostrando **"Entendi como: Severidade = Alta e Status ≠ Resolvida"** — a prova de que o modelo propõe e a aplicação decide |
+| 6 | `06-auditoria.jpg` | `/auditoria` | Trilha somente-inserção: quem, o quê, quando, de quanto para quanto |
 
 ## Regras para as capturas
 
@@ -41,9 +50,26 @@ Estas não são preferências estéticas — são o Security Gate da Fase 13, it
 Referencie no `README.md` logo abaixo da seção *"O que ele faz"*, no formato:
 
 ```markdown
-| ![Memória de cálculo](docs/imagens/03-memoria-calculo.png) |
+| ![Memória de cálculo](docs/imagens/03-memoria-calculo.jpg) |
 |:--:|
 | *Cada valor guarda os passos que o produziram — e qual parâmetro estava vigente.* |
 ```
 
 A legenda importa tanto quanto a imagem: quem passa os olhos lê a legenda e não a tela.
+
+## O que a captura mostrou que o código não mostrava
+
+Fotografar a tela encontrou defeitos que nenhum teste tinha pego, porque nenhum teste
+**olha**:
+
+| Achado | Onde estava |
+|---|---|
+| Texto de interface sem acento — *"Liquido negativo"*, *"Rubrica lancada em duplicidade"*, *"Base de contribuicao"* | 23 strings nas regras de análise e nas calculadoras |
+| Nomes de rubrica sem acento — *"Salario base"*, *"Comissao"* | semeadura **e** banco de demonstração |
+| `ExplicacaoIa` cru na coluna *Sobre* da auditoria | faltava o rótulo no mapa do frontend |
+| Descrições da trilha sem acento — *"atribuida"*, *"recebeu uma evidencia"* | `InconsistenciasEndpoints` |
+
+⚠️ **E um que era meu, não do produto:** as justificativas enviadas por `curl` a partir do
+Git Bash chegaram em Latin-1 e ficaram gravadas como `Promo��o a Analista
+S�nior`. O produto estava certo; o cliente é que mandou errado. Refeito por um cliente
+que serializa em UTF-8 de verdade.

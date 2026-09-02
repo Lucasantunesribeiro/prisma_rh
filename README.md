@@ -32,6 +32,36 @@ em qual versão do cálculo.
 | **Auditoria** | Trilha somente-inserção: quem alterou, o quê, quando e de quanto para quanto |
 | **IA** | Explica uma inconsistência, resume a folha e converte pergunta em português em filtro controlado |
 
+## Como ele é
+
+Entre com a conta pública de demonstração na
+**[aplicação](https://portfolio-prisma-rh.vercel.app)** — somente leitura, dados
+fictícios.
+
+| ![Painel de conferência](docs/imagens/01-painel.jpg) |
+|:--:|
+| *O painel não mostra "quantas folhas rodaram". Mostra **onde está o trabalho**: o que cada regra acusou, em que ponto do tratamento cada achado está e quem tem pendência na mão.* |
+
+| ![Folha mensal com holerite aberto](docs/imagens/02-folha-detalhe.jpg) |
+|:--:|
+| *INSS, FGTS e IRRF **não incidem sobre o mesmo número**. Cada base é apurada em separado e mostra quais lançamentos a compuseram — é a diferença entre um sistema que paga e um que consegue explicar por que pagou aquilo.* |
+
+| ![Memória de cálculo do INSS, faixa a faixa](docs/imagens/03-memoria-calculo.jpg) |
+|:--:|
+| *A imagem que resume o produto. O desconto de INSS não é um número: são cinco passos, cada um com a conta escrita, o teto aplicado e o arredondamento declarado. **Os valores ficam congelados** — mudar a rubrica amanhã não reescreve o holerite de hoje.* |
+
+| ![Tratamento de uma inconsistência](docs/imagens/04-inconsistencias.jpg) |
+|:--:|
+| *Nem toda divergência é erro. Um aumento de 25% acusa porque **merece confirmação**, e a justificativa fica no registro — com responsável, horário e o histórico de cada transição, que ninguém apaga.* |
+
+| ![Pergunta em português convertida em filtro](docs/imagens/05-pergunta-em-portugues.jpg) |
+|:--:|
+| *A IA propõe; a aplicação decide. A pergunta vira `Severidade = Alta e Status ≠ Resolvida` — um filtro de **vocabulário fechado**, exibido na tela antes do resultado. O que estiver fora do vocabulário é recusado antes de virar consulta.* |
+
+| ![Trilha de auditoria](docs/imagens/06-auditoria.jpg) |
+|:--:|
+| *Tabela somente-inserção: não há endpoint de edição nem de exclusão, de nenhum perfil. Alteração de parâmetro legal, fechamento de folha e cada passo do workflow deixam rastro com autor, momento e o valor de antes.* |
+
 ## O que é tecnicamente interessante aqui
 
 Se você veio olhar código, estes são os pontos que valem a leitura:
@@ -72,9 +102,9 @@ problema que microserviço resolve, e teria todos os que ele traz.
 
 | | |
 |---|---|
-| Testes backend | **1258**, incluindo integração contra PostgreSQL real via Testcontainers |
-| Testes frontend | **163** |
-| Testes de segurança | **39**, em suíte própria e permanente |
+| Testes backend | **1286**, incluindo integração contra PostgreSQL real via Testcontainers — e a suíte roda **duas vezes** no CI, a segunda em modo *globalization-invariant*, que é como a Lambda executa |
+| Testes frontend | **168** |
+| Testes de segurança | **50**, em suíte própria e permanente |
 | Rotas | **85**, das quais **4 anônimas** — cada uma com motivo escrito e travada por teste |
 | Custo AWS previsto | **US$ 0,00** |
 
