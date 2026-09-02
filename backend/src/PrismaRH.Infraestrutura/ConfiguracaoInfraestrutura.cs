@@ -23,6 +23,13 @@ public static class ConfiguracaoInfraestrutura
     /// <summary>Nome da verificacao de saude do banco de dados exposta em /health.</summary>
     public const string NomeVerificacaoBanco = "banco-de-dados";
 
+    /// <summary>
+    /// Nome da verificacao que compara o ESQUEMA do banco com as migrations do
+    /// codigo. Separada da anterior de proposito: "responde" e "esta compativel"
+    /// sao dois sinais, e confundi-los foi o que escondeu um incidente.
+    /// </summary>
+    public const string NomeVerificacaoMigrations = "migrations";
+
     public static IServiceCollection AdicionarInfraestrutura(
         this IServiceCollection servicos,
         IConfiguration configuracao)
@@ -51,7 +58,29 @@ public static class ConfiguracaoInfraestrutura
 
         servicos
             .AddHealthChecks()
-            .AddDbContextCheck<PrismaRhDbContext>(NomeVerificacaoBanco);
+            .AddDbContextCheck<PrismaRhDbContext>(NomeVerificacaoBanco)
+
+            // ⚠️ Acrescentado em 02/09/2026, depois de um incidente REAL.
+            //
+            // O codigo do bloqueio progressivo foi publicado sem a migration ser
+            // aplicada no Neon. O login passou a responder 500 com
+            // `42703: column u.bloqueado_ate does not exist` - e o `/health`
+            // continuou dizendo `saudavel` o tempo todo.
+            //
+            // A causa: `AddDbContextCheck` prova que o banco RESPONDE, e nada
+            // mais. Banco alcancavel e banco compativel com o codigo sao duas
+            // perguntas diferentes, e so a segunda diz se a aplicacao consegue
+            // servir.
+            //
+            // Migrations nao rodam no startup de proposito (`CLAUDE.md secao
+            // 24.21`: aplicar migration e credencial diferente de executar). O
+            // preco disso e justamente este: da para publicar codigo a frente do
+            // esquema. Esta verificacao transforma o defeito silencioso num
+            // sinal visivel.
+            .AddDbContextCheck<PrismaRhDbContext>(
+                NomeVerificacaoMigrations,
+                customTestQuery: async (db, ct) =>
+                    !(await db.Database.GetPendingMigrationsAsync(ct)).Any());
 
         // ------------------------------------------------------- fila (Fase 9)
         //

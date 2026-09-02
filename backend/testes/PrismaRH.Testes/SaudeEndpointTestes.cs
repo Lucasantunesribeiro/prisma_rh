@@ -41,6 +41,37 @@ public class SaudeEndpointTestes(FabricaApiTestes fabrica) : IClassFixture<Fabri
     }
 
     /// <summary>
+    /// ⚠️ O `/health` precisa dizer se o esquema do banco **bate com o código**,
+    /// e não só se o banco responde.
+    ///
+    /// Este teste existe por causa de um incidente real em 02/09/2026: o código
+    /// do bloqueio progressivo foi publicado sem a migration ser aplicada no
+    /// Neon, o login passou a devolver 500 com `column u.bloqueado_ate does not
+    /// exist`, e o `/health` continuou respondendo `saudavel` o tempo todo.
+    ///
+    /// Um diagnóstico que responde "saudável" durante uma indisponibilidade é
+    /// pior que nenhum: ele desliga a suspeita.
+    /// </summary>
+    [Fact]
+    public async Task Health_VerificaAsMigrationsEnaoSoAConexao()
+    {
+        using var cliente = fabrica.CreateClient();
+
+        // Sem exigir sucesso: esta fixture aponta para um banco INALCANCAVEL de
+        // proposito, e o /health responde 503 com o corpo completo - que e
+        // justamente o que este teste quer ler.
+        using var resposta = await cliente.GetAsync("/health");
+
+        var conteudo = await resposta.Content.ReadFromJsonAsync<RespostaSaude>();
+
+        Assert.NotNull(conteudo);
+
+        Assert.Contains(
+            conteudo!.Verificacoes,
+            v => v.Nome == ConfiguracaoInfraestrutura.NomeVerificacaoMigrations);
+    }
+
+    /// <summary>
     /// ⚠️ Mudou na Fase 12: o documento OpenAPI **deixou de ser anonimo**.
     ///
     /// Ele nao ganhou `RequireAuthorization` - passou a ser coberto pela
