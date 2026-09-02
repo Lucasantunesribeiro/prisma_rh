@@ -1852,21 +1852,15 @@ mensagem. A revisão pós-roadmap não a tinha.
 > |---|---|
 > | `Jwt__ChaveAssinatura` | ✅ **Rotacionada.** Valor novo gerado por CSPRNG, escrito direto no cofre, nunca exibido. Sessões antigas caíram — efeito esperado. |
 > | Access key IAM `portfolio-cli-bootstrap` | ✅ **Rotacionada.** Nova criada, profile local atualizado, identidade verificada, antiga desativada, testada de novo e só então **excluída**. `AdministratorAccess` preservado. |
-> | Conexão do Neon | ⚠️ **Movida para o cofre, mas NÃO rotacionada.** Ver abaixo. |
+> | Conexão do Neon | ✅ **Movida para o cofre e rotacionada em 02/09/2026** pelo responsável, no console do Neon. Ver abaixo. |
 >
-> ⚠️ **A senha do Neon continua sendo a mesma, e precisa ser trocada por você.** Não há
-> chave de API do Neon nem `neonctl` nesta máquina — é o caso do `§33`, segredo que o
-> agente não possui. O valor apareceu **duas vezes** em saída de terminal nesta sessão
-> (uma na listagem das Lambdas, outra numa mensagem de erro do AWS CLI), e sessão fica
-> gravada em disco.
+> ✅ **A senha do Neon foi rotacionada em 02/09/2026** pelo responsável, no console do
+> Neon, e o parâmetro `/portfolio/prisma-rh/prod/database` foi sobrescrito (versão 2).
 >
-> Depois de trocar a senha no console do Neon, atualizar é **um comando**, e nenhuma
-> Lambda precisa ser republicada — elas leem o cofre no próximo *cold start*:
->
-> ```bash
-> aws ssm put-parameter --name /portfolio/prisma-rh/prod/database \
->   --type SecureString --value "<nova conexao>" --overwrite --region us-east-1
-> ```
+> Provado em produção depois de reciclar os containers: a API responde `/health`
+> `saudavel` com o *check* de banco, e o worker registra
+> `[prova-neon] trabalho ... nao existe` — mensagem que **só existe depois de consultar
+> o banco**. Nenhuma Lambda precisou ser republicada: elas leem o cofre no cold start.
 >
 > **Verificação executada.** O comando que expunha os segredos foi rodado de novo:
 >

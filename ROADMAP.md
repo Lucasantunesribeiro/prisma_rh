@@ -6457,6 +6457,104 @@ Localizado numa varredura por região e **excluído**; só `us-east-1` tem parâ
 vence o `AWS_PROFILE`.
 ---
 
+## LIMPEZA FINAL — 02/09/2026
+
+Fecha a rotação do Neon e remove o último custo fixo da conta. **Não é uma fase.**
+
+### Rotação do Neon concluída
+
+O responsável rotacionou a senha no console do Neon e disponibilizou a nova conexão na
+variável local. O parâmetro `/portfolio/prisma-rh/prod/database` foi sobrescrito
+(`SecureString`, `Standard`, `alias/aws/ssm`, **versão 2**), e o cofre confere byte a byte
+com o valor local.
+
+> ⚠️ **Os containers quentes guardavam a senha antiga.** O cache é por container, por
+> desenho — buscar a cada requisição custaria e colocaria a rede no caminho de toda
+> chamada. Por isso as duas funções foram **recicladas deliberadamente**: confiar em o
+> container reiniciar sozinho seria depender de sorte para validar.
+
+**Provas em produção, depois do cold start forçado:**
+
+| Prova | Evidência |
+|---|---|
+| API conecta ao Neon | `/health` → `{"status":"saudavel"}`, com o *check* de banco incluso, em cold start de 11 s |
+| Worker conecta ao Neon | log: `[prova-neon] trabalho 00000000-…-aa nao existe` — mensagem que **só existe depois de consultar o banco** |
+| Consulta autenticada | três rotas (`empresas`, `inconsistencias`, `auditoria`) → **200**, todas **vazias**: token válido de organização inventada não alcança dado de ninguém |
+| Refresh e sair | **403** pela `GuardaCsrf` sem cookie e sem token anti-CSRF — falha fechada, nunca 500 |
+| Origem estranha | **403**, e o preflight não devolve `allow-origin` |
+| Frontend | **200**, título `Prisma RH` |
+
+⚠️ **O que NÃO foi verificado, e por quê:** o ciclo real de *login com senha → refresh →
+rotação do cookie* não foi executado por mim, porque não digito senha em campo. Ele é
+coberto pelos testes de integração contra PostgreSQL real, e as peças específicas de
+produção — CSRF, `SameSite=None`, CORS — estão provadas acima. Para exercitá-lo você mesmo:
+
+```bash
+curl -c cookies.txt -X POST https://<api>/api/autenticacao/entrar \
+  -H "Origin: https://portfolio-prisma-rh.vercel.app" \
+  -H "Content-Type: application/json" -d '{"email":"...","senha":"..."}'
+```
+
+### Identity Center: não havia o que remover
+
+⚠️ **A instância do IAM Identity Center não existe em nenhuma das 17 regiões habilitadas.**
+Verificado varrendo todas com `sso-admin list-instances`. Ou seja: não houve *Additional
+Regions* a remover, nem instância a excluir.
+
+O que restava era **a CMK órfã que ele criou**, e ela era o custo real. `sso.amazonaws.com`
+continua habilitado como serviço confiável na Organizations — isso **não gera custo**, e
+desabilitá-lo pela Organizations é o caminho que a própria AWS desaconselha, então ficou
+como está.
+
+### A CMK: multi-region, e por isso duas cobranças
+
+A chave era **multi-Region**: primária em `us-east-1` com uma **réplica em `us-west-2`**.
+Réplica é cobrada como chave separada — o custo era ~US$ 2/mês, não US$ 1.
+
+Antes de agendar, confirmado que nada dependia dela: **nenhum alias**, **nenhum grant**, e
+os parâmetros do Prisma RH usam `alias/aws/ssm`.
+
+A ordem veio da documentação, não de suposição:
+
+> *"AWS KMS will not delete a multi-Region primary key with existing replica keys (…) When
+> the last of its replicas keys is deleted (**not just scheduled**), the key state of the
+> primary key changes to `PendingDeletion` and its waiting period begins."*
+
+| Chave | Estado | Exclusão |
+|---|---|---|
+| Réplica `us-west-2` | `PendingDeletion` | **09/09/2026** — 7 dias, o mínimo permitido |
+| Primária `us-east-1` | `PendingReplicaDeletion` | a janela de 7 dias **só começa** quando a réplica for de fato excluída |
+
+⚠️ **Consequência honesta: a remoção completa leva ~14 dias, não 7**, e a AWS cobra a chave
+enquanto ela existir. O resíduo é da ordem de centavos, e depois disso **nenhuma chave paga
+por existência permanece na conta**.
+
+**Reversível até lá:** `aws kms cancel-key-deletion --key-id <id> --region <regiao>`.
+
+### O que ficou intacto, por verificação
+
+| | |
+|---|---|
+| `aws sts get-caller-identity` | responde — `user/portfolio-cli-bootstrap` |
+| `AdministratorAccess` | anexado, não tocado |
+| Chaves gerenciadas pela AWS | `aws/ssm` e `aws/lambda` **Enabled**, intocadas |
+| Lambdas | as duas presentes e atualizadas |
+| Filas | `importacoes` e `importacoes-dlq` |
+| Parâmetros SSM | os dois, versões 2 e 1 |
+| Variáveis das Lambdas | **somente referências e configuração** — nenhum segredo |
+
+### Limpeza local
+
+Removi os artefatos que **eu** criei — pacotes de publicação, zips, dump do restore e logs
+de execução (243 MB → 34 MB). A varredura por padrão de segredo no scratchpad inteiro não
+encontrou nada. O `.env` do responsável e o `~/.aws/credentials` **não foram tocados**.
+
+### Validação
+
+1258 backend · 163 frontend · Release `-warnaserror` 0 avisos · typecheck 0 erros · lint
+limpo · build de produção OK · varredura de segredos no repositório limpa.
+---
+
 # 5. MAPA DE EVOLUÇÃO RESUMIDO
 
 ```text
