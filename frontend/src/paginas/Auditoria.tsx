@@ -20,6 +20,8 @@ const ENTIDADES = [
   'ExecucaoAnalise',
   'ResultadoAnalise',
   'Importacao',
+  'ConsultaCnpj',
+  'ExplicacaoIa',
 ] as const
 
 const ROTULO_ENTIDADE: Record<string, string> = {
@@ -32,6 +34,11 @@ const ROTULO_ENTIDADE: Record<string, string> = {
   ExecucaoAnalise: 'Análise',
   ResultadoAnalise: 'Inconsistência',
   Importacao: 'Importação',
+  ConsultaCnpj: 'Consulta de CNPJ',
+
+  // ⚠️ Faltava, e por isso a tela mostrava o valor cru `ExplicacaoIa`.
+  // Rotulo ausente nao quebra nada - so fica feio, que e como este passou.
+  ExplicacaoIa: 'Assistente de IA',
 }
 
 /**

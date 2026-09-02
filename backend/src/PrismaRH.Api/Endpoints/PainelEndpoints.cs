@@ -166,7 +166,7 @@ public static class PainelEndpoints
 
             [.. porResponsavel.Select(g => new PendenciaPorResponsavel(
                 g.Key,
-                g.Key is { } id && nomes.TryGetValue(id, out var nome) ? nome : "Sem responsavel",
+                g.Key is { } id && nomes.TryGetValue(id, out var nome) ? nome : "Sem responsável",
                 g.Quantidade))],
 
             evolucao));

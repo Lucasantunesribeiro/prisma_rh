@@ -30,10 +30,10 @@ public sealed class LiquidoNegativoRegra : IRegraAnalise
 
     public Severidade SeveridadePadrao => Severidade.Alta;
 
-    public string Nome => "Liquido negativo";
+    public string Nome => "Líquido negativo";
 
     public string Explicacao =>
-        "Procura holerite cujo liquido ficou abaixo de zero - a pessoa deve para a empresa.";
+        "Procura holerite cujo líquido ficou abaixo de zero — a pessoa deve para a empresa.";
 
     public IReadOnlyList<DefinicaoParametro> Parametros =>
     [
@@ -56,7 +56,7 @@ public sealed class LiquidoNegativoRegra : IRegraAnalise
         foreach (var holerite in contexto.Holerites.Where(h => h.Liquido < -tolerancia))
         {
             yield return new Achado(
-                $"Liquido de {TextoMonetario.Reais(holerite.Liquido)}: os descontos "
+                $"Líquido de {TextoMonetario.Reais(holerite.Liquido)}: os descontos "
                 + $"({TextoMonetario.Reais(holerite.TotalDescontos)}) passam dos proventos "
                 + $"({TextoMonetario.Reais(holerite.TotalProventos)}).",
                 holerite.IdFolhaFuncionario,
@@ -110,7 +110,7 @@ public sealed class DescontoAcimaDoLimiteRegra : IRegraAnalise
     [
         new(ParametroPercentual,
             "Percentual maximo de desconto",
-            "Acima disso, o holerite entra no relatorio. Padrao de produto, nao regra legal.",
+            "Acima disso, o holerite entra no relatório. Padrão de produto, não regra legal.",
             TipoParametro.Percentual,
             Padrao: 70m,
             Minimo: 1m,
@@ -182,11 +182,11 @@ public sealed class RubricaDuplicadaRegra : IRegraAnalise
 
     public Severidade SeveridadePadrao => Severidade.Media;
 
-    public string Nome => "Rubrica lancada em duplicidade";
+    public string Nome => "Rubrica lançada em duplicidade";
 
     public string Explicacao =>
-        "Procura a mesma rubrica lancada manualmente mais de uma vez no mesmo holerite. "
-        + "Lancamentos gerados pelo calculo sao ignorados, porque repetir e legitimo neles.";
+        "Procura a mesma rubrica lançada manualmente mais de uma vez no mesmo holerite. "
+        + "Lançamentos gerados pelo cálculo são ignorados, porque repetir é legítimo neles.";
 
     public IReadOnlyList<DefinicaoParametro> Parametros => [];
 
@@ -207,8 +207,8 @@ public sealed class RubricaDuplicadaRegra : IRegraAnalise
                 var primeiro = grupo.First();
 
                 yield return new Achado(
-                    $"A rubrica {primeiro.CodigoRubrica} ({primeiro.NomeRubrica}) foi lancada "
-                    + $"{grupo.Count()} vezes a mao, somando {TextoMonetario.Reais(total)}.",
+                    $"A rubrica {primeiro.CodigoRubrica} ({primeiro.NomeRubrica}) foi lançada "
+                    + $"{grupo.Count()} vezes à mão, somando {TextoMonetario.Reais(total)}.",
                     holerite.IdFolhaFuncionario,
                     holerite.IdFuncionario,
                     holerite.Matricula,

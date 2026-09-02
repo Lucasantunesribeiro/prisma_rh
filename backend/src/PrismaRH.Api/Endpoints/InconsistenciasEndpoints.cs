@@ -262,7 +262,7 @@ public static class InconsistenciasEndpoints
             AcaoAuditada.InconsistenciaTransitada,
             EntidadeAuditada.ResultadoAnalise,
             resultado.Id,
-            $"Inconsistencia '{resultado.Codigo}' de {anterior} para {resultado.Status}.",
+            $"Inconsistência '{resultado.Codigo}' de {anterior} para {resultado.Status}.",
             $"de={anterior};para={resultado.Status};matricula={resultado.Matricula}");
 
         await db.SaveChangesAsync(ct);
@@ -301,7 +301,7 @@ public static class InconsistenciasEndpoints
             {
                 return Results.BadRequest(new
                 {
-                    detalhe = "Responsavel invalido: escolha um usuario desta organizacao.",
+                    detalhe = "Responsável inválido: escolha um usuário desta organização.",
                 });
             }
         }
@@ -314,8 +314,8 @@ public static class InconsistenciasEndpoints
             EntidadeAuditada.ResultadoAnalise,
             resultado.Id,
             resultado.IdResponsavel is null
-                ? $"Inconsistencia '{resultado.Codigo}' ficou sem responsavel."
-                : $"Inconsistencia '{resultado.Codigo}' atribuida.",
+                ? $"Inconsistência '{resultado.Codigo}' ficou sem responsável."
+                : $"Inconsistência '{resultado.Codigo}' atribuída.",
             $"responsavel={resultado.IdResponsavel}");
 
         await db.SaveChangesAsync(ct);
@@ -347,7 +347,7 @@ public static class InconsistenciasEndpoints
             id, requisicao, db, usuario, relogio, ct,
             (r, autor, texto, agora) => r.RegistrarEvidencia(autor, texto, agora),
             AcaoAuditada.EvidenciaRegistrada,
-            "recebeu uma evidencia");
+            "recebeu uma evidência");
 
     /// <summary>
     /// Comentario e evidencia sao a mesma operacao com um rotulo diferente.
@@ -387,7 +387,7 @@ public static class InconsistenciasEndpoints
         // Ele vive na linha do tempo, com o controle de acesso dela.
         db.Registrar(
             usuario, relogio, acao, EntidadeAuditada.ResultadoAnalise, resultado.Id,
-            $"Inconsistencia '{resultado.Codigo}' {rotulo}.",
+            $"Inconsistência '{resultado.Codigo}' {rotulo}.",
             $"matricula={resultado.Matricula}");
 
         await db.SaveChangesAsync(ct);

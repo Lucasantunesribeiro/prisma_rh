@@ -38,17 +38,17 @@ public sealed class VariacaoSalarialRegra : IRegraAnalise
 
     public Severidade SeveridadePadrao => Severidade.Media;
 
-    public string Nome => "Variacao salarial fora da tolerancia";
+    public string Nome => "Variação salarial fora da tolerância";
 
     public string Explicacao =>
-        "Compara o salario de referencia com o da competencia anterior e acusa quando a "
+        "Compara o salário de referência com o da competência anterior e acusa quando a "
         + "diferenca passa do percentual configurado, para cima ou para baixo.";
 
     public IReadOnlyList<DefinicaoParametro> Parametros =>
     [
         new(ParametroTolerancia,
-            "Tolerancia de variacao",
-            "Diferenca aceita entre uma competencia e a anterior, para mais ou para menos.",
+            "Tolerância de variação",
+            "Diferença aceita entre uma competência e a anterior, para mais ou para menos.",
             TipoParametro.Percentual,
             Padrao: 30m,
             Minimo: 1m,
@@ -81,9 +81,9 @@ public sealed class VariacaoSalarialRegra : IRegraAnalise
             var sentido = atual > anterior ? "subiu" : "caiu";
 
             yield return new Achado(
-                $"O salario de referencia {sentido} de {TextoMonetario.Reais(anterior)} para "
+                $"O salário de referência {sentido} de {TextoMonetario.Reais(anterior)} para "
                 + $"{TextoMonetario.Reais(atual)} - {TextoMonetario.Percentual(variacao)}, "
-                + $"acima da tolerancia de {TextoMonetario.Percentual(tolerancia)}.",
+                + $"acima da tolerância de {TextoMonetario.Percentual(tolerancia)}.",
                 holerite.IdFolhaFuncionario,
                 holerite.IdFuncionario,
                 holerite.Matricula,
