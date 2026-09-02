@@ -39,3 +39,9 @@ backend/testes/prismarh.testes/isolamento/producaohttptestes.cs:senha
 # "cole-a-chave-aqui". A chave real do Gemini fica no .env, que o .gitignore
 # barra (regra *.env) e a varredura nem chega a ler. Conferido antes de liberar.
 .env.example:token de acesso
+
+# A conta publica da demonstracao. A linha NAO guarda valor nenhum: le
+# `import.meta.env.VITE_DEMO_SENHA`, que a Vercel injeta no build. O valor e
+# intencionalmente publico - conta Visualizador, somente leitura, com teste
+# provando 403 em TODA rota de escrita - e mesmo assim nao esta no repositorio.
+frontend/src/paginas/entrar.tsx:senha

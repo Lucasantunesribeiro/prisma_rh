@@ -7,6 +7,40 @@ import { Label } from '@/components/ui/label'
 import { useSessao } from '@/auth/useSessao'
 
 /**
+ * A conta pública da demonstração.
+ *
+ * ## Por que ela existe
+ *
+ * Um recrutador abria o site, via um formulário e **não tinha como entrar** —
+ * a aplicação estava no ar e ninguém conseguia ver nada dela. Para um
+ * portfólio, isso é pior que qualquer defeito de código.
+ *
+ * ## Por que é seguro publicar esta credencial
+ *
+ * ⚠️ **Só porque a conta é `Visualizador` e não escreve nada.** A autorização é
+ * do backend (`CLAUDE.md §24.4`), e há teste provando que este perfil recebe
+ * **403** em toda operação de escrita — cadastrar, editar, excluir, calcular,
+ * fechar folha, mudar workflow, alterar regra e importar.
+ *
+ * Nenhuma credencial de Administrador da Plataforma, Administrador da Empresa,
+ * Analista de RH ou Auditor é exposta.
+ *
+ * A senha chega por variável do Vite, que **termina pública no bundle** — e
+ * isso é aceito aqui, e só aqui, porque a credencial é intencionalmente
+ * pública. Ela não pode ser reaproveitada em nenhum outro usuário ou ambiente.
+ *
+ * ## O que este botão NÃO é
+ *
+ * Não é bypass. Não há endpoint de login-demo, nem tratamento privilegiado no
+ * backend: o botão preenche os campos e usa **o mesmo fluxo de sempre** —
+ * mesmo `entrar`, mesmo access token, mesmo refresh, mesmo rate limiting.
+ */
+const CONTA_DEMO = {
+  email: 'visualizador@prisma.exemplo',
+  senha: import.meta.env.VITE_DEMO_SENHA as string | undefined,
+}
+
+/**
  * Login.
  *
  * Uma coluna centrada, sem painel decorativo, sem ilustração e sem gradiente:
@@ -28,6 +62,24 @@ export default function Entrar() {
 
   if (usuario) {
     return <Navigate to="/funcionarios" replace />
+  }
+
+  const entrarComoDemonstracao = async () => {
+    if (!CONTA_DEMO.senha) return
+
+    definirEmail(CONTA_DEMO.email)
+    definirSenha(CONTA_DEMO.senha)
+    definirErro(null)
+    definirEnviando(true)
+
+    try {
+      // Mesmo fluxo do formulario. Nada de especial acontece no backend.
+      await entrar(CONTA_DEMO.email, CONTA_DEMO.senha)
+    } catch (falha) {
+      definirErro(falha instanceof Error ? falha.message : 'Não foi possível entrar.')
+    } finally {
+      definirEnviando(false)
+    }
   }
 
   const aoEnviar = async (evento: FormEvent) => {
@@ -102,6 +154,35 @@ export default function Entrar() {
             {enviando ? 'Entrando...' : 'Entrar'}
           </Button>
         </form>
+
+        {CONTA_DEMO.senha && (
+          <section
+            aria-labelledby="demonstracao"
+            className="mt-7 rounded-lg border border-dashed border-border bg-muted/40 p-4"
+          >
+            <h2 id="demonstracao" className="text-[13px] font-semibold text-foreground">
+              Demonstração
+            </h2>
+
+            <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">
+              Entre com uma conta pública de <strong>somente leitura</strong> e explore
+              folhas calculadas, memória de cálculo, conferência e auditoria — com dados
+              fictícios.
+            </p>
+
+            <p className="mt-2 font-mono text-[12px] text-foreground">{CONTA_DEMO.email}</p>
+
+            <Button
+              type="button"
+              variant="outline"
+              className="mt-3 w-full"
+              disabled={enviando}
+              onClick={entrarComoDemonstracao}
+            >
+              {enviando ? 'Entrando...' : 'Entrar na demonstração'}
+            </Button>
+          </section>
+        )}
 
         {/*
          * Sinal de confiança discreto, e não slogan: diz como a sessão é

@@ -25,6 +25,27 @@ public static class SemeadorDesenvolvimento
 {
     public const string VariavelSenha = "PRISMARH_SEED_SENHA";
 
+    /// <summary>
+    /// ⚠️ Senha **separada** para a conta pública da demonstração.
+    ///
+    /// ## Por que ela nao pode ser a mesma
+    ///
+    /// A tela de login do portfolio publica a credencial de
+    /// `visualizador@prisma.exemplo`, e qualquer `VITE_*` termina no bundle.
+    /// Enquanto os seis usuarios compartilhavam o mesmo hash, publicar a senha
+    /// do Visualizador publicava tambem a de `plataforma@`, `admin@`,
+    /// `analista@`, `auditor@` e a do vizinho — e os enderecos seguem um padrao
+    /// obvio, visivel neste proprio arquivo.
+    ///
+    /// Ou seja: a conta de leitura teria entregue a conta que administra a
+    /// plataforma inteira. **Uma senha compartilhada vale o menor privilegio de
+    /// quem a usa, nao o maior.**
+    ///
+    /// Sem esta variavel, o Visualizador nasce com a senha comum — que e o
+    /// comportamento certo em desenvolvimento, onde nada e publicado.
+    /// </summary>
+    public const string VariavelSenhaDemo = "PRISMARH_SEED_SENHA_DEMO";
+
     public static async Task SemearAsync(IServiceProvider servicos, CancellationToken ct = default)
     {
         using var escopo = servicos.CreateScope();
@@ -172,6 +193,10 @@ public static class SemeadorDesenvolvimento
     {
         var hash = hasheador.Gerar(senha);
 
+        // A conta publica tem hash proprio quando ha senha de demo configurada.
+        var senhaDemo = Environment.GetEnvironmentVariable(VariavelSenhaDemo);
+        var hashDemo = string.IsNullOrWhiteSpace(senhaDemo) ? hash : hasheador.Gerar(senhaDemo);
+
         var prisma = new Organizacao("Prisma Servicos de RH Ltda.", agora);
         var horizonte = new Organizacao("Contabilidade Horizonte Ltda.", agora);
         contexto.Organizacoes.AddRange(prisma, horizonte);
@@ -183,7 +208,7 @@ public static class SemeadorDesenvolvimento
             new Usuario(prisma.Id, "Bruno Admin", "admin@prisma.exemplo", hash, Perfil.AdministradorEmpresa, agora),
             new Usuario(prisma.Id, "Carla Analista", "analista@prisma.exemplo", hash, Perfil.AnalistaRh, agora),
             new Usuario(prisma.Id, "Diego Auditor", "auditor@prisma.exemplo", hash, Perfil.Auditor, agora),
-            new Usuario(prisma.Id, "Elisa Visualizadora", "visualizador@prisma.exemplo", hash, Perfil.Visualizador, agora),
+            new Usuario(prisma.Id, "Elisa Visualizadora", "visualizador@prisma.exemplo", hashDemo, Perfil.Visualizador, agora),
 
             // O vizinho: existe para provar que ele NAO enxerga a Prisma.
             new Usuario(horizonte.Id, "Fabio Horizonte", "admin@horizonte.exemplo", hash, Perfil.AdministradorEmpresa, agora));
@@ -396,23 +421,23 @@ public static class SemeadorDesenvolvimento
         [
             // Natureza eSocial 5504.
             new Rubrica(
-                idOrganizacao, "DEC13ADT", "13o salario - adiantamento",
+                idOrganizacao, "DEC13ADT", "13º salário — adiantamento",
                 TipoRubrica.Provento, EstrategiaRubrica.DecimoTerceiroAdiantamento,
                 BaseCalculo.Fgts, agora),
 
             // Natureza eSocial 5001.
             new Rubrica(
-                idOrganizacao, "DEC13", "13o salario",
+                idOrganizacao, "DEC13", "13º salário",
                 TipoRubrica.Provento, EstrategiaRubrica.DecimoTerceiroTotal,
                 BaseCalculo.Inss | BaseCalculo.Irrf, agora),
 
             new Rubrica(
-                idOrganizacao, "DEC13ADTD", "Adiantamento de 13o ja pago",
+                idOrganizacao, "DEC13ADTD", "Adiantamento de 13º já pago",
                 TipoRubrica.Desconto, EstrategiaRubrica.DecimoTerceiroAdiantamentoDescontado,
                 BaseCalculo.Nenhuma, agora),
 
             new Rubrica(
-                idOrganizacao, "DEC13FG", "Base de FGTS do 13o (diferenca)",
+                idOrganizacao, "DEC13FG", "Base de FGTS do 13º (diferença)",
                 TipoRubrica.Informativo, EstrategiaRubrica.DecimoTerceiroBaseFgts,
                 BaseCalculo.Fgts, agora),
         ];
@@ -425,19 +450,19 @@ public static class SemeadorDesenvolvimento
         return
         [
             new Rubrica(
-                idOrganizacao, "FER", "Ferias",
+                idOrganizacao, "FER", "Férias",
                 TipoRubrica.Provento, EstrategiaRubrica.FeriasGozadas, integraTudo, agora),
 
             new Rubrica(
-                idOrganizacao, "FER13", "1/3 constitucional de ferias",
+                idOrganizacao, "FER13", "1/3 constitucional de férias",
                 TipoRubrica.Provento, EstrategiaRubrica.TercoFerias, integraTudo, agora),
 
             new Rubrica(
-                idOrganizacao, "ABONO", "Abono pecuniario de ferias",
+                idOrganizacao, "ABONO", "Abono pecuniário de férias",
                 TipoRubrica.Provento, EstrategiaRubrica.AbonoPecuniario, BaseCalculo.Irrf, agora),
 
             new Rubrica(
-                idOrganizacao, "ABN13", "1/3 sobre o abono pecuniario",
+                idOrganizacao, "ABN13", "1/3 sobre o abono pecuniário",
                 TipoRubrica.Provento, EstrategiaRubrica.TercoAbono, BaseCalculo.Irrf, agora),
         ];
     }
@@ -470,15 +495,15 @@ public static class SemeadorDesenvolvimento
 
         (string Codigo, string Nome, BaseCalculo Bases)[] linhas =
         [
-            ("SALDO", "Saldo de salario", tudo),
-            ("AVISO", "Aviso previo indenizado", BaseCalculo.Fgts),
-            ("FERVEN", "Ferias vencidas na rescisao", BaseCalculo.Nenhuma),
-            ("FERVEN13", "1/3 sobre ferias vencidas", BaseCalculo.Nenhuma),
-            ("FERPROP", "Ferias proporcionais", BaseCalculo.Nenhuma),
-            ("FERPROP13", "1/3 sobre ferias proporcionais", BaseCalculo.Nenhuma),
-            ("DEC13PROP", "13o salario proporcional", tudo),
-            ("DEC13AV", "13o sobre o aviso previo indenizado", BaseCalculo.Inss | BaseCalculo.Fgts),
-            ("MULTAFGTS", "Indenizacao compensatoria do FGTS", BaseCalculo.Nenhuma),
+            ("SALDO", "Saldo de salário", tudo),
+            ("AVISO", "Aviso prévio indenizado", BaseCalculo.Fgts),
+            ("FERVEN", "Férias vencidas na rescisão", BaseCalculo.Nenhuma),
+            ("FERVEN13", "1/3 sobre férias vencidas", BaseCalculo.Nenhuma),
+            ("FERPROP", "Férias proporcionais", BaseCalculo.Nenhuma),
+            ("FERPROP13", "1/3 sobre férias proporcionais", BaseCalculo.Nenhuma),
+            ("DEC13PROP", "13º salário proporcional", tudo),
+            ("DEC13AV", "13º sobre o aviso prévio indenizado", BaseCalculo.Inss | BaseCalculo.Fgts),
+            ("MULTAFGTS", "Indenização compensatória do FGTS", BaseCalculo.Nenhuma),
         ];
 
         return [.. linhas.Select(l => new Rubrica(
@@ -619,11 +644,11 @@ public static class SemeadorDesenvolvimento
         const BaseCalculo integraTudo = BaseCalculo.Inss | BaseCalculo.Fgts | BaseCalculo.Irrf;
 
         var salario = new Rubrica(
-            prisma.Id, "SAL", "Salario base",
+            prisma.Id, "SAL", "Salário base",
             TipoRubrica.Provento, EstrategiaRubrica.SalarioBaseProporcional, integraTudo, agora);
 
         var comissao = new Rubrica(
-            prisma.Id, "COM", "Comissao",
+            prisma.Id, "COM", "Comissão",
             TipoRubrica.Provento, EstrategiaRubrica.ValorInformado, integraTudo, agora);
 
         var valeTransporte = new Rubrica(
