@@ -105,7 +105,14 @@ public static class ConexaoNeon
     /// </summary>
     public static string? DoAmbiente()
     {
-        var bruta = Environment.GetEnvironmentVariable(Variavel);
+        // ⚠️ O SSM tem PRECEDENCIA sobre a variavel direta.
+        //
+        // Em producao a variavel com o segredo deixou de existir - ela era
+        // legivel por `lambda:GetFunctionConfiguration` (`CLAUDE.md secao 24.19
+        // item 9`). A variavel direta sobrevive para desenvolvimento, testes e
+        // Docker local, onde nao ha AWS nenhuma para consultar.
+        var bruta = Producao.SegredosSsm.Ler(Producao.SegredosSsm.VariavelParametroBanco)
+            ?? Environment.GetEnvironmentVariable(Variavel);
 
         return string.IsNullOrWhiteSpace(bruta) ? null : Converter(bruta);
     }

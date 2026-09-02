@@ -1768,7 +1768,7 @@ razão que apagar do código não o tira do histórico do Git.
 
 **Bloqueante antes de qualquer uso que não seja portfólio pessoal.**
 
-### 9. Segredos de produção em variável de ambiente de Lambda, legíveis por `ListFunctions`
+### 9. ✅ RESOLVIDA — Segredos de produção em variável de ambiente de Lambda
 
 Registrada em **01/09/2026**, na auditoria pós-roadmap.
 
@@ -1816,6 +1816,85 @@ infraestrutura e exige **deploy**, que o `§31` condiciona a autorização expl�
 mensagem. A revisão pós-roadmap não a tinha.
 
 **Bloqueante antes de qualquer uso que não seja portfólio pessoal.**
+
+> ### ✅ RESOLVIDA em 02/09/2026, na correção final de segurança pós-roadmap.
+>
+> **A estratégia, em uma linha:** a Lambda carrega o **nome** do parâmetro; o segredo vive
+> no **SSM Parameter Store** como `SecureString`; a criptografia usa a **chave gerenciada
+> pela AWS**, sem nenhuma CMK paga.
+>
+> ```text
+> variavel de ambiente da Lambda  ->  /portfolio/prisma-rh/prod/database
+>                                     /portfolio/prisma-rh/prod/jwt-signing-key
+> SSM SecureString                ->  o segredo
+> alias/aws/ssm                   ->  criptografia sem custo fixo
+> ```
+>
+> Nome de parâmetro não é segredo. Ler o valor passa a exigir `ssm:GetParameter(s)`
+> **naquele ARN específico** mais `kms:Decrypt` — e o `Decrypt` está restrito por
+> `kms:ViaService = ssm.us-east-1.amazonaws.com`, então a permissão só vale **através do
+> SSM**, nunca direto contra a chave.
+>
+> **Privilégio mínimo, papel a papel:** a API alcança os dois parâmetros; o worker alcança
+> **só o do banco** — ele não precisa da chave do JWT, e por isso não a recebe.
+>
+> **Custo: US$ 0,00 fixos**, verificado na documentação vigente **antes** de criar
+> qualquer coisa (`§16`): *"Standard parameters are available at no additional charge"*, e
+> para a chave gerenciada *"You are not charged for (...) creation and storage of AWS
+> managed (...) KMS keys"*, com franquia de **20.000 requisições/mês** de KMS.
+>
+> ⚠️ A franquia só é folgada porque a busca é **uma por container, no startup** — não por
+> requisição. Buscar por requisição transformaria um portfólio ocioso numa conta.
+>
+> **Segredos rotacionados:**
+>
+> | Segredo | Situação |
+> |---|---|
+> | `Jwt__ChaveAssinatura` | ✅ **Rotacionada.** Valor novo gerado por CSPRNG, escrito direto no cofre, nunca exibido. Sessões antigas caíram — efeito esperado. |
+> | Access key IAM `portfolio-cli-bootstrap` | ✅ **Rotacionada.** Nova criada, profile local atualizado, identidade verificada, antiga desativada, testada de novo e só então **excluída**. `AdministratorAccess` preservado. |
+> | Conexão do Neon | ⚠️ **Movida para o cofre, mas NÃO rotacionada.** Ver abaixo. |
+>
+> ⚠️ **A senha do Neon continua sendo a mesma, e precisa ser trocada por você.** Não há
+> chave de API do Neon nem `neonctl` nesta máquina — é o caso do `§33`, segredo que o
+> agente não possui. O valor apareceu **duas vezes** em saída de terminal nesta sessão
+> (uma na listagem das Lambdas, outra numa mensagem de erro do AWS CLI), e sessão fica
+> gravada em disco.
+>
+> Depois de trocar a senha no console do Neon, atualizar é **um comando**, e nenhuma
+> Lambda precisa ser republicada — elas leem o cofre no próximo *cold start*:
+>
+> ```bash
+> aws ssm put-parameter --name /portfolio/prisma-rh/prod/database \
+>   --type SecureString --value "<nova conexao>" --overwrite --region us-east-1
+> ```
+>
+> **Verificação executada.** O comando que expunha os segredos foi rodado de novo:
+>
+> ```text
+> aws lambda get-function-configuration --function-name portfolio-prisma-rh-prod-api
+>   -> ASPNETCORE_ENVIRONMENT, Cors__OrigensPermitidas__0,
+>      DOTNET_SYSTEM_GLOBALIZATION_INVARIANT, PRISMARH_SQS_URL,
+>      PRISMARH_SSM_PARAMETRO_BANCO, PRISMARH_SSM_PARAMETRO_JWT
+>   -> nenhuma senha, nenhuma connection string, nenhuma chave
+> ```
+>
+> E a prova de que a rotação **propagou**: um token assinado com a chave lida do cofre foi
+> aceito pela API (`HTTP 200`), devolvendo página vazia — porque a organização do token é
+> inventada e o filtro global não casa com nada. Autenticação funciona, e o isolamento
+> resiste até a um token legitimamente assinado.
+>
+> ⚠️ **Um defeito meu, cometido e corrigido no meio desta tarefa, fica registrado.** A
+> primeira versão injetava a chave via `AddOptions<OpcoesJwt>().Configure(...)`, e a API
+> **caiu em produção** com `IDX10703: key length is zero`. A causa: há **dois caminhos
+> independentes** lendo o mesmo segredo — o `GeradorJwt` **emite** token pelo `IOptions`, e
+> o `AddJwtBearer` do `Program.cs` **valida** lendo a configuração direto. A correção
+> cobria só o primeiro. O serviço foi restaurado em seguida repondo as variáveis, e a
+> correção definitiva alimenta a **configuração**, que é de onde os dois nascem.
+>
+> ⚠️ **Um resto que eu criei e apaguei:** um parâmetro `SecureString` com a conexão de
+> produção foi criado por engano em **sa-east-1**, porque `AWS_DEFAULT_REGION=sa-east-1`
+> está no ambiente desta máquina e o AWS CLI v1 **não lê `AWS_REGION`**. Localizado numa
+> varredura por região e **excluído**. Só `us-east-1` tem parâmetros.
 
 ## 24.20 Headers, CORS e navegador
 

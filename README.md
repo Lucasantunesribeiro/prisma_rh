@@ -44,6 +44,7 @@ Se você veio olhar código, estes são os pontos que valem a leitura:
 | **Defesa de SSRF** | `GuardaDestino` | Allowlist fixa em código, DNS resolvido e **todos** os IPs conferidos, `::ffff:` desembrulhado, redirect revalidado a cada salto |
 | **Orçamento global com concorrência** | `OrcamentoBlobs` | `pg_advisory_xact_lock` para reservar espaço — funciona atrás do PgBouncer, onde lock de sessão não funciona |
 | **CSRF com `SameSite=None`** | `GuardaCsrf` | *Double submit* comparado em tempo constante **mais** validação de `Origin`. Ausência é recusa |
+| **Segredos fora das variáveis** | `SegredosSsm` | `get-function-configuration` devolve variável de ambiente em texto puro. A Lambda carrega o **nome** do parâmetro; o segredo vive no SSM `SecureString`, com `kms:Decrypt` restrito por `ViaService` |
 | **IA que não calcula** | `VocabularioConsulta` | O modelo propõe campo, operador e valor; a aplicação confere contra lista fechada e monta `Where` tipado. **Não existe SQL vindo do modelo** |
 | **Segurança testada, não afirmada** | `testes/Seguranca/` | Inventário de rotas lido da aplicação rodando, token forjado de seis formas, varredura de IDOR que inclui rotas futuras sozinha |
 

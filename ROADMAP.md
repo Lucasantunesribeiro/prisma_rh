@@ -6360,6 +6360,103 @@ tinha sumido. Ela existe: o shell mastigou as aspas da consulta. A Function URL 
 ausência** — é prova de que o comando voltou vazio.
 ---
 
+## CORREÇÃO FINAL DE SEGURANÇA — 02/09/2026
+
+Executada depois da revisão pós-roadmap, para fechar o `CLAUDE.md §24.19 item 9`. **Não é
+uma fase.** Nenhuma funcionalidade nova entrou.
+
+### A estratégia
+
+```text
+variavel de ambiente da Lambda  ->  NOME do parametro
+SSM Parameter Store SecureString ->  o segredo
+alias/aws/ssm (gerenciada AWS)   ->  criptografia sem custo fixo
+```
+
+Nome de parâmetro não é segredo. Ler o valor passa a exigir `ssm:GetParameter(s)` **naquele
+ARN específico** mais `kms:Decrypt` — este último restrito por
+`kms:ViaService = ssm.us-east-1.amazonaws.com`, de modo que a permissão vale **através do
+SSM** e nunca direto contra a chave.
+
+**Privilégio mínimo, papel a papel:** a API alcança os dois parâmetros; o worker alcança
+**só o do banco**, porque não precisa da chave do JWT.
+
+**Uma chamada por container, no startup** — não por requisição. É o que mantém o uso do KMS
+dentro da franquia e tira a rede do caminho de toda chamada.
+
+### Custo: US$ 0,00 fixos
+
+Verificado na documentação vigente **antes** de criar qualquer recurso (`§16`):
+
+| Item | Documentação |
+|---|---|
+| Parâmetro standard | *"Standard parameters are available at no additional charge"* |
+| Chave gerenciada AWS | *"You are not charged for (...) creation and storage of AWS managed (...) KMS keys"* |
+| Requisições KMS | franquia de **20.000/mês** |
+
+Nenhuma *customer-managed key* foi criada. Secrets Manager foi recusado por cobrar por
+segredo por mês.
+
+> ⚠️ **Existe uma CMK na conta, e ela custa ~US$ 1,00/mês** — criada em **31/08/2026** pelo
+> **IAM Identity Center**, não por este projeto. Ela pertence ao modelo de acesso do
+> responsável, que pediu explicitamente para não ser alterado. Fica registrada como custo
+> conhecido e fora do escopo do Prisma RH.
+
+### Rotação
+
+| Segredo | Situação |
+|---|---|
+| `Jwt__ChaveAssinatura` | ✅ **Rotacionada** — valor novo por CSPRNG, escrito direto no cofre, nunca exibido |
+| Access key IAM | ✅ **Rotacionada** — nova criada, profile atualizado, identidade verificada, antiga desativada, testada de novo e só então excluída. `AdministratorAccess` preservado |
+| Conexão do Neon | ⚠️ **Movida para o cofre, não rotacionada** — ver abaixo |
+
+⚠️ **A senha do Neon continua a mesma e precisa ser trocada pelo responsável.** Não há
+chave de API do Neon nem `neonctl` nesta máquina (`§33`). Depois de trocar no console,
+atualizar é **um comando** e nenhuma Lambda precisa ser republicada — elas leem o cofre no
+próximo *cold start*.
+
+### Verificação executada
+
+| Prova | Resultado |
+|---|---|
+| `get-function-configuration` nas duas funções | **nenhuma senha, connection string ou chave** — só nomes de parâmetro, hostnames públicos e flags |
+| API sobe lendo do cofre | `/health` **200**, com o *check* de banco `saudavel` |
+| Chave JWT carregada | app sobe (o `ValidateOnStart` exige 32+ caracteres) e token inválido devolve **401**, não 500 |
+| **Rotação propagou** | token assinado com a chave **lida do cofre** foi aceito: **HTTP 200** |
+| Isolamento resiste a token válido | a resposta veio **vazia** — organização inventada não casa com o filtro global |
+| Worker lê do cofre | log: `worker pronto: host=… banco=neondb ssl=VerifyFull`, **sem a senha** |
+| Processamento assíncrono | invocação sintética: `200`, sem `FunctionError`, e a guarda de esquema recusou a mensagem malformada |
+| CORS ponta a ponta | preflight da Vercel **204** com `allow-credentials`; origem estranha recebe **zero** cabeçalhos |
+| Logs | nenhum segredo. Os acertos da varredura são `"Bearer was challenged"` do próprio framework, e o `IDX14102` mostra a **redação nativa** do Microsoft.IdentityModel |
+| Suíte backend | **1258/1258** |
+| Suíte frontend | **163/163** |
+| Build Release `-warnaserror` · typecheck · lint · build de produção | limpos |
+| Varredura de segredos no repositório | limpa |
+
+### Dois erros meus, registrados
+
+⚠️ **A API caiu em produção durante esta tarefa.** A primeira versão injetava a chave via
+`AddOptions<OpcoesJwt>().Configure(...)`, e a aplicação subiu com `IDX10703: key length is
+zero`.
+
+A causa é instrutiva: há **dois caminhos independentes** lendo o mesmo segredo — o
+`GeradorJwt` **emite** token pelo `IOptions`, e o `AddJwtBearer` do `Program.cs` **valida**
+lendo `builder.Configuration` direto. Minha correção cobria só o primeiro.
+
+O serviço foi restaurado em seguida repondo as variáveis, e a correção definitiva alimenta
+a **configuração**, de onde os dois nascem. **Quando um valor tem duas portas de entrada,
+corrigir uma é corrigir metade.**
+
+⚠️ **Criei um parâmetro `SecureString` com a conexão de produção na região errada.**
+`AWS_DEFAULT_REGION=sa-east-1` está no ambiente desta máquina, vindo de outro projeto, e o
+**AWS CLI v1 não lê `AWS_REGION`** — só `AWS_DEFAULT_REGION`. Sem `--region` explícito o
+comando vai para a região errada **e funciona**, criando recurso onde ninguém procura.
+Localizado numa varredura por região e **excluído**; só `us-east-1` tem parâmetros.
+
+É a mesma família da armadilha já conhecida no projeto: `AWS_ACCESS_KEY_ID` no ambiente
+vence o `AWS_PROFILE`.
+---
+
 # 5. MAPA DE EVOLUÇÃO RESUMIDO
 
 ```text

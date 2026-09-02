@@ -20,6 +20,14 @@ using PrismaRH.Infraestrutura.Persistencia;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// ⚠️ ANTES de qualquer leitura de configuracao.
+//
+// Em producao a chave de assinatura do JWT vive no SSM Parameter Store, e nao
+// numa variavel de ambiente - que `lambda:GetFunctionConfiguration` devolveria
+// em texto puro (`CLAUDE.md secao 24.19 item 9`). Fora de producao nao ha
+// parametro, e esta linha nao faz nada.
+PrismaRH.Infraestrutura.Producao.SegredosSsm.AdicionarNaConfiguracao(builder.Configuration);
+
 const string PoliticaCors = "origens-permitidas";
 
 
