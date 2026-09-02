@@ -110,7 +110,8 @@ Um portfólio que só lista acertos não é evidência de nada. O que **não** f
   dezenas de milhares de vínculos exigiria processar em lotes.
 - **O restore foi testado uma vez, em 01/09/2026** — não é automatizado. Testado uma vez
   é melhor que nunca, e pior que periodicamente.
-- A lista completa está no fim da [Fase 12 do ROADMAP](ROADMAP.md).
+- A lista completa está no [ROADMAP](ROADMAP.md), no fim da **Fase 12** e nas seções
+  **Pós-Roadmap** e **Correção final de segurança**.
 
 ## Dados
 
