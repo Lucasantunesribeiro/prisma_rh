@@ -689,13 +689,23 @@ public class AnalisesHttpTestes(BancoPostgresFixture banco) : IDisposable
     {
         var admin = await AdminAsync();
 
-        using var resposta = await admin.PutAsJsonAsync($"{Regras}/VariacaoSalarial", new
+        // ⚠️ Desde 02/09/2026 os campos intrusos sao RECUSADOS, e nao ignorados.
+        using var intruso = await admin.PutAsJsonAsync($"{Regras}/VariacaoSalarial", new
         {
             ativa = true,
             severidade = "Baixa",
             codigo = "LiquidoNegativo",
             idOrganizacao = Guid.NewGuid(),
             versao = 99,
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, intruso.StatusCode);
+
+        // E o caminho legitimo grava na regra da ROTA, com a versao do codigo.
+        using var resposta = await admin.PutAsJsonAsync($"{Regras}/VariacaoSalarial", new
+        {
+            ativa = true,
+            severidade = "Baixa",
         });
 
         resposta.EnsureSuccessStatusCode();

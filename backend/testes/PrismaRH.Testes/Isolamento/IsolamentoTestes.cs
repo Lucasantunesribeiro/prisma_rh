@@ -107,13 +107,30 @@ public class IsolamentoTestes(BancoPostgresFixture banco) : IDisposable
         var clienteA = await _fabrica.ClienteComoAsync(BancoPostgresFixture.EmailAdminA);
         var clienteB = await _fabrica.ClienteComoAsync(BancoPostgresFixture.EmailAdminB);
 
-        // Tentativa classica: mandar o tenant do vizinho no corpo.
-        using var criacao = await clienteA.PostAsJsonAsync("/api/empresas", new
+        // ⚠️ A tentativa classica de overposting: mandar o tenant do vizinho no
+        // corpo. Ate 02/09/2026 isto era IGNORADO em silencio; hoje e RECUSADO.
+        //
+        // A garantia ficou mais forte, e nao mais fraca. Antes, quem tentasse
+        // recebia 201 e precisava conferir depois onde a empresa caiu. Agora a
+        // tentativa morre na porta, e o cliente sabe na hora que aquele campo
+        // nao existe no contrato (`CLAUDE.md secao 24.7`).
+        using var comTenantAlheio = await clienteA.PostAsJsonAsync("/api/empresas", new
         {
             razaoSocial = "Criada por A",
             cnpj = "34028316000103",
             nomeFantasia = (string?)null,
             idOrganizacao = banco.IdOrganizacaoB
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, comTenantAlheio.StatusCode);
+
+        // E o caminho legitimo, sem o campo intruso, continua funcionando e
+        // gravando na organizacao DO TOKEN - que e o que de fato importa.
+        using var criacao = await clienteA.PostAsJsonAsync("/api/empresas", new
+        {
+            razaoSocial = "Criada por A",
+            cnpj = "34028316000103",
+            nomeFantasia = (string?)null,
         });
 
         Assert.Equal(HttpStatusCode.Created, criacao.StatusCode);

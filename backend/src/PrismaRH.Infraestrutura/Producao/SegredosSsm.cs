@@ -71,6 +71,18 @@ public static class SegredosSsm
     /// <summary>Nome do parâmetro com a chave de assinatura do JWT.</summary>
     public const string VariavelParametroJwt = "PRISMARH_SSM_PARAMETRO_JWT";
 
+    /// <summary>
+    /// Nome do parâmetro com a chave do provedor de IA.
+    ///
+    /// ⚠️ Entra no cofre pela mesma razão das outras duas, e por uma a mais:
+    /// **chave de IA é chave que cobra por uso.** Um vazamento aqui não expõe
+    /// dado — gera fatura, e a fatura é de quem mantém o portfólio.
+    ///
+    /// Só o papel da **API** a alcança. O worker não fala com o provedor de IA
+    /// e por isso não recebe permissão para este parâmetro (`CLAUDE.md §24.4`).
+    /// </summary>
+    public const string VariavelParametroIa = "PRISMARH_SSM_PARAMETRO_IA";
+
     private static readonly Lazy<IReadOnlyDictionary<string, string>> Carregados =
         new(Buscar, LazyThreadSafetyMode.ExecutionAndPublication);
 
@@ -81,7 +93,8 @@ public static class SegredosSsm
     /// </summary>
     public static bool Configurado =>
         !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(VariavelParametroBanco))
-        || !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(VariavelParametroJwt));
+        || !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(VariavelParametroJwt))
+        || !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(VariavelParametroIa));
 
     /// <summary>
     /// O valor do parâmetro apontado por <paramref name="variavelComONome"/>,
@@ -146,6 +159,42 @@ public static class SegredosSsm
     }
 
     /// <summary>
+    /// Entrega a chave do provedor de IA ao processo, vinda do cofre.
+    ///
+    /// ## Por que variável de ambiente do PROCESSO, e não da Lambda
+    ///
+    /// São coisas diferentes, e a diferença é o ponto:
+    ///
+    /// | | Quem lê |
+    /// |---|---|
+    /// | Variável **configurada** na Lambda | qualquer chamada de `lambda:GetFunctionConfiguration` — foi o `§24.19 item 9` |
+    /// | Variável **definida em execução** | só o processo, enquanto ele viver |
+    ///
+    /// A segunda não aparece em `get-function-configuration`, não fica gravada
+    /// em lugar nenhum e morre com o container.
+    ///
+    /// ⚠️ Alimenta **a mesma porta única** por onde `ClienteGemini` já lê a
+    /// chave. A lição de 02/09/2026 — *quando um valor tem duas portas de
+    /// entrada, corrigir uma é corrigir metade* — vale ao contrário aqui: como
+    /// há uma porta só, é ela que precisa ser alimentada.
+    ///
+    /// Sem parâmetro configurado, nada acontece: em desenvolvimento a chave
+    /// continua vindo do `.env`, e sem chave nenhuma o produto funciona igual,
+    /// só sem a camada de IA (`CLAUDE.md §1`).
+    /// </summary>
+    public static void EntregarChaveDeIaAoProcesso(string variavelDeDestino)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(variavelDeDestino);
+
+        var chave = Ler(VariavelParametroIa);
+
+        if (!string.IsNullOrWhiteSpace(chave))
+        {
+            Environment.SetEnvironmentVariable(variavelDeDestino, chave);
+        }
+    }
+
+    /// <summary>
     /// Busca **todos** os parâmetros configurados de uma vez.
     ///
     /// `GetParameters` no plural de propósito: dois segredos numa chamada, e
@@ -153,7 +202,7 @@ public static class SegredosSsm
     /// </summary>
     private static IReadOnlyDictionary<string, string> Buscar()
     {
-        var nomes = new[] { VariavelParametroBanco, VariavelParametroJwt }
+        var nomes = new[] { VariavelParametroBanco, VariavelParametroJwt, VariavelParametroIa }
             .Select(Environment.GetEnvironmentVariable)
             .Where(n => !string.IsNullOrWhiteSpace(n))
             .Select(n => n!)

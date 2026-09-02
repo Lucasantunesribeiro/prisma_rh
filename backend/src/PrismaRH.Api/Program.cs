@@ -28,6 +28,12 @@ var builder = WebApplication.CreateBuilder(args);
 // parametro, e esta linha nao faz nada.
 PrismaRH.Infraestrutura.Producao.SegredosSsm.AdicionarNaConfiguracao(builder.Configuration);
 
+// A chave do provedor de IA vem do mesmo cofre, e pela mesma razao: variavel
+// CONFIGURADA na Lambda e devolvida em texto puro por get-function-configuration
+// (`CLAUDE.md secao 24.19 item 9`). Definida em execucao, nao.
+PrismaRH.Infraestrutura.Producao.SegredosSsm.EntregarChaveDeIaAoProcesso(
+    PrismaRH.Infraestrutura.Ia.ClienteGemini.VariavelChave);
+
 const string PoliticaCors = "origens-permitidas";
 
 
@@ -59,7 +65,26 @@ builder.Services.AddExceptionHandler<TratamentoDeErro>();
 // o frontend passaria a depender da ORDEM da enum, e reordena-la quebraria o
 // contrato silenciosamente.
 builder.Services.ConfigureHttpJsonOptions(opcoes =>
-    opcoes.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
+{
+    opcoes.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
+
+    // ⚠️ Campo desconhecido no corpo vira 400, e nao e ignorado em silencio.
+    //
+    // O `CLAUDE.md secao 24.7` promete: "payload inesperado e rejeitado, nao
+    // ignorado em silencio". Ate 02/09/2026 o codigo NAO cumpria - um teste em
+    // producao provou que `{"codigo":"X","nome":"Y","campoQueNaoExiste":1}`
+    // devolvia 201. Documento e codigo divergiam, e quem estava errado era o
+    // codigo.
+    //
+    // O padrao do System.Text.Json e ignorar o que nao mapeia. Isso e
+    // conveniente e perigoso: um cliente que erra o nome de um campo -
+    // `basesIncidentes` virando `baseIncidente` - recebe 201 e acredita que
+    // configurou algo que o servidor descartou. O erro so aparece depois, como
+    // dado faltando, longe da causa.
+    //
+    // `Disallow` faz o desvio aparecer na hora, no lugar certo.
+    opcoes.SerializerOptions.UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow;
+});
 
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IContextoUsuario, ContextoUsuarioHttp>();

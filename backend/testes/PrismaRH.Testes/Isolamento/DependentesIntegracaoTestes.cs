@@ -330,7 +330,8 @@ public class DependentesIntegracaoTestes(BancoPostgresFixture banco) : IDisposab
         var sufixo = Sufixo();
         var idFuncionario = await FuncionarioAsync(clienteA, sufixo, 10400 + int.Parse(sufixo));
 
-        using var criacao = await CriarAsync(clienteA, idFuncionario, new
+        // ⚠️ Desde 02/09/2026 o campo intruso e RECUSADO, e nao ignorado.
+        using var overposting = await CriarAsync(clienteA, idFuncionario, new
         {
             nome = "Tentativa de overposting",
             dataNascimento = "2015-01-01",
@@ -338,10 +339,20 @@ public class DependentesIntegracaoTestes(BancoPostgresFixture banco) : IDisposab
             idOrganizacao = banco.IdOrganizacaoB,
             id = Guid.CreateVersion7(),
         });
+
+        Assert.Equal(HttpStatusCode.BadRequest, overposting.StatusCode);
+
+        // E o caminho legitimo grava na organizacao DO TOKEN.
+        using var criacao = await CriarAsync(clienteA, idFuncionario, new
+        {
+            nome = "Tentativa de overposting",
+            dataNascimento = "2015-01-01",
+            relacao = "Filho",
+        });
         criacao.EnsureSuccessStatusCode();
 
-        // O campo extra foi ignorado: a organizacao vem do usuario
-        // autenticado, e a B continua sem enxergar nada.
+        // A organizacao vem do usuario autenticado, e a B continua sem
+        // enxergar nada.
         var clienteB = await _fabrica.ClienteComoAsync(BancoPostgresFixture.EmailAdminB);
 
         using var resposta = await clienteB.GetAsync(

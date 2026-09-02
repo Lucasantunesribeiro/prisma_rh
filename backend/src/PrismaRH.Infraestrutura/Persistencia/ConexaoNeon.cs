@@ -94,6 +94,33 @@ public static class ConexaoNeon
             // dez conexoes por instancia desperdicaria a cota do banco sem
             // ganho nenhum.
             MaxPoolSize = 5,
+
+            // ⚠️ Conexao ociosa e DESCARTADA rapido. Acrescentado em 02/09/2026,
+            // depois de um 500 real em producao:
+            //
+            //   EndOfStreamException: Attempted to read past the end of the
+            //   stream
+            //
+            // Nao era defeito da consulta. E o **Neon suspendendo a computacao
+            // ociosa**: a conexao continua no pool parecendo viva do lado do
+            // cliente e ja morreu do lado do servidor. A requisicao seguinte a
+            // reusa e quebra. Repetir a mesma chamada devolveu 200 duas vezes -
+            // falha transitoria, e nao erro de codigo.
+            //
+            // A defesa e nao guardar conexao velha: o pool poda o que passou de
+            // 30 segundos parado, e a proxima requisicao abre uma nova. Custa
+            // uma reconexao ocasional (~50 ms) e evita usar uma conexao morta.
+            //
+            // ⚠️ Nao resolve com `EnableRetryOnFailure`. A retentativa do EF
+            // exige que TODA transacao explicita seja idempotente sob
+            // reexecucao, e as tres deste projeto criam entidades - repeti-las
+            // criaria **funcionario duplicado**. Trocar um 500 ocasional por
+            // duplicata silenciosa em folha seria um pessimo negocio.
+            ConnectionIdleLifetime = 30,
+            ConnectionPruningInterval = 10,
+
+            // Detecta cedo o outro lado que sumiu, em vez de esperar o TCP.
+            KeepAlive = 15,
         };
 
         return construtor.ConnectionString;
