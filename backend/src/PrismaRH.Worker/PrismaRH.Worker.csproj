@@ -50,10 +50,10 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Amazon.Lambda.Core" Version="2.6.0" />
-    <PackageReference Include="Amazon.Lambda.RuntimeSupport" Version="1.13.1" />
-    <PackageReference Include="Amazon.Lambda.Serialization.SystemTextJson" Version="2.4.4" />
-    <PackageReference Include="Amazon.Lambda.SQSEvents" Version="2.2.0" />
+    <PackageReference Include="Amazon.Lambda.Core" Version="2.8.1" />
+    <PackageReference Include="Amazon.Lambda.RuntimeSupport" Version="1.14.3" />
+    <PackageReference Include="Amazon.Lambda.Serialization.SystemTextJson" Version="2.4.5" />
+    <PackageReference Include="Amazon.Lambda.SQSEvents" Version="2.2.1" />
   </ItemGroup>
 
   <ItemGroup>
