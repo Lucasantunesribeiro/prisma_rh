@@ -103,7 +103,7 @@ problema que microserviço resolve, e teria todos os que ele traz.
 | | |
 |---|---|
 | Testes backend | **1286**, incluindo integração contra PostgreSQL real via Testcontainers — e a suíte roda **duas vezes** no CI, a segunda em modo *globalization-invariant*, que é como a Lambda executa |
-| Testes frontend | **168** |
+| Testes frontend | **171** |
 | Testes de segurança | **50**, em suíte própria e permanente |
 | Rotas | **85**, das quais **4 anônimas** — cada uma com motivo escrito e travada por teste |
 | Custo AWS previsto | **US$ 0,00** |
@@ -117,6 +117,7 @@ problema que microserviço resolve, e teria todos os que ele traz.
 | [docs/adr/](docs/adr/) | As decisões que sustentam o resto, cada uma com a alternativa recusada |
 | [docs/imagens/](docs/imagens/) | O que capturar da demo, e o que **não** pode aparecer na imagem |
 | [docs/backup-e-restore.md](docs/backup-e-restore.md) | O exercício de restauração **executado**, com RPO e RTO medidos |
+| [docs/seguranca/pentest-2026-09.md](docs/seguranca/pentest-2026-09.md) | O pentest de 02/09/2026 contra a produção: dez categorias atacadas, nenhuma vulnerabilidade, cada controle com requisição e resposta reais |
 | [ROADMAP.md](ROADMAP.md) | As 13 fases, com o Security Gate executado de cada uma |
 | [CLAUDE.md](CLAUDE.md) | As regras permanentes do projeto |
 
