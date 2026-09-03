@@ -24,6 +24,7 @@ function interceptar(corpo: unknown = {}) {
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  vi.restoreAllMocks()
   definirAccessToken(null)
 })
 
@@ -151,10 +152,17 @@ describe('api de importações', () => {
 
     vi.stubGlobal('URL', { ...URL, createObjectURL: criar, revokeObjectURL: revogar })
 
+    // O download dispara `ancora.click()` num link real. O jsdom nao implementa
+    // navegacao e imprimiria "Not implemented: navigation to another Document"
+    // no log do CI. Interceptar o clique remove o ruido e, de quebra, prova que
+    // o download foi realmente acionado — sem mudar o comportamento de producao.
+    const clicar = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+
     await baixarModelo('xlsx')
 
     expect(simulado.mock.calls[0][0]).toContain('/api/importacoes/funcionarios/modelo?formato=xlsx')
     expect(criar).toHaveBeenCalledTimes(1)
+    expect(clicar).toHaveBeenCalledTimes(1)
 
     // Sem revogar, cada download deixaria o arquivo inteiro preso na memória
     // da aba até o F5.

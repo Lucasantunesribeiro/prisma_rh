@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { RespostaConsulta } from '@/api/assistente'
@@ -60,8 +60,11 @@ describe('Pergunta em português', () => {
 
     const { container } = render(<PerguntaEmPortugues aoAbrir={() => {}} />)
 
-    // Espera o efeito resolver antes de concluir que nao renderizou.
-    await vi.waitFor(() => expect(ia.vocabularioConsulta).toHaveBeenCalled())
+    // waitFor da RTL roda a espera dentro de act(...), entao os setStates
+    // resultantes assentam dentro de act. O vi.waitFor nao envolve em act e
+    // deixava o React emitir "update not wrapped in act" no CI. A caixa some
+    // sem IA, por isso a espera e pela chamada, e nao por um elemento.
+    await waitFor(() => expect(ia.vocabularioConsulta).toHaveBeenCalled())
 
     expect(container).toBeEmptyDOMElement()
   })

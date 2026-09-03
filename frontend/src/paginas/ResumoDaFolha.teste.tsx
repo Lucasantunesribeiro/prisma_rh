@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ResumoExecutivo, RetratoDaFolha } from '@/api/assistente'
@@ -60,7 +60,12 @@ describe('Resumo executivo da folha', () => {
 
     const { container } = render(<ResumoDaFolha idFolha="f1" />)
 
-    await vi.waitFor(() => expect(ia.assistenteDisponivel).toHaveBeenCalled())
+    // waitFor da RTL roda a espera dentro de act(...), entao o setState
+    // resultante (disponivel: null -> false) assenta dentro de act — o
+    // vi.waitFor nao envolve em act e deixava o React avisar "update not
+    // wrapped in act" no CI. Sem IA a tela nao renderiza nada, por isso a
+    // espera e pela chamada, e nao por um elemento.
+    await waitFor(() => expect(ia.assistenteDisponivel).toHaveBeenCalled())
 
     expect(container).toBeEmptyDOMElement()
   })
