@@ -7,6 +7,8 @@ trilha de auditoria.
 🔗 **[Aplicação](https://portfolio-prisma-rh.vercel.app)** · React na Vercel, API em AWS
 Lambda, banco no Neon PostgreSQL — **custo AWS previsto de US$ 0,00**.
 
+https://github.com/user-attachments/assets/a0cf3b65-5684-4afe-97b0-11ea264c6f49
+
 ---
 
 ## O problema
