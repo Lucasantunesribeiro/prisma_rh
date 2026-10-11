@@ -40,8 +40,16 @@ não renovar de novo.
 
 ## Consequências
 
-**Boas:** um XSS não rouba a sessão; um vazamento de banco não rouba sessões; um token
-capturado vale 15 minutos.
+**Boas:** um XSS não consegue **levar embora** o refresh nem o access token para usar
+de outra máquina; um vazamento de banco não rouba sessões; um token capturado vale 15
+minutos.
+
+> ⚠️ **Correção de 11/10/2026.** O texto original dizia "um XSS não rouba a sessão", e
+> isso prometia demais. Enquanto a página está aberta, um script injetado age **como a
+> página**: pode chamar a API com a sessão do usuário e pedir uma renovação. Cookie
+> `HttpOnly` e token em memória limitam o que sai do navegador; não tornam a sessão imune.
+> A defesa contra XSS é não ter XSS — React escapando texto, nenhum
+> `dangerouslySetInnerHTML` e CSP estrita em `script-src`.
 
 **Ruins:** ao recarregar a página o app precisa chamar `renovar` antes da primeira
 requisição — há um instante sem token, e o frontend precisa lidar com isso.

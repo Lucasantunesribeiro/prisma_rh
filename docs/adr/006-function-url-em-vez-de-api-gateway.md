@@ -21,7 +21,8 @@ custo próprio: cabe na franquia da própria Lambda.
 **API Gateway HTTP API.** Traria autorizador nativo, throttling gerenciado, chave de API,
 estágios e domínio customizado. **Nenhum deles é necessário aqui**, porque a aplicação já
 resolve o equivalente: autenticação em middleware ASP.NET, rate limiting em
-`Microsoft.AspNetCore.RateLimiting` particionado por organização, e CORS com allowlist
+`Microsoft.AspNetCore.RateLimiting` — **por IP** no login e na sessão, onde ainda não há
+usuário, e **por organização** na IA e na consulta de CNPJ —, e CORS com allowlist
 explícita.
 
 Ou seja: pagar-se-ia por uma camada cujo trabalho já está feito uma camada acima.

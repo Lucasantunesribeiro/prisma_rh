@@ -27,3 +27,4 @@ segundo roadmap que ninguém lê.
 | [006](006-function-url-em-vez-de-api-gateway.md) | Lambda Function URL, não API Gateway | Baixo |
 | [007](007-rubrica-por-enum-e-nao-formula.md) | Rubrica com estratégia por enum, não fórmula em texto | **Muito alto** — é a fronteira que impede execução de código do usuário |
 | [008](008-ia-explica-e-nao-calcula.md) | A IA explica; ela não calcula | Alto |
+| [009](009-trava-pessimista-na-folha.md) | Folha protegida por trava de linha, e não por token de versão | Médio — toda escrita na folha passa por um caminho só |

@@ -256,6 +256,12 @@ Depois do fechamento:
 - histórico deve permanecer auditável;
 - nenhum resultado deve desaparecer sem registro.
 
+Escritas simultâneas na mesma folha são **serializadas no banco**: a operação trava a
+linha da folha antes de lê-la, e quem chega depois encontra o estado já confirmado — uma
+folha fechada no meio do caminho recusa a operação seguinte com 409. A garantia não pode
+depender de botão bloqueado na tela nem de trava em memória do processo. Ver
+`docs/adr/009-trava-pessimista-na-folha.md` e `§24.19`, item 13.
+
 ---
 
 # 5. ESTRUTURA MULTIEMPRESA
@@ -1991,6 +1997,31 @@ compartilhada vale o **menor** privilégio de quem a usa, não o maior.
 > `testes/Isolamento/VisualizadorSomenteLeituraTestes.cs`: ele **descobre as rotas de
 > escrita em tempo de execução** pelo `EndpointDataSource` e exige 403 em todas. Rota de
 > escrita criada amanhã entra no teste sozinha.
+
+### 13. ✅ RESOLVIDA — Folha fechada alterável por requisição simultânea
+
+Registrada e resolvida entre **08/10/2026 e 11/10/2026**, na auditoria de portfólio
+(item PR-01).
+
+`FolhaPagamento.GarantirAberta` conferia o estado que a requisição **leu**. Duas requisições
+liam a mesma folha aberta; uma fechava e confirmava; a outra gravava lançamento, remoção ou
+recálculo **depois** do fechamento. A folha continuava marcada como fechada, com conteúdo
+diferente do total que a auditoria do fechamento registrou. Dois fechamentos simultâneos
+gravavam **duas** auditorias, e uma falha no meio da gravação deixava parte confirmada.
+
+⚠️ **Não era hipótese.** `FolhaConcorrenciaTestes` reproduziu a corrida contra PostgreSQL
+real **antes** da correção: 13 de 14 cenários falharam — lançamento em folha fechada
+devolvendo 200, remoção devolvendo 204, recálculo devolvendo 200.
+
+> **Correção:** toda escrita na folha passa por `FolhasEndpoints.AlterarFolhaAsync` —
+> transação explícita, `SELECT ... FOR UPDATE` na linha da folha (`TravaFolha`, filtrada
+> pela organização, `lock_timeout` de 5 s) **antes** de carregar o agregado, e commit num
+> lugar só, com a auditoria dentro. Decisão e alternativas recusadas em
+> `docs/adr/009-trava-pessimista-na-folha.md`. Nenhuma migration; nenhuma regra de
+> cálculo mudou.
+>
+> Passa a ser **controle de segurança implementado** para efeito do `§35`: escrever na
+> folha fora de `AlterarFolhaAsync` reabre a corrida.
 
 ## 24.20 Headers, CORS e navegador
 

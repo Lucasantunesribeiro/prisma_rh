@@ -119,9 +119,14 @@ retenção curta, Neon Free e Vercel Free.
 
 > ⚠️ **"Impossível cobrar" não é afirmação honesta.** Free Tier não é teto de gasto:
 > passar da franquia não bloqueia nada, apenas cobra. O que existe são **limites técnicos**
-> que tornam a ultrapassagem improvável — memória mínima, timeout curto, concorrência
-> reservada, retenção de log, teto de retentativas. Os números vivem em
-> `OrcamentoSemCusto`, cada um com a conta escrita ao lado.
+> que tornam a ultrapassagem improvável — memória mínima, timeout curto, retenção de
+> log, teto de retentativas. Os números vivem em `OrcamentoSemCusto`, cada um com a conta
+> escrita ao lado.
+>
+> **Concorrência reservada não está entre eles**, embora tenha sido planejada: a conta
+> tem limite de 10 execuções simultâneas, e a AWS exige que pelo menos 10 fiquem sem
+> reserva — reservar 1 é recusado. O teto efetivo é o limite da conta (`ROADMAP.md`,
+> Fase 9).
 
 ## O que a arquitetura deliberadamente não tem
 

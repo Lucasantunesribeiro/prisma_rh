@@ -36,9 +36,15 @@ public enum RecusaCsrf
 ///
 /// ## Duas barreiras, e a razão de serem duas
 ///
-/// **1. Double submit cookie.** Um segundo cookie, este **legível por
-/// JavaScript**, carrega um valor aleatório. O frontend lê e repete no
-/// cabeçalho `X-CSRF-Token`. O servidor exige que os dois batam.
+/// **1. Double submit cookie.** Um segundo cookie carrega um valor
+/// aleatório, e o mesmo valor volta no corpo de `entrar` e `renovar`. O
+/// frontend o guarda no `sessionStorage` da própria origem e o repete no
+/// cabeçalho `X-CSRF-Token`. O servidor exige que cookie e cabeçalho batam.
+///
+/// ⚠️ Até 02/09/2026 o frontend lia o valor do cookie com `document.cookie` -
+/// o que nunca funcionou em produção, porque o cookie mora no domínio da API e
+/// a tela em outro (`CLAUDE.md §24.19`, item 10). Desde então o cookie é
+/// `HttpOnly` e o valor viaja no corpo da resposta.
 ///
 /// Funciona porque a *same-origin policy* impede um site atacante de **ler** o
 /// cookie do nosso domínio — ele consegue fazer o navegador enviá-lo, mas não
@@ -64,11 +70,12 @@ public enum RecusaCsrf
 public static class GuardaCsrf
 {
     /// <summary>
-    /// O cookie do token anti-CSRF. **Não é `HttpOnly`**, e isso é a
-    /// funcionalidade: o frontend precisa lê-lo para repetir no cabeçalho.
+    /// O cookie do token anti-CSRF. É `HttpOnly` desde 02/09/2026: o
+    /// frontend recebe o valor no corpo de `entrar`/`renovar`, e não precisa
+    /// mais ler o cookie (que, de outro domínio, nem conseguiria).
     ///
     /// Ele não é segredo de sessão — não autentica ninguém. Quem autentica é o
-    /// refresh, que continua `HttpOnly` e inacessível ao script.
+    /// refresh, também `HttpOnly` e inacessível ao script.
     /// </summary>
     public const string Cookie = "prismarh_csrf";
 
