@@ -1,4 +1,5 @@
-import type { ReactNode } from 'react'
+import type { MouseEvent, ReactNode } from 'react'
+import { Link } from 'react-router'
 import { cn } from '@/lib/utils'
 import { EsqueletoTabela, EstadoErro, EstadoSemResultado, EstadoVazio } from './Estados'
 
@@ -29,8 +30,35 @@ export interface Coluna<T> {
    * ocultar do que espremer ate ficar ilegivel.
    */
   secundaria?: boolean
+  /**
+   * A coluna que carrega a acao da linha (ver `acaoLinha`). Sem nenhuma
+   * marcada, e a primeira. Marque a que identifica o registro - o nome, a
+   * regra, o arquivo -, e nao um selo ou um numero.
+   */
+  principal?: boolean
   className?: string
 }
+
+/**
+ * A acao principal da linha, alcancavel pelo TECLADO.
+ *
+ * Antes, so a linha era clicavel - um `<tr onClick>` que o Tab nunca alcanca e
+ * que o leitor de tela nao anuncia como acao. Agora a coluna principal vira um
+ * elemento nativo: `<a>` quando a acao e navegar (`para`), `<button>` quando
+ * abre um painel (`aoAbrir`). Enter e Space funcionam porque sao do proprio
+ * elemento, e nao de um onKeyDown reimplementado.
+ *
+ * O clique em qualquer ponto da linha continua funcionando como atalho de
+ * mouse - mas deixou de ser o UNICO caminho.
+ */
+export type AcaoLinha<T> = {
+  /**
+   * Comeco do nome acessivel, lido antes do conteudo da celula:
+   * "Abrir holerite de" + "Bruno Carvalho Lima". O texto visivel continua
+   * dentro do nome, como pede o criterio 2.5.3 (Label in Name) da WCAG.
+   */
+  rotulo: string
+} & ({ aoAbrir: (item: T) => void; para?: never } | { para: (item: T) => string; aoAbrir?: never })
 
 interface Props<T> {
   colunas: Coluna<T>[]
@@ -46,7 +74,7 @@ interface Props<T> {
   /** Vazio por filtro: mensagem diferente, porque a acao util e outra. */
   filtrado?: boolean
   aoLimparFiltros?: () => void
-  aoClicarLinha?: (item: T) => void
+  acaoLinha?: AcaoLinha<T>
   /** Rotulo da tabela para leitor de tela. */
   rotulo: string
   rodape?: ReactNode
@@ -63,11 +91,60 @@ export function DataTable<T>({
   vazio,
   filtrado,
   aoLimparFiltros,
-  aoClicarLinha,
+  acaoLinha,
   rotulo,
   rodape,
 }: Props<T>) {
-  const clicavel = Boolean(aoClicarLinha)
+  const clicavel = Boolean(acaoLinha)
+  const indicePrincipal = Math.max(
+    0,
+    colunas.findIndex((c) => c.principal),
+  )
+
+  /**
+   * O clique na linha e atalho de mouse, e ele so ACIONA o elemento da acao -
+   * o link navega como link, o botao abre como botao. Uma acao, um lugar.
+   *
+   * Se o clique nasceu num controle de dentro da linha (o proprio botao, um
+   * link, um campo), quem trata e o controle; repetir aqui abriria o painel
+   * duas vezes.
+   */
+  const aoClicarNaLinha = (evento: MouseEvent<HTMLTableRowElement>) => {
+    if ((evento.target as Element).closest('a, button, input, select, textarea, label')) return
+    evento.currentTarget.querySelector<HTMLElement>('[data-acao-linha]')?.click()
+  }
+
+  const celulaComAcao = (item: T, conteudo: ReactNode) => {
+    if (!acaoLinha) return conteudo
+
+    const classe =
+      'block w-full rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card'
+    // O espaco e um no de texto proprio, fora do span: espaco no fim de um
+    // elemento e descartado no calculo do nome acessivel, e "deBruno" seria
+    // lido como uma palavra so.
+    const nome = (
+      <>
+        <span className="sr-only">{acaoLinha.rotulo}</span>{' '}
+      </>
+    )
+
+    return acaoLinha.para ? (
+      <Link to={acaoLinha.para(item)} className={classe} data-acao-linha="">
+        {nome}
+        {conteudo}
+      </Link>
+    ) : (
+      <button
+        type="button"
+        onClick={() => acaoLinha.aoAbrir(item)}
+        className={classe}
+        data-acao-linha=""
+      >
+        {nome}
+        {conteudo}
+      </button>
+    )
+  }
 
   return (
     <section className="overflow-hidden rounded-lg border border-border-forte bg-card shadow-[0_1px_2px_rgba(17,26,46,0.04)]">
@@ -123,14 +200,14 @@ export function DataTable<T>({
                 {itens.map((item) => (
                   <tr
                     key={chave(item)}
-                    onClick={clicavel ? () => aoClicarLinha?.(item) : undefined}
+                    onClick={clicavel ? aoClicarNaLinha : undefined}
                     className={cn(
                       'transition-colors',
                       clicavel && 'cursor-pointer hover:bg-accent/70',
                       !clicavel && 'hover:bg-muted/50',
                     )}
                   >
-                    {colunas.map((coluna) => (
+                    {colunas.map((coluna, indice) => (
                       <td
                         key={coluna.cabecalho}
                         className={cn(
@@ -140,7 +217,9 @@ export function DataTable<T>({
                           coluna.className,
                         )}
                       >
-                        {coluna.celula(item)}
+                        {indice === indicePrincipal
+                          ? celulaComAcao(item, coluna.celula(item))
+                          : coluna.celula(item)}
                       </td>
                     ))}
                   </tr>

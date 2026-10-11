@@ -21,6 +21,7 @@ import {
   type Rubrica,
   type SituacaoFolha,
 } from '@/api/folha'
+import { ehConflito } from '@/api/cliente'
 import { useSessao } from '@/auth/useSessao'
 import { DataTable, type Coluna } from '@/components/sistema/DataTable'
 import { EstadoCarregando, EstadoErro } from '@/components/sistema/Estados'
@@ -41,6 +42,10 @@ import { ResumoDaFolha } from '@/paginas/ResumoDaFolha'
 import { SecaoAnalise } from '@/paginas/SecaoAnalise'
 import { usePagina } from '@/layout/usePagina'
 import { cn } from '@/lib/utils'
+
+function mensagemDeConflito(falha: Error): string {
+  return `${falha.message} Os dados foram recarregados: confira o estado atual da folha.`
+}
 
 const TOM_SITUACAO: Record<SituacaoFolha, 'neutro' | 'info' | 'sucesso'> = {
   Rascunho: 'neutro',
@@ -100,7 +105,15 @@ export default function FolhaDetalhe() {
       await operacao()
       await carregar()
     } catch (falha) {
-      definirErroAcao(falha instanceof Error ? falha.message : 'Não foi possível concluir a ação.')
+      if (ehConflito(falha)) {
+        // A folha mudou por outra mão (ex.: alguém a fechou). Recarregar
+        // antes de mostrar a mensagem: os botões passam a refletir o estado
+        // real, e a tela não oferece de novo a ação que já não cabe.
+        await carregar()
+        definirErroAcao(mensagemDeConflito(falha))
+      } else {
+        definirErroAcao(falha instanceof Error ? falha.message : 'Não foi possível concluir a ação.')
+      }
     } finally {
       definirAcao(null)
     }
@@ -126,12 +139,12 @@ export default function FolhaDetalhe() {
       cabecalho: 'Funcionário',
       largura: '30%',
       celula: (h) => (
-        <div className="min-w-0">
+        <span className="block min-w-0">
           <span className="block truncate font-medium text-foreground">{h.funcionario}</span>
           <span className="tabular block text-xs text-muted-foreground">
             Matrícula {h.matricula}
           </span>
-        </div>
+        </span>
       ),
     },
     {
@@ -245,7 +258,7 @@ export default function FolhaDetalhe() {
         colunas={colunas}
         itens={detalhe.funcionarios}
         chave={(h) => h.id}
-        aoClicarLinha={(h) => definirAberto(h)}
+        acaoLinha={{ rotulo: 'Abrir holerite de', aoAbrir: (h) => definirAberto(h) }}
         vazio={{
           titulo: 'Nenhum funcionário na folha',
           descricao: `Quem teve vínculo em qualquer dia de ${competenciaPorExtenso(
@@ -373,13 +386,24 @@ function PainelHolerite({
     void carregar()
   }, [carregar])
 
+  /** Recarrega holerite e folha, e só então mostra por que o pedido voltou. */
+  const recarregarPorConflito = async (falha: Error) => {
+    await carregar()
+    await aoMudar()
+    definirErro(mensagemDeConflito(falha))
+  }
+
   const apagar = async (idLancamento: string) => {
     try {
       await removerLancamento(idFolha, resumo.id, idLancamento)
       await carregar()
       await aoMudar()
     } catch (falha) {
-      definirErro(falha instanceof Error ? falha.message : 'Não foi possível remover o lançamento.')
+      if (ehConflito(falha)) {
+        await recarregarPorConflito(falha)
+      } else {
+        definirErro(falha instanceof Error ? falha.message : 'Não foi possível remover o lançamento.')
+      }
     }
   }
 
@@ -419,6 +443,7 @@ function PainelHolerite({
                       await carregar()
                       await aoMudar()
                     }}
+                    aoConflito={recarregarPorConflito}
                   />
                 )}
               </div>
@@ -692,11 +717,13 @@ function NovoLancamento({
   idHolerite,
   rubricas,
   aoLancar,
+  aoConflito,
 }: {
   idFolha: string
   idHolerite: string
   rubricas: Rubrica[]
   aoLancar: () => Promise<void>
+  aoConflito: (falha: Error) => Promise<void>
 }) {
   const [aberto, definirAberto] = useState(false)
   const [idRubrica, definirIdRubrica] = useState(rubricas[0]?.id ?? '')
@@ -721,7 +748,14 @@ function NovoLancamento({
       definirAberto(false)
       await aoLancar()
     } catch (falha) {
-      definirErro(falha instanceof Error ? falha.message : 'Não foi possível lançar.')
+      if (ehConflito(falha)) {
+        // O formulário some se a folha foi fechada; a mensagem fica no
+        // holerite, que é recarregado com o estado real.
+        definirAberto(false)
+        await aoConflito(falha)
+      } else {
+        definirErro(falha instanceof Error ? falha.message : 'Não foi possível lançar.')
+      }
     } finally {
       definirEnviando(false)
     }

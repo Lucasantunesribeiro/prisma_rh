@@ -21,7 +21,7 @@ import { Button } from '@/components/ui/button'
  * no `catch` de quem chama a API. Isto é a rede de segurança de último recurso,
  * não o tratamento de erro do dia a dia.
  *
- * A `key` remontada pela rota (ver uso em `App.tsx`) reseta o boundary a cada
+ * A `key` remontada pela rota (ver uso em `layout/ApplicationShell.tsx`) reseta o boundary a cada
  * navegação, para um erro numa página não travar as outras.
  */
 interface Estado {
@@ -45,7 +45,9 @@ export class LimiteDeErro extends Component<{ children: ReactNode }, Estado> {
     }
 
     return (
-      <main
+      // <div>, e nao <main>: o boundary ja vive DENTRO do <main> do shell, e
+      // dois <main> aninhados confundem a navegacao por regioes do leitor de tela.
+      <div
         role="alert"
         className="flex min-h-[60vh] flex-col items-center justify-center gap-3 px-6 text-center"
       >
@@ -57,7 +59,7 @@ export class LimiteDeErro extends Component<{ children: ReactNode }, Estado> {
         <Button variant="outline" size="sm" onClick={this.tentarDeNovo}>
           Tentar novamente
         </Button>
-      </main>
+      </div>
     )
   }
 }

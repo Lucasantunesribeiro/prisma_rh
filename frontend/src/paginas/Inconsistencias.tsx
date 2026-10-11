@@ -132,6 +132,7 @@ export default function Inconsistencias() {
       },
       {
         cabecalho: 'Regra',
+        principal: true,
         celula: (i) => (
           <span className="min-w-0">
             <span className="block font-medium text-foreground">{i.regra}</span>
@@ -192,7 +193,7 @@ export default function Inconsistencias() {
         carregando={carregando}
         erro={erro}
         aoTentarNovamente={() => void carregar()}
-        aoClicarLinha={(i) => definirAberta(i.id)}
+        acaoLinha={{ rotulo: 'Tratar inconsistência:', aoAbrir: (i) => definirAberta(i.id) }}
         filtrado={filtrado}
         aoLimparFiltros={() => {
           definirStatus('')

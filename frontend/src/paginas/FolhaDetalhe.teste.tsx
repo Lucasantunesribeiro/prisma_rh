@@ -260,6 +260,178 @@ describe('FolhaDetalhe', () => {
     expect(screen.queryByRole('columnheader', { name: 'Informativo' })).not.toBeInTheDocument()
   })
 
+  describe('pelo teclado, sem mouse', () => {
+    /** Aperta Tab até o foco chegar ao alvo - prova que o alvo está na ordem de Tab. */
+    async function tabAte(usuario: ReturnType<typeof userEvent.setup>, alvo: HTMLElement) {
+      for (let i = 0; i < 40 && document.activeElement !== alvo; i++) {
+        await usuario.tab()
+      }
+      expect(alvo).toHaveFocus()
+    }
+
+    it('Tab alcança o holerite, Enter abre, Escape fecha e o foco volta', async () => {
+      const usuario = userEvent.setup()
+      renderizar('Visualizador')
+
+      // O nome acessível começa pela ação e contém o texto visível.
+      const abrir = await screen.findByRole('button', {
+        name: /^Abrir holerite de Bruno Carvalho Lima/,
+      })
+
+      await tabAte(usuario, abrir)
+      await usuario.keyboard('{Enter}')
+
+      const painel = await screen.findByRole('dialog', { name: 'Bruno Carvalho Lima' })
+      expect(within(painel).getByText('Bases de cálculo')).toBeInTheDocument()
+
+      await usuario.keyboard('{Escape}')
+
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      // Sem isto, o foco caía no <body> e o teclado recomeçava do topo.
+      expect(abrir).toHaveFocus()
+    })
+
+    it('Space também abre, e a memória de cálculo devolve o foco à rubrica', async () => {
+      const usuario = userEvent.setup()
+      renderizar('Visualizador')
+
+      const abrir = await screen.findByRole('button', { name: /^Abrir holerite de/ })
+      await tabAte(usuario, abrir)
+      await usuario.keyboard(' ')
+
+      const painel = await screen.findByRole('dialog', { name: 'Bruno Carvalho Lima' })
+      const rubrica = await within(painel).findByRole('button', { name: 'Salário base' })
+
+      await tabAte(usuario, rubrica)
+      await usuario.keyboard('{Enter}')
+
+      expect(await screen.findByRole('dialog', { name: 'Memória de cálculo' })).toBeInTheDocument()
+      expect(screen.getByText('3.000,00 x 14/30')).toBeInTheDocument()
+
+      await usuario.keyboard('{Escape}')
+
+      expect(screen.queryByRole('dialog', { name: 'Memória de cálculo' })).not.toBeInTheDocument()
+      expect(rubrica).toHaveFocus()
+    })
+
+    it('o clique na linha continua funcionando, e o botão não abre o painel duas vezes', async () => {
+      const usuario = userEvent.setup()
+      renderizar('Visualizador')
+
+      await usuario.click(await screen.findByRole('button', { name: /^Abrir holerite de/ }))
+
+      expect(await screen.findAllByRole('dialog')).toHaveLength(1)
+    })
+  })
+
+  describe('quando outra pessoa fechou a folha ao mesmo tempo (409)', () => {
+    const FECHADA = {
+      ...FOLHA,
+      folha: { ...FOLHA.folha, situacao: 'Fechada', fechadaEm: '2026-09-01T10:00:00Z' },
+    }
+
+    const CONFLITO = {
+      title: 'Operacao invalida',
+      status: 409,
+      detail: 'Nao da para lancar uma folha fechada. A de 08/2026 foi fechada em 01/09/2026.',
+    }
+
+    /**
+     * O servidor recusa a escrita com 409 e, a partir daí, devolve a folha
+     * FECHADA - que é o que aconteceria se outra pessoa tivesse fechado a folha
+     * entre a tela carregar e o clique.
+     */
+    function servidorQueRecusa(rotaRecusada: RegExp) {
+      let recusou = false
+
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockImplementation((url: string, opcoes?: RequestInit) => {
+          const texto = String(url)
+          const metodo = opcoes?.method ?? 'GET'
+
+          if (metodo !== 'GET' && rotaRecusada.test(texto)) {
+            recusou = true
+            return Promise.resolve(
+              new Response(JSON.stringify(CONFLITO), {
+                status: 409,
+                headers: { 'Content-Type': 'application/problem+json' },
+              }),
+            )
+          }
+
+          const atual = recusou ? FECHADA : FOLHA
+          const holerite = recusou ? { ...HOLERITE, situacaoFolha: 'Fechada' } : HOLERITE
+
+          if (texto.includes('/funcionarios/')) return Promise.resolve(responder(holerite))
+          if (texto.includes('/api/rubricas')) return Promise.resolve(responder(paginado(RUBRICAS)))
+          if (texto.includes('/api/folhas/')) return Promise.resolve(responder(atual))
+          return Promise.resolve(responder({}))
+        }),
+      )
+    }
+
+    function montar() {
+      const usuario: UsuarioAutenticado = {
+        id: 'u1',
+        idOrganizacao: 'o1',
+        nome: 'Quem processa',
+        email: 'quem@x.com',
+        perfil: 'AnalistaRh',
+      }
+
+      return render(
+        <MemoryRouter initialEntries={['/folhas/p1']}>
+          <SessaoContexto.Provider
+            value={{ usuario, carregando: false, entrar: async () => {}, sair: async () => {} }}
+          >
+            <Routes>
+              <Route path="/folhas/:id" element={<FolhaDetalhe />} />
+            </Routes>
+          </SessaoContexto.Provider>
+        </MemoryRouter>,
+      )
+    }
+
+    it('ao recalcular, recarrega a folha e para de oferecer as ações', async () => {
+      servidorQueRecusa(/\/calcular$/)
+      const usuario = userEvent.setup()
+      montar()
+
+      await usuario.click(await screen.findByRole('button', { name: /recalcular/i }))
+
+      // A mensagem do servidor, mais o aviso de que a tela foi atualizada.
+      const alerta = (await screen.findByText(/Os dados foram recarregados/)).closest('[role=alert]')!
+      expect(alerta).toHaveTextContent(/foi fechada em 01\/09\/2026/)
+      expect(alerta).toHaveTextContent(/Os dados foram recarregados/)
+
+      // A cópia velha saiu da tela: a folha aparece fechada e os botões somem.
+      expect(await screen.findByText('Fechada')).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /recalcular/i })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /fechar folha/i })).not.toBeInTheDocument()
+    })
+
+    it('ao remover um lançamento, recarrega o holerite e explica', async () => {
+      servidorQueRecusa(/\/lancamentos\//)
+      const usuario = userEvent.setup()
+      montar()
+
+      const linha = (await screen.findAllByText('Bruno Carvalho Lima'))[0].closest('tr')!
+      await usuario.click(linha)
+
+      await usuario.click(await screen.findByRole('button', { name: 'Remover Vale-transporte' }))
+
+      const alerta = (await screen.findByText(/Os dados foram recarregados/)).closest('[role=alert]')!
+      expect(alerta).toHaveTextContent(/foi fechada em 01\/09\/2026/)
+      expect(alerta).toHaveTextContent(/Os dados foram recarregados/)
+
+      // O holerite recarregado veio da folha fechada: não há mais o que
+      // remover nem lançar.
+      expect(screen.queryByRole('button', { name: 'Remover Vale-transporte' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /^lançar$/i })).not.toBeInTheDocument()
+    })
+  })
+
   it('mostra o FGTS em coluna própria, fora do líquido', async () => {
     renderizar('AdministradorEmpresa', FOLHA, HOLERITE_COM_FGTS)
 

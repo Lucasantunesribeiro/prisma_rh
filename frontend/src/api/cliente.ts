@@ -267,13 +267,42 @@ export async function renovarSessao(): Promise<boolean> {
   return true
 }
 
+type CorpoResposta = {
+  detail?: string
+  title?: string
+  detalhe?: string
+  errors?: Record<string, string[]>
+}
+
+/**
+ * 409: o pedido esbarrou no estado atual do servidor — outra pessoa fechou a
+ * folha, alterou o mesmo dado ao mesmo tempo, ou a operação ficou na fila além
+ * do prazo. Nada foi gravado, e a cópia na tela está velha: quem trata este
+ * erro deve RECARREGAR, e não só mostrar a mensagem.
+ */
+export function ehConflito(falha: unknown): falha is ErroApi {
+  return falha instanceof ErroApi && falha.status === 409
+}
+
 async function interpretar<T>(resposta: Response): Promise<T> {
   if (resposta.status === 204) {
     return undefined as T
   }
 
   const texto = await resposta.text()
-  const corpo = texto ? JSON.parse(texto) : {}
+  let corpo: CorpoResposta = {}
+
+  if (texto) {
+    try {
+      corpo = JSON.parse(texto) as CorpoResposta
+    } catch {
+      // Um 502 do provedor pode chegar como página HTML. O texto cru do
+      // SyntaxError ("Unexpected token <") não diria nada a quem usa a tela.
+      if (resposta.ok) {
+        throw new ErroApi(resposta.status, 'A resposta do servidor não pôde ser lida.')
+      }
+    }
+  }
 
   if (resposta.ok) {
     return corpo as T

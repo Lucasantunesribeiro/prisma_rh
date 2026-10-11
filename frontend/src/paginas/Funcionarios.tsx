@@ -1,6 +1,5 @@
 import { Plus } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
-import { useNavigate } from 'react-router'
 import { podeAdministrarPessoas } from '@/api/autenticacao'
 import {
   criarFuncionario,
@@ -29,7 +28,6 @@ type Situacao = 'todos' | 'ativos' | 'inativos'
 
 export default function Funcionarios() {
   const { usuario } = useSessao()
-  const navegar = useNavigate()
   const administra = podeAdministrarPessoas(usuario?.perfil)
 
   usePagina([{ texto: 'Pessoas' }, { texto: 'Funcionários' }])
@@ -130,7 +128,7 @@ export default function Funcionarios() {
         aoTentarNovamente={() => void carregar(filtro)}
         filtrado={temFiltro}
         aoLimparFiltros={limpar}
-        aoClicarLinha={(f) => navegar(`/funcionarios/${f.id}`)}
+        acaoLinha={{ rotulo: 'Abrir cadastro de', para: (f) => `/funcionarios/${f.id}` }}
         vazio={{
           titulo: 'Nenhum funcionário cadastrado',
           descricao: administra

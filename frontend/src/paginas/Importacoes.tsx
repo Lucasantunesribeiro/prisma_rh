@@ -693,6 +693,7 @@ function Historico({
     },
     {
       cabecalho: 'Arquivo',
+      principal: true,
       celula: (i) => (
         <span className="flex min-w-0 items-center gap-2">
           <FileSpreadsheet className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
@@ -738,7 +739,7 @@ function Historico({
         carregando={carregando}
         erro={erro}
         aoTentarNovamente={aoTentarNovamente}
-        aoClicarLinha={(i) => definirSelecionada(i.id)}
+        acaoLinha={{ rotulo: 'Abrir relatório da importação', aoAbrir: (i) => definirSelecionada(i.id) }}
         vazio={{
           titulo: 'Nenhuma importação ainda',
           descricao: 'Envie um arquivo para ver aqui o registro de quem importou, quando e o quê.',

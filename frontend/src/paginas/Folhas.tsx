@@ -1,6 +1,5 @@
 import { Plus } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
-import { useNavigate } from 'react-router'
 import {
   abrirFolha,
   competenciaPorExtenso,
@@ -38,7 +37,6 @@ const TOM: Record<SituacaoFolha, 'neutro' | 'info' | 'sucesso'> = {
 
 export default function Folhas() {
   const { usuario } = useSessao()
-  const navegar = useNavigate()
   const { empresas, empresaAtual } = useEmpresaAtual()
   const processa = podeProcessarFolha(usuario?.perfil)
 
@@ -91,12 +89,12 @@ export default function Folhas() {
       cabecalho: 'Competência',
       largura: '190px',
       celula: (f) => (
-        <div>
+        <span className="block">
           <span className="tabular block font-medium text-foreground">{f.competencia}</span>
           <span className="block text-xs text-muted-foreground">
             {competenciaPorExtenso(f.competencia)}
           </span>
-        </div>
+        </span>
       ),
     },
     {
@@ -174,7 +172,7 @@ export default function Folhas() {
           definirIdEmpresa('')
           definirSituacao('todas')
         }}
-        aoClicarLinha={(f) => navegar(`/folhas/${f.id}`)}
+        acaoLinha={{ rotulo: 'Abrir folha', para: (f) => `/folhas/${f.id}` }}
         vazio={{
           titulo: 'Nenhuma folha aberta',
           descricao: processa

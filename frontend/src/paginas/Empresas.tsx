@@ -70,12 +70,12 @@ export default function Empresas() {
       cabecalho: 'Razão social',
       largura: '38%',
       celula: (e) => (
-        <div className="min-w-0">
+        <span className="block min-w-0">
           <span className="block truncate font-medium text-foreground">{e.razaoSocial}</span>
           {e.nomeFantasia && (
             <span className="block truncate text-xs text-muted-foreground">{e.nomeFantasia}</span>
           )}
-        </div>
+        </span>
       ),
     },
     {
@@ -112,7 +112,7 @@ export default function Empresas() {
         aoTentarNovamente={() => void carregar()}
         filtrado={busca.trim().length > 0}
         aoLimparFiltros={() => definirBusca('')}
-        aoClicarLinha={(e) => definirSelecionada(e)}
+        acaoLinha={{ rotulo: 'Abrir estabelecimentos de', aoAbrir: (e) => definirSelecionada(e) }}
         vazio={{
           titulo: 'Nenhuma empresa cadastrada',
           descricao: administra

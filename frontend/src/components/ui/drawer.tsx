@@ -1,6 +1,6 @@
 import { Dialog as Primitiva } from 'radix-ui'
 import { X } from 'lucide-react'
-import type { ComponentProps, ReactNode } from 'react'
+import { useRef, type ComponentProps, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 
 /**
@@ -23,8 +23,24 @@ export function DrawerContent({
   children,
   titulo,
   descricao,
+  onOpenAutoFocus,
+  onCloseAutoFocus,
   ...props
 }: ComponentProps<typeof Primitiva.Content> & { titulo: string; descricao?: ReactNode }) {
+  /*
+   * Retorno de foco sem depender de DrawerTrigger.
+   *
+   * O Radix devolve o foco ao Trigger ao fechar. Os paineis abertos a partir
+   * de uma linha de tabela (holerite, memoria de calculo, tratamento) nao tem
+   * Trigger - sao montados pelo estado da pagina -, e o foco caia no <body>:
+   * quem navega pelo teclado voltava ao topo da pagina a cada holerite.
+   *
+   * Aqui o painel guarda QUEM tinha o foco quando abriu e o devolve ao fechar.
+   * Com Trigger, quem tinha o foco era o proprio Trigger, entao o resultado e
+   * o mesmo de antes.
+   */
+  const quemAbriu = useRef<HTMLElement | null>(null)
+
   return (
     <Primitiva.Portal>
       <Primitiva.Overlay
@@ -41,6 +57,21 @@ export function DrawerContent({
           'data-[state=closed]:animate-out data-[state=closed]:slide-out-to-right',
           className,
         )}
+        onOpenAutoFocus={(evento) => {
+          const ativo = document.activeElement
+          quemAbriu.current = ativo instanceof HTMLElement && ativo !== document.body ? ativo : null
+          onOpenAutoFocus?.(evento)
+        }}
+        onCloseAutoFocus={(evento) => {
+          onCloseAutoFocus?.(evento)
+          if (evento.defaultPrevented) return
+
+          const alvo = quemAbriu.current
+          if (alvo?.isConnected) {
+            evento.preventDefault()
+            alvo.focus()
+          }
+        }}
         {...props}
       >
         <header className="flex items-start justify-between gap-4 border-b border-border px-6 py-4">
