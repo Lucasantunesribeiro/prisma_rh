@@ -6555,6 +6555,38 @@ encontrou nada. O `.env` do responsável e o `~/.aws/credentials` **não foram t
 limpo · build de produção OK · varredura de segredos no repositório limpa.
 ---
 
+## AUDITORIA DE PORTFÓLIO — 08 a 11/10/2026
+
+Executada a pedido do responsável, a partir de uma auditoria externa que deu **80/100**.
+**Não é uma fase.** Nenhuma funcionalidade de domínio nova entrou; nenhuma regra de
+cálculo, parâmetro legal ou migration mudou. Evidências completas, com números e
+limitações, em [docs/evidencias-portfolio-95.md](docs/evidencias-portfolio-95.md).
+
+| Item | O que era | O que ficou |
+|---|---|---|
+| **PR-01** | Folha fechada alterável por requisição que leu a folha aberta antes do fechamento — **reproduzido** contra PostgreSQL real: 13 de 14 cenários falhavam | Trava de linha (`TravaFolha`) antes de ler, commit num lugar só com a auditoria dentro. `CLAUDE.md §24.19` item 13; ADR 009 |
+| **PR-02** | 16 pacotes no `npm audit` (1 crítica, 11 altas), 12 deles trazidos pelo CLI `shadcn` | CLI retirado, CSS copiado com licença (build idêntico byte a byte); **0** no audit completo e no `--omit=dev` |
+| **PR-03** | Linha de tabela só clicável com mouse; foco perdido ao fechar o holerite | Elemento nativo na coluna principal das 6 tabelas; retorno de foco em todo painel |
+| **PR-04** | README de 1.483 linhas afirmando o que o código já contradizia | README curto e conferido contra o código; histórico movido, não apagado |
+| **PR-05** | Um arquivo inicial de 543,89 kB | Páginas sob demanda; primeira visita −26,4% cru, −20,1% gzip |
+| **PR-07** | Visitante caía na lista de funcionários sem saber por onde começar | Roteiro no Painel, com links vindos da API e o líquido negativo explicado como achado deliberado |
+
+### O que só apareceu executando
+
+- **O ambiente desta máquina não rodava o projeto**: SDK .NET 10 ausente, Docker parado e
+  AWS CLI quebrada. A auditoria anterior registrou o backend como "não reexecutado" por
+  isso.
+- **O teste de concorrência colidiu com outro teste** na suíte inteira — a faixa de CPF de
+  teste já estava em uso por outra classe. Isolado passava; junto, não. Faixa trocada.
+- **`useNavigate` dentro do `DataTable`** quebrou nove testes de uma tela que renderiza
+  tabela fora de roteador. A correção foi melhor que o remendo: o clique na linha aciona o
+  próprio elemento nativo, e a tabela deixou de depender do roteador.
+- ⚠️ **Um erro meu:** um `Set-Content` do PowerShell 5.1 regravou `FolhasEndpoints.cs` em
+  ANSI e corrompeu o BOM no meio do arquivo. O build acusou; o arquivo foi reparado e
+  conferido caractere a caractere contra o original. É a armadilha já registrada no
+  `CLAUDE.md` global desta máquina, e ela pegou mesmo assim.
+---
+
 # 5. MAPA DE EVOLUÇÃO RESUMIDO
 
 ```text
