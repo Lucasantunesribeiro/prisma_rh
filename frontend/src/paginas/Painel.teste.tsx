@@ -3,13 +3,16 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Empresa } from '@/api/empresas'
-import type { Painel as PainelDados } from '@/api/workflow'
+import type { UsuarioAutenticado } from '@/api/autenticacao'
+import type { Inconsistencia, Painel as PainelDados } from '@/api/workflow'
+import { SessaoContexto } from '@/auth/contexto'
 import { EmpresaContexto } from '@/layout/contexto'
 import Painel from './Painel'
 
 vi.mock('@/api/workflow', async (original) => ({
   ...(await original<typeof import('@/api/workflow')>()),
   obterPainel: vi.fn(),
+  listarInconsistencias: vi.fn(),
 }))
 
 const api = await import('@/api/workflow')
@@ -64,25 +67,50 @@ const VAZIO: PainelDados = {
   evolucao: [],
 }
 
-function renderizar() {
+function renderizar(perfil: UsuarioAutenticado['perfil'] = 'AnalistaRh') {
+  const usuario: UsuarioAutenticado = {
+    id: 'u1',
+    idOrganizacao: 'o1',
+    nome: 'Quem olha',
+    email: 'quem@x.com',
+    perfil,
+  }
+
   return render(
     <MemoryRouter>
-      <EmpresaContexto.Provider
-        value={{
-          empresas: [EMPRESA],
-          empresaAtual: EMPRESA,
-          selecionar: () => {},
-          carregando: false,
-        }}
+      <SessaoContexto.Provider
+        value={{ usuario, carregando: false, entrar: async () => {}, sair: async () => {} }}
       >
-        <Painel />
-      </EmpresaContexto.Provider>
+        <EmpresaContexto.Provider
+          value={{
+            empresas: [EMPRESA],
+            empresaAtual: EMPRESA,
+            selecionar: () => {},
+            carregando: false,
+          }}
+        >
+          <Painel />
+        </EmpresaContexto.Provider>
+      </SessaoContexto.Provider>
     </MemoryRouter>,
   )
 }
 
+const ACHADO_LIQUIDO_NEGATIVO = {
+  id: 'i1',
+  idFolha: 'folha-do-roteiro',
+  competencia: '08/2026',
+  codigo: 'LiquidoNegativo',
+  regra: 'Líquido negativo',
+} as Inconsistencia
+
 beforeEach(() => {
   vi.mocked(api.obterPainel).mockResolvedValue(COM_DADOS)
+  vi.mocked(api.listarInconsistencias).mockResolvedValue({
+    total: 1,
+    pagina: 1,
+    itens: [ACHADO_LIQUIDO_NEGATIVO],
+  })
 })
 
 afterEach(() => {
@@ -148,5 +176,42 @@ describe('Painel', () => {
     await userEvent.click(screen.getByRole('button', { name: /tentar novamente/i }))
 
     expect(await screen.findByText('Folhas calculadas')).toBeInTheDocument()
+  })
+
+  describe('roteiro da demonstração', () => {
+    it('para a conta pública, leva à folha onde o líquido negativo foi detectado', async () => {
+      renderizar('Visualizador')
+
+      const roteiro = await screen.findByRole('region', { name: 'Roteiro da demonstração' })
+      expect(roteiro).toBeInTheDocument()
+
+      // O link vem do achado da API, e não de um id fixo no código.
+      expect(await screen.findByRole('link', { name: 'Abra a folha' })).toHaveAttribute(
+        'href',
+        '/folhas/folha-do-roteiro',
+      )
+      expect(screen.getByRole('link', { name: 'Inconsistências' })).toHaveAttribute('href', '/inconsistencias')
+      expect(screen.getByRole('link', { name: 'Auditoria' })).toHaveAttribute('href', '/auditoria')
+
+      // O visitante entende que o negativo é achado deliberado, e não defeito.
+      expect(screen.getByText(/Sobre o líquido negativo/)).toBeInTheDocument()
+      expect(screen.getByText(/de propósito/)).toBeInTheDocument()
+    })
+
+    it('sem o achado, o roteiro continua e aponta para a lista de folhas', async () => {
+      vi.mocked(api.listarInconsistencias).mockRejectedValue(new Error('fora do ar'))
+      renderizar('Visualizador')
+
+      expect(await screen.findByRole('link', { name: 'Abra a folha' })).toHaveAttribute('href', '/folhas')
+      // O painel continua de pé: os números não dependem do roteiro.
+      expect(await screen.findByText('Folhas calculadas')).toBeInTheDocument()
+    })
+
+    it('quem opera a folha não vê tutorial no painel', async () => {
+      renderizar('AnalistaRh')
+
+      expect(await screen.findByText('Folhas calculadas')).toBeInTheDocument()
+      expect(screen.queryByRole('region', { name: 'Roteiro da demonstração' })).not.toBeInTheDocument()
+    })
   })
 })

@@ -57,7 +57,7 @@ export default function App() {
             </Route>
           </Route>
 
-          <Route path="*" element={<Navigate to="/funcionarios" replace />} />
+          <Route path="*" element={<Navigate to="/painel" replace />} />
         </Routes>
       </ProvedorSessao>
     </BrowserRouter>

@@ -61,7 +61,7 @@ export default function Entrar() {
   }
 
   if (usuario) {
-    return <Navigate to="/funcionarios" replace />
+    return <Navigate to="/painel" replace />
   }
 
   const entrarComoDemonstracao = async () => {

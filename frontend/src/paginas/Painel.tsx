@@ -7,11 +7,13 @@ import {
   type Painel as PainelDados,
   type StatusInconsistencia,
 } from '@/api/workflow'
+import { useSessao } from '@/auth/useSessao'
 import { EstadoCarregando, EstadoErro } from '@/components/sistema/Estados'
 import { CabecalhoPagina, CabecalhoSecao, ResumoFinanceiro } from '@/components/sistema/Primitivos'
 import { useEmpresaAtual } from '@/layout/contexto'
 import { usePagina } from '@/layout/usePagina'
 import { cn } from '@/lib/utils'
+import { RoteiroDemonstracao } from '@/paginas/RoteiroDemonstracao'
 
 /**
  * O painel operacional (Fase 7).
@@ -37,6 +39,7 @@ export default function Painel() {
   usePagina([{ texto: 'Folha' }, { texto: 'Painel' }])
 
   const { empresaAtual } = useEmpresaAtual()
+  const { usuario } = useSessao()
 
   const [dados, definirDados] = useState<PainelDados | null>(null)
   const [carregando, definirCarregando] = useState(true)
@@ -69,6 +72,8 @@ export default function Painel() {
         titulo="Painel"
         descricao="Onde está o trabalho de conferência, com os números do próprio sistema."
       />
+
+      {usuario?.perfil === 'Visualizador' && <RoteiroDemonstracao />}
 
       <div aria-live="polite" aria-busy={carregando}>
         {carregando && <EstadoCarregando />}
