@@ -230,6 +230,29 @@ medidas acima sustentam.
 - O PR do Dependabot NuGet que falhou no CI em 07/10 (run 37595199481) não foi tratado
   aqui.
 
-## Verificação em produção
+## Verificação em produção — 11/10/2026
 
-*Preenchida depois da publicação — ver o commit seguinte a este documento.*
+Publicado **depois** do CI do commit `abf09e9` terminar verde (run 38155102846: backend
+nos dois modos, NuGet, frontend com `npm audit`, varredura de segredos). Nenhuma
+migration; nenhum recurso AWS criado; custo **US$ 0,00**.
+
+| Passo | Evidência |
+|---|---|
+| Reversão guardada antes | zip das duas Lambdas baixado, SHA-256 igual ao `CodeSha256` da AWS |
+| Pacotes | `scripts/empacotar-lambda.py` a partir de `abf09e9`: `bootstrap` ELF, origem Unix, 0755 |
+| API | `update-function-code` → `wait function-updated-v2` → `Successful`, `CodeSha256` **igual** ao do zip enviado; `/health` → `{"status":"saudavel"}` (inclui banco e migrations) |
+| Worker | idem, `Successful` e hash igual. Invocação sintética com mensagem malformada: 200, sem `FunctionError`, `worker pronto ... ssl=VerifyFull` (sem senha no log) e `mensagem recusada no esquema: VersaoDesconhecida`, `batchItemFailures: []` |
+| Frontend | Vercel `--prod`, `READY`; o domínio público serve o `index.html` novo, com o *preload* da divisão por rota; link direto para `/folhas/<id>` → 200; CSP, HSTS e `X-Frame-Options` intactos |
+| Telas novas no ar | o pedaço `Painel-*.js` servido contém o "Roteiro da demonstração" e a explicação do líquido negativo; `FolhaDetalhe-*.js` contém "Abrir holerite de" e o recarregamento no 409 |
+| CORS e autorização | preflight da Vercel: 204 com `allow-origin` exato e credenciais; origem estranha: nenhum cabeçalho CORS; `fechar` e `lancar` sem token: **401** |
+
+⚠️ **Não verificado, e por quê:** o percurso visual no navegador — entrar pelo botão da
+demonstração, Tab até o holerite, Escape devolvendo o foco, larguras de 390, 768 e
+1280 px e o console — **não foi executado em produção**: a extensão de automação do
+navegador não estava conectada nesta sessão, e o agente não digita senha em campo. O
+mesmo comportamento é coberto pelos testes de interface com `user-event` (185, três
+vezes), mas teste em `jsdom` não substitui olhar a tela. Para conferir em 3 minutos:
+abrir a aplicação, **Entrar na demonstração**, seguir o roteiro do Painel usando só o
+teclado.
+
+Por isso a nota de "Demonstração, acessibilidade e desempenho" fica em **9**, e não 10.
