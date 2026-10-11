@@ -312,13 +312,53 @@ public static class FolhasEndpoints
         return Results.Created($"/api/folhas/{folha.Id}", await ResumoAsync(db, folha.Id, ct));
     }
 
-    private static async Task<IResult> CalcularAsync(
-        Guid id,
+    /// <summary>
+    /// O UNICO caminho de escrita na folha e nos seus filhos.
+    ///
+    /// Ordem fixa, e cada passo tem motivo:
+    ///
+    /// 1. abre a transacao;
+    /// 2. TRAVA a linha da folha (<see cref="TravaFolha"/>) - quem chega depois
+    ///    espera aqui, e nao depois de ler um retrato velho;
+    /// 3. so entao carrega o agregado, ja com o estado confirmado pela operacao
+    ///    anterior;
+    /// 4. aplica o dominio (<paramref name="alterar"/>), que devolve a recusa
+    ///    ou null;
+    /// 5. grava e CONFIRMA - filhos, totais e auditoria na mesma transacao;
+    /// 6. monta a resposta.
+    ///
+    /// Recusa ou excecao saem sem commit: o descarte da transacao desfaz tudo e
+    /// solta a trava. O commit existe num lugar so, e por isso nenhum tipo de
+    /// calculo consegue devolver 200 sem ter confirmado o que calculou.
+    ///
+    /// Sem nova tentativa automatica: repetir sozinho um comando financeiro
+    /// poderia duplicar lancamento. Quem decide repetir e quem pediu.
+    /// </summary>
+    private static async Task<IResult> AlterarFolhaAsync(
         PrismaRhDbContext db,
-        IContextoUsuario usuario,
-        IRelogio relogio,
+        Guid id,
+        Func<FolhaPagamento, Task<IResult?>> alterar,
+        Func<Task<IResult>> responder,
         CancellationToken ct)
     {
+        await using var transacao = await db.Database.BeginTransactionAsync(ct);
+
+        try
+        {
+            if (!await db.TravarParaEscritaAsync(id, ct))
+            {
+                return Results.NotFound();
+            }
+        }
+        catch (Exception erro) when (ConflitoDeBanco.EhTravaIndisponivel(erro))
+        {
+            return Results.Problem(
+                title: "Folha em uso",
+                detail: "Outra operacao esta alterando esta folha agora. Nada foi gravado. "
+                        + "Recarregue a folha e tente de novo.",
+                statusCode: StatusCodes.Status409Conflict);
+        }
+
         var folha = await CarregarParaEscritaAsync(db, id, ct);
 
         if (folha is null)
@@ -326,21 +366,77 @@ public static class FolhasEndpoints
             return Results.NotFound();
         }
 
-        if (folha.Tipo == TipoFolha.Ferias)
+        var recusa = await alterar(folha);
+
+        if (recusa is not null)
         {
-            return await CalcularFeriasAsync(folha, db, relogio, ct);
+            return recusa;
         }
 
-        if (folha.Tipo is TipoFolha.DecimoTerceiroAdiantamento or TipoFolha.DecimoTerceiro)
-        {
-            return await Calcular13Async(folha, db, relogio, ct);
-        }
+        await db.SaveChangesAsync(ct);
+        await transacao.CommitAsync(ct);
 
-        if (folha.Tipo == TipoFolha.Rescisao)
-        {
-            return await CalcularRescisaoAsync(folha, db, relogio, ct);
-        }
+        return await responder();
+    }
 
+    private static async Task<IResult> CalcularAsync(
+        Guid id,
+        PrismaRhDbContext db,
+        IContextoUsuario usuario,
+        IRelogio relogio,
+        CancellationToken ct)
+    {
+        // Contratos com motivo de rescisao sem fonte oficial ficam de fora, e a
+        // resposta diz quais - um holerite vazio pareceria erro de calculo.
+        IReadOnlyList<Guid> ignorados = [];
+
+        return await AlterarFolhaAsync(
+            db, id,
+            async folha =>
+            {
+                switch (folha.Tipo)
+                {
+                    case TipoFolha.Ferias:
+                        return await CalcularFeriasAsync(folha, db, relogio, ct);
+
+                    case TipoFolha.DecimoTerceiroAdiantamento or TipoFolha.DecimoTerceiro:
+                        return await Calcular13Async(folha, db, relogio, ct);
+
+                    case TipoFolha.Rescisao:
+                        var (recusa, deFora) = await CalcularRescisaoAsync(folha, db, relogio, ct);
+                        ignorados = deFora;
+                        return recusa;
+
+                    default:
+                        return await CalcularMensalAsync(folha, db, relogio, ct);
+                }
+            },
+            async () =>
+            {
+                var detalhe = new FolhaDetalheResposta(
+                    (await ResumoAsync(db, id, ct))!, await HoleritesAsync(db, id, ct));
+
+                return ignorados.Count == 0
+                    ? Results.Ok(detalhe)
+                    : Results.Ok(new
+                    {
+                        detalhe.Folha,
+                        detalhe.Funcionarios,
+                        // Quantos ficaram de fora por motivo bloqueado. Nao e
+                        // erro - e informacao que a tela precisa mostrar.
+                        ContratosIgnorados = ignorados,
+                    });
+            },
+            ct);
+    }
+
+    /// <summary>
+    /// Calcula a folha MENSAL. Devolve a recusa, ou null quando o agregado foi
+    /// alterado e esta pronto para ser gravado por <see cref="AlterarFolhaAsync"/>.
+    /// </summary>
+    private static async Task<IResult?> CalcularMensalAsync(
+        FolhaPagamento folha, PrismaRhDbContext db, IRelogio relogio, CancellationToken ct)
+    {
         var rubricaSalario = await db.Rubricas.FirstOrDefaultAsync(
             r => r.Ativa && r.Estrategia == EstrategiaRubrica.SalarioBaseProporcional, ct);
 
@@ -382,121 +478,103 @@ public static class FolhasEndpoints
             return RespostasValidacao.De(erro);
         }
 
-        await db.SaveChangesAsync(ct);
-
-        return Results.Ok(new FolhaDetalheResposta(
-            (await ResumoAsync(db, id, ct))!, await HoleritesAsync(db, id, ct)));
+        return null;
     }
 
-    private static async Task<IResult> FecharAsync(
+    private static Task<IResult> FecharAsync(
         Guid id,
         PrismaRhDbContext db,
         IContextoUsuario usuario,
         IRelogio relogio,
-        CancellationToken ct)
-    {
-        var folha = await db.Folhas.Include(f => f.Funcionarios).FirstOrDefaultAsync(f => f.Id == id, ct);
+        CancellationToken ct) =>
+        AlterarFolhaAsync(
+            db, id,
+            folha =>
+            {
+                try
+                {
+                    folha.Fechar(relogio.Agora);
+                }
+                catch (InvalidOperationException erro)
+                {
+                    return Task.FromResult<IResult?>(RespostasValidacao.De(erro));
+                }
 
-        if (folha is null)
-        {
-            return Results.NotFound();
-        }
+                // Fechamento de folha e evento auditado (`CLAUDE.md secao
+                // 24.17`): e o ato que transforma um calculo em fato historico.
+                // Entra na MESMA transacao do fechamento - ou os dois ficam, ou
+                // nenhum. O contexto e tecnico e comparavel entre registros:
+                // cultura invariante, com a versao de calculo que foi fechada.
+                db.Registrar(
+                    usuario, relogio,
+                    AcaoAuditada.FolhaFechada, EntidadeAuditada.FolhaPagamento, folha.Id,
+                    $"Folha {folha.Tipo} de {folha.Competencia} fechada.",
+                    FormattableString.Invariant(
+                        $"liquido={folha.TotalLiquido:0.00};versao={folha.VersaoCalculo};pessoas={folha.Funcionarios.Count}"));
 
-        try
-        {
-            folha.Fechar(relogio.Agora);
-        }
-        catch (InvalidOperationException erro)
-        {
-            return RespostasValidacao.De(erro);
-        }
+                return Task.FromResult<IResult?>(null);
+            },
+            async () => Results.Ok(await ResumoAsync(db, id, ct)),
+            ct);
 
-        // Fechamento de folha e evento auditado (`CLAUDE.md secao 24.17`): e o
-        // ato que transforma um calculo em fato historico.
-        db.Registrar(
-            usuario, relogio,
-            AcaoAuditada.FolhaFechada, EntidadeAuditada.FolhaPagamento, folha.Id,
-            $"Folha {folha.Tipo} de {folha.Competencia} fechada.",
-            $"liquido={folha.TotalLiquido};pessoas={folha.Funcionarios.Count}");
-
-        await db.SaveChangesAsync(ct);
-
-        return Results.Ok(await ResumoAsync(db, id, ct));
-    }
-
-    private static async Task<IResult> LancarAsync(
+    private static Task<IResult> LancarAsync(
         Guid id,
         Guid idHolerite,
         [FromBody] LancamentoManualRequisicao requisicao,
         PrismaRhDbContext db,
-        CancellationToken ct)
-    {
-        var folha = await CarregarParaEscritaAsync(db, id, ct);
+        CancellationToken ct) =>
+        AlterarFolhaAsync(
+            db, id,
+            async folha =>
+            {
+                var rubrica = await db.Rubricas.FirstOrDefaultAsync(r => r.Id == requisicao.IdRubrica, ct);
 
-        if (folha is null)
-        {
-            return Results.NotFound();
-        }
+                if (rubrica is null)
+                {
+                    return Results.NotFound(new { detalhe = "Rubrica nao encontrada." });
+                }
 
-        var rubrica = await db.Rubricas.FirstOrDefaultAsync(r => r.Id == requisicao.IdRubrica, ct);
+                try
+                {
+                    folha.AdicionarLancamentoManual(
+                        idHolerite, rubrica, requisicao.Valor, requisicao.Referencia,
+                        await EncargosAsync(db, folha.Competencia, ct));
+                }
+                catch (InvalidOperationException erro)
+                {
+                    return RespostasValidacao.De(erro);
+                }
+                catch (ArgumentException erro)
+                {
+                    return RespostasValidacao.De(erro);
+                }
 
-        if (rubrica is null)
-        {
-            return Results.NotFound(new { detalhe = "Rubrica nao encontrada." });
-        }
+                return null;
+            },
+            () => ObterHoleriteAsync(id, idHolerite, db, ct),
+            ct);
 
-        try
-        {
-            folha.AdicionarLancamentoManual(
-                idHolerite, rubrica, requisicao.Valor, requisicao.Referencia,
-                await EncargosAsync(db, folha.Competencia, ct));
-        }
-        catch (InvalidOperationException erro)
-        {
-            return RespostasValidacao.De(erro);
-        }
-        catch (ArgumentException erro)
-        {
-            return RespostasValidacao.De(erro);
-        }
-
-        await db.SaveChangesAsync(ct);
-
-        return await ObterHoleriteAsync(id, idHolerite, db, ct);
-    }
-
-    private static async Task<IResult> RemoverLancamentoAsync(
-        Guid id, Guid idHolerite, Guid idLancamento, PrismaRhDbContext db, CancellationToken ct)
-    {
-        var folha = await CarregarParaEscritaAsync(db, id, ct);
-
-        if (folha is null)
-        {
-            return Results.NotFound();
-        }
-
-        bool removeu;
-
-        try
-        {
-            removeu = folha.RemoverLancamento(
-                idHolerite, idLancamento,
-                await EncargosAsync(db, folha.Competencia, ct));
-        }
-        catch (InvalidOperationException erro)
-        {
-            return RespostasValidacao.De(erro);
-        }
-
-        if (!removeu)
-        {
-            return Results.NotFound();
-        }
-
-        await db.SaveChangesAsync(ct);
-
-        return Results.NoContent();
-    }
+    private static Task<IResult> RemoverLancamentoAsync(
+        Guid id, Guid idHolerite, Guid idLancamento, PrismaRhDbContext db, CancellationToken ct) =>
+        AlterarFolhaAsync(
+            db, id,
+            async folha =>
+            {
+                try
+                {
+                    return folha.RemoverLancamento(
+                            idHolerite, idLancamento,
+                            await EncargosAsync(db, folha.Competencia, ct))
+                        ? null
+                        : Results.NotFound();
+                }
+                catch (InvalidOperationException erro)
+                {
+                    return RespostasValidacao.De(erro);
+                }
+            },
+            () => Task.FromResult(Results.NoContent()),
+            ct);
 
     // -----------------------------------------------------------------------
     // Apoio
@@ -528,7 +606,7 @@ public static class FolhasEndpoints
     /// ficaram de fora - um holerite vazio no meio da folha pareceria erro de
     /// calculo em vez de motivo sem fonte.
     /// </summary>
-    private static async Task<IResult> CalcularRescisaoAsync(
+    private static async Task<(IResult? Recusa, IReadOnlyList<Guid> Ignorados)> CalcularRescisaoAsync(
         FolhaPagamento folha, PrismaRhDbContext db, IRelogio relogio, CancellationToken ct)
     {
         var rubricas = await db.Rubricas
@@ -545,11 +623,11 @@ public static class FolhasEndpoints
 
         if (faltando.Count > 0)
         {
-            return Results.Conflict(new
+            return (Results.Conflict(new
             {
                 detalhe = "Faltam rubricas de rescisao ativas: " + string.Join(", ", faltando)
                     + ". Cadastre-as antes de calcular."
-            });
+            }), []);
         }
 
         var primeiro = folha.Competencia.PrimeiroDia;
@@ -601,36 +679,20 @@ public static class FolhasEndpoints
                 v.Valor,
                 conhecidoPorContrato.TryGetValue(v.IdContrato, out var c) ? c : 0m));
 
-        IReadOnlyList<Guid> ignorados;
-
         try
         {
-            ignorados = folha.CalcularRescisao(
+            var ignorados = folha.CalcularRescisao(
                 contratos, rubricas, vencidas, basesFgts,
                 await EncargosAsync(db, folha.Competencia, ct),
                 await DependentesPorFuncionarioAsync(db, folha.Competencia, ct),
                 relogio.Agora);
+
+            return (null, ignorados);
         }
         catch (InvalidOperationException erro)
         {
-            return RespostasValidacao.De(erro);
+            return (RespostasValidacao.De(erro), []);
         }
-
-        await db.SaveChangesAsync(ct);
-
-        var detalhe = new FolhaDetalheResposta(
-            (await ResumoAsync(db, folha.Id, ct))!, await HoleritesAsync(db, folha.Id, ct));
-
-        return ignorados.Count == 0
-            ? Results.Ok(detalhe)
-            : Results.Ok(new
-            {
-                detalhe.Folha,
-                detalhe.Funcionarios,
-                // Quantos ficaram de fora por motivo bloqueado. Nao e erro -
-                // e informacao que a tela precisa mostrar.
-                ContratosIgnorados = ignorados,
-            });
     }
 
     /// <summary>
@@ -660,7 +722,7 @@ public static class FolhasEndpoints
     /// rubrica atual traria o valor errado se o catalogo tiver mudado depois do
     /// pagamento.
     /// </summary>
-    private static async Task<IResult> Calcular13Async(
+    private static async Task<IResult?> Calcular13Async(
         FolhaPagamento folha, PrismaRhDbContext db, IRelogio relogio, CancellationToken ct)
     {
         var rubricas = await db.Rubricas
@@ -733,13 +795,10 @@ public static class FolhasEndpoints
             return RespostasValidacao.De(erro);
         }
 
-        await db.SaveChangesAsync(ct);
-
-        return Results.Ok(new FolhaDetalheResposta(
-            (await ResumoAsync(db, folha.Id, ct))!, await HoleritesAsync(db, folha.Id, ct)));
+        return null;
     }
 
-    private static async Task<IResult> CalcularFeriasAsync(
+    private static async Task<IResult?> CalcularFeriasAsync(
         FolhaPagamento folha, PrismaRhDbContext db, IRelogio relogio, CancellationToken ct)
     {
         var rubricas = await db.Rubricas
@@ -791,10 +850,7 @@ public static class FolhasEndpoints
             return RespostasValidacao.De(erro);
         }
 
-        await db.SaveChangesAsync(ct);
-
-        return Results.Ok(new FolhaDetalheResposta(
-            (await ResumoAsync(db, folha.Id, ct))!, await HoleritesAsync(db, folha.Id, ct)));
+        return null;
     }
 
     /// <summary>

@@ -18,7 +18,8 @@ namespace PrismaRH.Testes.Isolamento;
 public sealed class FabricaApiIsolada(
     string stringConexao,
     Func<HttpMessageHandler>? parceiroExterno = null,
-    Func<HttpMessageHandler>? provedorIa = null) : WebApplicationFactory<Program>
+    Func<HttpMessageHandler>? provedorIa = null,
+    Action<IServiceCollection>? servicosExtras = null) : WebApplicationFactory<Program>
 {
     private const string VariavelConexao = "ConnectionStrings__PrismaRh";
     private const string VariavelJwt = "Jwt__ChaveAssinatura";
@@ -52,6 +53,14 @@ public sealed class FabricaApiIsolada(
             builder.ConfigureServices(servicos => servicos
                 .AddHttpClient<ClienteGemini>(c => c.Timeout = OrcamentoIa.Prazo)
                 .ConfigurePrimaryHttpMessageHandler(provedorIa));
+        }
+
+        // Ponto de extensao para os testes de concorrencia: plugar no
+        // DbContext da API um interceptor que pausa ou falha a gravacao num
+        // instante escolhido, sem trocar nada do caminho de producao.
+        if (servicosExtras is not null)
+        {
+            builder.ConfigureServices(servicosExtras);
         }
 
         return base.CreateHost(builder);

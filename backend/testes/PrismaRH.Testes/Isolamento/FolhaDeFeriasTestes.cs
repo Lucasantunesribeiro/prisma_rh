@@ -164,6 +164,7 @@ public class FolhaDeFeriasTestes(BancoPostgresFixture banco) : IDisposable
 
         using var calculo = await admin.PostAsync($"/api/folhas/{folha.Id}/calcular", null);
         calculo.EnsureSuccessStatusCode();
+        await admin.ConferirCalculoPersistidoAsync(calculo);
 
         return (await calculo.Content.ReadFromJsonAsync<FolhaDetalhe>())!;
     }

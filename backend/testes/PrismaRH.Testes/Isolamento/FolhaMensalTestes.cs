@@ -172,6 +172,7 @@ public class FolhaMensalTestes(BancoPostgresFixture banco) : IDisposable
     {
         using var resposta = await cliente.PostAsync($"/api/folhas/{idFolha}/calcular", null);
         resposta.EnsureSuccessStatusCode();
+        await cliente.ConferirCalculoPersistidoAsync(resposta);
 
         return (await resposta.Content.ReadFromJsonAsync<FolhaDetalhe>())!;
     }

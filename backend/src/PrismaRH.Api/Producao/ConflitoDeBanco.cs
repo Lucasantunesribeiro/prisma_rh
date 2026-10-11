@@ -47,17 +47,42 @@ public static class ConflitoDeBanco
     public const string ViolacaoUnica = "23505";
 
     /// <summary>
+    /// A trava de linha não veio dentro do <c>lock_timeout</c>: outra operação
+    /// segurou o recurso além do prazo (ver <c>TravaFolha</c>). Nada foi
+    /// gravado, e repetir depois é seguro.
+    /// </summary>
+    public const string TravaIndisponivel = "55P03";
+
+    /// <summary>
     /// A exceção significa "conflito, e nada foi gravado"?
     ///
     /// Percorre as causas internas porque o EF embrulha, e o Npgsql às vezes
     /// embrulha de novo — o `SqlState` costuma estar duas camadas abaixo.
     /// </summary>
+    /// <summary>
+    /// A exceção é a espera por uma trava que estourou o <c>lock_timeout</c>?
+    /// Percorre as causas internas pelo mesmo motivo de <see cref="EhConflito"/>:
+    /// o código do PostgreSQL costuma chegar embrulhado.
+    /// </summary>
+    public static bool EhTravaIndisponivel(Exception? excecao)
+    {
+        for (var atual = excecao; atual is not null; atual = atual.InnerException)
+        {
+            if (atual is PostgresException { SqlState: TravaIndisponivel })
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public static bool EhConflito(Exception? excecao)
     {
         for (var atual = excecao; atual is not null; atual = atual.InnerException)
         {
             if (atual is PostgresException postgres
-                && postgres.SqlState is Deadlock or FalhaSerializacao or ViolacaoUnica)
+                && postgres.SqlState is Deadlock or FalhaSerializacao or ViolacaoUnica or TravaIndisponivel)
             {
                 return true;
             }
