@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { Outlet, useLocation } from 'react-router'
 import { listarEmpresas, type Empresa } from '@/api/empresas'
 import { LimiteDeErro } from '@/components/LimiteDeErro'
+import { EstadoCarregando } from '@/components/sistema/Estados'
 import { ProvedorTooltip } from '@/components/ui/tooltip'
 import { EmpresaContexto, PaginaContexto, type Trilha } from './contexto'
 import { Sidebar } from './Sidebar'
@@ -106,7 +107,11 @@ export function ApplicationShell() {
 
               <main className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
                 <LimiteDeErro key={pathname}>
-                  <Outlet />
+                  {/* A pagina chega sob demanda (ver App.tsx): enquanto o
+                      pedaco dela baixa, menu e trilha continuam na tela. */}
+                  <Suspense fallback={<EstadoCarregando rotulo="Abrindo a página" />}>
+                    <Outlet />
+                  </Suspense>
                 </LimiteDeErro>
               </main>
             </div>

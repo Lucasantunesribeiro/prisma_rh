@@ -1,4 +1,5 @@
 import { Component, type ReactNode } from 'react'
+import { ehFalhaDeDownload } from '@/lib/falhaDeDownload'
 import { Button } from '@/components/ui/button'
 
 /**
@@ -28,6 +29,7 @@ interface Estado {
   erro: Error | null
 }
 
+
 export class LimiteDeErro extends Component<{ children: ReactNode }, Estado> {
   state: Estado = { erro: null }
 
@@ -42,6 +44,27 @@ export class LimiteDeErro extends Component<{ children: ReactNode }, Estado> {
   render() {
     if (!this.state.erro) {
       return this.props.children
+    }
+
+    if (ehFalhaDeDownload(this.state.erro)) {
+      // "Tentar novamente" nao serve aqui: o React.lazy guarda a falha e a
+      // repetiria. O que resolve e recarregar - e, se houve deploy no meio,
+      // e o recarregamento que traz os nomes de arquivo novos.
+      return (
+        <div
+          role="alert"
+          className="flex min-h-[60vh] flex-col items-center justify-center gap-3 px-6 text-center"
+        >
+          <h1 className="text-lg font-semibold text-foreground">Não foi possível abrir esta página</h1>
+          <p className="max-w-md text-[13px] text-muted-foreground">
+            A tela não terminou de baixar — a conexão caiu ou uma versão nova do Prisma RH acabou
+            de ser publicada. Recarregar resolve nos dois casos.
+          </p>
+          <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
+            Recarregar a página
+          </Button>
+        </div>
+      )
     }
 
     return (

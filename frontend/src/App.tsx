@@ -1,22 +1,35 @@
+import { lazy } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router'
 import { ProvedorSessao } from '@/auth/SessaoContexto'
 import { RotaProtegida } from '@/rotas/RotaProtegida'
 import { ApplicationShell } from '@/layout/ApplicationShell'
 import Entrar from '@/paginas/Entrar'
-import Empresas from '@/paginas/Empresas'
-import Funcionarios from '@/paginas/Funcionarios'
-import FuncionarioDetalhe from '@/paginas/FuncionarioDetalhe'
-import Cargos from '@/paginas/Cargos'
-import Importacoes from '@/paginas/Importacoes'
-import Rubricas from '@/paginas/Rubricas'
-import RegrasAnalise from '@/paginas/RegrasAnalise'
-import Folhas from '@/paginas/Folhas'
-import FolhaDetalhe from '@/paginas/FolhaDetalhe'
-import Parametros from '@/paginas/Parametros'
-import Status from '@/paginas/Status'
-import Painel from '@/paginas/Painel'
-import Inconsistencias from '@/paginas/Inconsistencias'
-import Auditoria from '@/paginas/Auditoria'
+
+/*
+ * Cada pagina vira um pedaco proprio do build, baixado na primeira visita a
+ * rota (Vite + import() dinamico). Antes, o arquivo inicial levava as quinze
+ * telas - inclusive importacao, regras e auditoria, que a maior parte das
+ * visitas nunca abre.
+ *
+ * `Entrar` continua no arquivo inicial: e a primeira tela de quem chega, e
+ * esperar um segundo download para ver o login seria pior do que antes. O
+ * carregamento e a falha de download sao tratados no ApplicationShell
+ * (Suspense) e no LimiteDeErro.
+ */
+const Empresas = lazy(() => import('@/paginas/Empresas'))
+const Funcionarios = lazy(() => import('@/paginas/Funcionarios'))
+const FuncionarioDetalhe = lazy(() => import('@/paginas/FuncionarioDetalhe'))
+const Cargos = lazy(() => import('@/paginas/Cargos'))
+const Importacoes = lazy(() => import('@/paginas/Importacoes'))
+const Rubricas = lazy(() => import('@/paginas/Rubricas'))
+const RegrasAnalise = lazy(() => import('@/paginas/RegrasAnalise'))
+const Folhas = lazy(() => import('@/paginas/Folhas'))
+const FolhaDetalhe = lazy(() => import('@/paginas/FolhaDetalhe'))
+const Parametros = lazy(() => import('@/paginas/Parametros'))
+const Status = lazy(() => import('@/paginas/Status'))
+const Painel = lazy(() => import('@/paginas/Painel'))
+const Inconsistencias = lazy(() => import('@/paginas/Inconsistencias'))
+const Auditoria = lazy(() => import('@/paginas/Auditoria'))
 
 export default function App() {
   return (

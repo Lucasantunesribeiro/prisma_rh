@@ -15,15 +15,11 @@ export default defineConfig({
     port: 5173,
   },
   build: {
-    // ⚠️ MELHORIA NAO BLOQUEANTE, registrada de proposito. O bundle unico fica
-    // em ~543 kB crus / ~158 kB gzip — acima do aviso padrao de 500 kB CRUS do
-    // Vite, mas 158 kB gzip de primeira carga e adequado para um app B2B.
-    //
-    // O split de rota (React.lazy + Suspense) seria o conserto real, mas mexe no
-    // roteador e no error boundary de um repo que esta sendo CONGELADO — risco
-    // sem ganho claro. O limite fica no padrao de propósito: mascarar o numero
-    // subindo o teto seria silenciar a metrica, nao melhora-la. Fica visivel e
-    // registrado ate haver motivo real para dividir.
+    // Limite no padrao do Vite, de proposito. Ate 08/10/2026 o bundle era um
+    // arquivo so de ~543 kB crus e estourava este aviso; a correcao foi
+    // dividir as paginas por rota (React.lazy em App.tsx), e nao subir o teto -
+    // subir o teto silenciaria a metrica em vez de melhora-la. Medicao antes e
+    // depois em docs/evidencias-portfolio-95.md (PR-05).
     chunkSizeWarningLimit: 500,
   },
   test: {
